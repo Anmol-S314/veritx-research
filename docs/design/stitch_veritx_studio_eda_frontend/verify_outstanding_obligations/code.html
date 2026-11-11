@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "tertiary": "#444f5a",
+          "on-primary-fixed": "#001e30",
+          "on-tertiary": "#ffffff",
+          "surface-variant": "#dce3ee",
+          "tertiary-fixed": "#d8e4f2",
+          "on-secondary-fixed": "#0a1e26",
+          "outline-variant": "#c0c7d0",
+          "primary": "#00537c",
+          "tertiary-container": "#5c6773",
+          "surface-container-highest": "#dce3ee",
+          "inverse-on-surface": "#eaf1fc",
+          "on-surface": "#151c24",
+          "secondary": "#4e616a",
+          "on-secondary-container": "#546770",
+          "primary-container": "#0f6c9e",
+          "outline": "#707880",
+          "surface-dim": "#d4dae5",
+          "inverse-surface": "#2a3139",
+          "on-error": "#ffffff",
+          "secondary-container": "#d2e6f1",
+          "secondary-fixed-dim": "#b6c9d4",
+          "on-primary-container": "#d0e8ff",
+          "on-background": "#151c24",
+          "on-tertiary-fixed": "#121d27",
+          "secondary-fixed": "#d2e6f1",
+          "surface-container": "#e8eef9",
+          "on-error-container": "#93000a",
+          "on-primary-fixed-variant": "#004b71",
+          "inverse-primary": "#8fcdff",
+          "surface-bright": "#f7f9ff",
+          "on-secondary": "#ffffff",
+          "error": "#ba1a1a",
+          "on-secondary-fixed-variant": "#374952",
+          "surface-container-lowest": "#ffffff",
+          "background": "#f7f9ff",
+          "surface-tint": "#006494",
+          "primary-fixed-dim": "#8fcdff",
+          "surface-container-low": "#eef4ff",
+          "on-surface-variant": "#40484f",
+          "surface": "#f7f9ff",
+          "primary-fixed": "#cbe6ff",
+          "surface-container-high": "#e2e9f4",
+          "tertiary-fixed-dim": "#bcc8d5",
+          "error-container": "#ffdad6",
+          "on-tertiary-fixed-variant": "#3d4853",
+          "on-primary": "#ffffff",
+          "on-tertiary-container": "#dae6f4"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "margin": "0.5rem",
+          "space-sm": "0.5rem",
+          "gutter": "0.5rem",
+          "space-md": "0.75rem",
+          "space-lg": "1rem",
+          "space-xs": "0.25rem",
+          "space-xl": "1.5rem"
+        },
+        "fontFamily": {
+          "headline-md": [
+            "Inter"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "code-table": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "label-md": [
+            "Inter"
+          ],
+          "headline-sm": [
+            "Inter"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "headline-md": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "code-md": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "fontWeight": "400"
+            }
+          ],
+          "body-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "fontWeight": "400"
+            }
+          ],
+          "code-table": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-lg": [
+            "20px",
+            {
+              "lineHeight": "28px",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "600"
+            }
+          ],
+          "label-md": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-sm": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "-0.005em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-surface text-on-surface font-body-md text-body-md min-h-screen"><header class="fixed top-0 left-0 right-0 z-40 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-9 px-space-md flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm font-bold tracking-tight text-primary">VERITX</span><span class="text-outline font-body-sm text-body-sm">|</span><span class="font-body-md text-body-md font-semibold text-on-surface">Srota Studio</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm px-space-xs py-[2px] bg-surface-container rounded"><span class="text-on-surface font-medium">Falcon8_NoC_Gen2</span><span class="text-secondary font-mono">[rev: d7a4e9b-draft*]</span></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary"><span class="material-symbols-outlined text-[14px] text-tertiary">schedule</span><span>1.4 GHz</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs font-code-sm text-code-sm px-space-xs py-[2px] bg-secondary-container text-on-secondary-fixed rounded"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span>1 Active Job (SIM-403)</span></div><div class="flex items-center gap-space-xs font-label-md text-label-md text-on-surface-variant"><span class="material-symbols-outlined text-[15px] text-primary">verified</span><span>DRC Clean</span></div><div class="flex items-center gap-space-xs font-label-md text-label-md text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span>Daemon: Active</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="h-8 px-space-md flex items-center justify-between bg-surface-container-low border-b border-outline-variant"><nav class="flex items-center gap-space-xs" data-active-classes="bg-primary-container text-on-primary-container font-semibold rounded"><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="design" href="#">Design</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="explore" href="#">Explore</a><a aria-current="page" class="px-space-md py-1 bg-primary-container text-on-primary-container font-semibold rounded" data-path="outstanding-obligations" href="#">Verify</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary"><span class="material-symbols-outlined text-[14px]">hub</span><span>Mesh 4x4 (XY Routing)</span></div></div><div class="h-7 px-space-md flex items-center gap-space-xs bg-surface-container-highest border-b border-outline-variant"><span class="font-label-md text-label-md uppercase tracking-wider text-secondary mr-space-xs">Verify Worksuite:</span><nav class="flex items-center gap-[2px]" data-active-classes="bg-surface-container-lowest text-primary font-semibold shadow-xs"><a class="px-space-md py-[2px] font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="evidence-overview" href="#">Evidence Overview</a><a class="px-space-md py-[2px] font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="configuration-support-checks" href="#">Configuration Support Checks</a><a class="px-space-md py-[2px] font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="check-setup-and-results" href="#">Check Setup &amp; Results</a><a aria-current="page" class="px-space-md py-[2px] rounded bg-surface-container-lowest text-primary font-semibold shadow-xs" data-path="outstanding-obligations" href="#">Outstanding Obligations</a></nav></div></header><aside class="fixed left-0 top-24 bottom-7 w-60 bg-surface-container-low border-r border-outline-variant z-30 flex flex-col"><div class="h-7 px-space-sm flex items-center justify-between border-b border-outline-variant bg-surface-container"><span class="font-label-md text-label-md uppercase text-secondary font-semibold">Interconnect Hierarchy</span><span class="material-symbols-outlined text-[15px] text-on-surface-variant cursor-pointer">filter_alt</span></div><div class="flex-1 overflow-y-auto p-space-xs font-code-sm text-code-sm"><div class="flex items-center gap-space-xs py-1 px-space-xs bg-secondary-container text-on-secondary-fixed rounded mb-[2px]"><span class="material-symbols-outlined text-[14px]">expand_more</span><span class="material-symbols-outlined text-[14px] text-primary">account_tree</span><span class="font-medium truncate">Falcon8_NoC_Gen2</span></div><div class="pl-space-md space-y-[2px]"><div class="flex items-center gap-space-xs py-[2px] px-space-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded cursor-pointer"><span class="material-symbols-outlined text-[14px]">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">grid_4x4</span><span>Mesh_Subsystem_4x4</span></div><div class="flex items-center gap-space-xs py-[2px] px-space-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded cursor-pointer"><span class="material-symbols-outlined text-[14px]">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">memory</span><span>AXI_Bridge_Clusters</span></div><div class="flex items-center gap-space-xs py-[2px] px-space-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded cursor-pointer"><span class="material-symbols-outlined text-[14px]">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">sync_alt</span><span>Virtual_Channels (VC0-VC3)</span></div><div class="flex items-center gap-space-xs py-[2px] px-space-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded cursor-pointer"><span class="material-symbols-outlined text-[14px]">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">security</span><span>Security_Domains_TZ</span></div></div></div><div class="h-8 px-space-sm border-t border-outline-variant bg-surface-container flex items-center justify-between text-secondary font-code-sm text-code-sm"><span>Radix: 5 (4xXY+L)</span><span class="material-symbols-outlined text-[14px] text-outline cursor-pointer">settings</span></div></aside><div class="pl-60"><main class="w-full pt-24 pb-7 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- CONTEXT BANNER & ENGINE METRICS BAR -->
+<div class="px-space-md py-space-xs bg-surface-container-high border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<span class="text-secondary uppercase tracking-wider">Target Config:</span>
+<span class="font-code-sm text-code-sm bg-surface-container-lowest px-1.5 py-0.5 rounded text-on-surface font-semibold border border-outline-variant">Falcon8_NoC_Gen2 [d7a4e9b]</span>
+</div>
+<div class="h-3 w-[1px] bg-outline-variant"></div>
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<span class="text-secondary uppercase tracking-wider">Formal/Sim Backend:</span>
+<span class="font-code-sm text-code-sm text-on-surface">Srota-CycleAccurate RTL v2.3</span>
+</div>
+<div class="h-3 w-[1px] bg-outline-variant"></div>
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<span class="text-secondary uppercase tracking-wider">Workload Scope:</span>
+<span class="font-code-sm text-code-sm bg-secondary-container px-1.5 py-0.5 rounded text-on-secondary-fixed font-medium">ResNet50_Burst [w12]</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs text-error font-label-md text-label-md">
+<span class="material-symbols-outlined text-[15px]">report</span>
+<span class="font-semibold tracking-tight">2 Blockers active for TSMC N5 Tapeout Signoff</span>
+</div>
+</div>
+<!-- NOTICE BANNER -->
+<div class="px-space-md py-1 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary">
+<span class="material-symbols-outlined text-[14px] text-primary">info</span>
+<span>Illustrative sample data • 7 Tracked Engineering Obligations (2 Blocking TSMC N5 Signoff, 1 Model Assumption, 1 Waived)</span>
+</div>
+<div class="flex items-center gap-space-md font-label-md text-label-md">
+<span class="text-secondary">Register sync: <span class="font-code-sm text-on-surface">Live (daemon r-219)</span></span>
+<button class="text-primary hover:underline flex items-center gap-[2px]">
+<span>Documentation</span>
+<span class="material-symbols-outlined text-[12px]">open_in_new</span>
+</button>
+</div>
+</div>
+<!-- FILTER & TOOLBAR STRIP -->
+<div class="px-space-md py-space-xs bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between gap-space-md flex-wrap">
+<div class="flex items-center gap-space-sm flex-wrap">
+<!-- Search Input -->
+<div class="relative flex items-center">
+<span class="material-symbols-outlined text-[15px] absolute left-2 text-outline">search</span>
+<input class="h-6 pl-7 pr-2 font-code-sm text-code-sm bg-surface-container-low border border-outline-variant rounded focus:border-primary focus:outline-none w-64 placeholder:text-outline text-on-surface" placeholder="Filter by ID, router object, requirement..." type="text" value=""/>
+</div>
+<div class="h-4 w-[1px] bg-outline-variant"></div>
+<!-- Category Filter -->
+<div class="flex items-center gap-1 font-label-md text-label-md">
+<span class="text-secondary mr-1">Category:</span>
+<button class="h-6 px-2 bg-primary text-on-primary rounded font-semibold text-label-md">All (7)</button>
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant rounded">Routing/Deadlock (2)</button>
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant rounded">Interface Contract (2)</button>
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant rounded">Target Qual (1)</button>
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant rounded">Model/Eval (1)</button>
+</div>
+<div class="h-4 w-[1px] bg-outline-variant"></div>
+<!-- State Filter -->
+<div class="flex items-center gap-1 font-label-md text-label-md">
+<span class="text-secondary mr-1">State:</span>
+<select class="h-6 px-1.5 font-label-md text-label-md bg-surface-container-low border border-outline-variant rounded text-on-surface">
+<option>All States</option>
+<option selected="">Open / Pending Proof (2)</option>
+<option>Evidence Proposed (1)</option>
+<option>Under Investigation (1)</option>
+<option>Resolved (1)</option>
+<option>Waived (1)</option>
+<option>N/A Deprecated (1)</option>
+</select>
+</div>
+</div>
+<!-- Actions / Export -->
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-secondary">tune</span>
+<span>Columns</span>
+</button>
+<button class="h-6 px-2.5 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded flex items-center gap-1 text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">file_download</span>
+<span>Export Register (.json)</span>
+</button>
+</div>
+</div>
+<!-- WORKBENCH 3-PANE SPLIT -->
+<div class="grid grid-cols-12 min-h-[calc(100vh-190px)] divide-x divide-outline-variant bg-surface">
+<!-- ========================================== -->
+<!-- LEFT PANE: OBLIGATION DOMAINS & GATE SUMMARY -->
+<!-- ========================================== -->
+<div class="col-span-2 bg-surface-container-lowest flex flex-col min-w-[230px]">
+<div class="h-7 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Domains &amp; Categories</span>
+<span class="font-code-sm text-code-sm text-secondary">7 Total</span>
+</div>
+<!-- Domain breakdown tree -->
+<div class="p-space-xs space-y-1 overflow-y-auto border-b border-outline-variant">
+<!-- Cat 1 -->
+<div class="p-1.5 rounded bg-surface-container border border-outline-variant flex flex-col gap-1 cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Routing &amp; Progress</span>
+<span class="font-code-sm text-code-sm px-1.5 py-[1px] bg-error-container text-on-error-container rounded font-bold">1 Open</span>
+</div>
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>2 Obligations</span>
+<span class="text-primary">1 Resolved</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden flex">
+<div class="bg-error w-1/2 h-full"></div>
+<div class="bg-primary w-1/2 h-full"></div>
+</div>
+</div>
+<!-- Cat 2 -->
+<div class="p-1.5 rounded hover:bg-surface-container-low border border-transparent hover:border-outline-variant flex flex-col gap-1 cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Interface &amp; Protocol</span>
+<span class="font-code-sm text-code-sm px-1.5 py-[1px] bg-secondary-container text-on-secondary-fixed rounded font-medium">1 Evidence</span>
+</div>
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>2 Obligations</span>
+<span class="text-outline">1 Deprecated</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden flex">
+<div class="bg-primary-container w-1/2 h-full"></div>
+<div class="bg-outline w-1/2 h-full"></div>
+</div>
+</div>
+<!-- Cat 3 -->
+<div class="p-1.5 rounded hover:bg-surface-container-low border border-transparent hover:border-outline-variant flex flex-col gap-1 cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Target Qual &amp; Physical</span>
+<span class="font-code-sm text-code-sm px-1.5 py-[1px] bg-error-container text-on-error-container rounded font-bold">1 Open</span>
+</div>
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>1 Obligation</span>
+<span class="text-error font-medium">Blocks ASIC</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden">
+<div class="bg-error w-full h-full"></div>
+</div>
+</div>
+<!-- Cat 4 -->
+<div class="p-1.5 rounded hover:bg-surface-container-low border border-transparent hover:border-outline-variant flex flex-col gap-1 cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Generation &amp; Elaboration</span>
+<span class="font-code-sm text-code-sm px-1.5 py-[1px] bg-surface-container-highest text-on-surface-variant rounded">1 Review</span>
+</div>
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>1 Obligation</span>
+<span class="text-secondary font-medium">Under Invest.</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden">
+<div class="bg-secondary w-full h-full"></div>
+</div>
+</div>
+<!-- Cat 5 -->
+<div class="p-1.5 rounded hover:bg-surface-container-low border border-transparent hover:border-outline-variant flex flex-col gap-1 cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Model Assumptions</span>
+<span class="font-code-sm text-code-sm px-1.5 py-[1px] bg-surface-container text-secondary rounded">1 Waived</span>
+</div>
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>1 Obligation</span>
+<span class="text-secondary">Explore mode</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden">
+<div class="bg-outline w-full h-full"></div>
+</div>
+</div>
+</div>
+<!-- Downstream Gate Signoff Matrix -->
+<div class="h-7 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Downstream Gate Matrix</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">verified</span>
+</div>
+<div class="p-space-xs space-y-1.5 flex-1 overflow-y-auto">
+<!-- Gate 1: TSMC N5 Floorplan -->
+<div class="p-2 rounded bg-surface-container-low border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface">TSMC N5 Signoff</span>
+<span class="font-code-sm text-code-sm text-error font-bold flex items-center gap-[2px]">
+<span class="material-symbols-outlined text-[13px]">block</span>
+<span>2 BLOCKERS</span>
+</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Pre-tapeout gate: requires cycle proofs &amp; CDC MTBF calculation.</p>
+<div class="pt-1 flex items-center gap-1 font-code-sm text-code-sm">
+<span class="px-1 py-[1px] bg-error-container text-on-error-container rounded">V-OBL-102</span>
+<span class="px-1 py-[1px] bg-error-container text-on-error-container rounded">V-OBL-110</span>
+</div>
+</div>
+<!-- Gate 2: RTL Emission -->
+<div class="p-2 rounded bg-surface-container-low border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface">RTL Emission</span>
+<span class="font-code-sm text-code-sm text-error font-bold flex items-center gap-[2px]">
+<span class="material-symbols-outlined text-[13px]">warning</span>
+<span>1 BLOCKER</span>
+</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Production RTL synthesis profile requires verified FIFO macro cell wrappers.</p>
+<div class="pt-1 flex items-center gap-1 font-code-sm text-code-sm">
+<span class="px-1 py-[1px] bg-secondary-container text-on-secondary-fixed rounded">V-OBL-109</span>
+</div>
+</div>
+<!-- Gate 3: FPGA Prototype -->
+<div class="p-2 rounded bg-surface-container-low border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface">FPGA Prototype</span>
+<span class="font-code-sm text-code-sm text-primary font-bold flex items-center gap-[2px]">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>
+<span>QUALIFIED</span>
+</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Target: Xilinx VU9P. Synthesizable netlist unconstrained by open tapeout gates.</p>
+</div>
+</div>
+<!-- Quick Export Box -->
+<div class="p-space-xs border-t border-outline-variant bg-surface-container">
+<button class="w-full h-7 bg-surface-container-lowest hover:bg-surface-container-high border border-outline-variant rounded font-label-md text-label-md text-on-surface flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">data_object</span>
+<span>Generate Compliance Report</span>
+</button>
+</div>
+</div>
+<!-- ========================================== -->
+<!-- CENTER PANE: REGISTER TABLE -->
+<!-- ========================================== -->
+<div class="col-span-6 bg-surface-container-lowest flex flex-col overflow-hidden">
+<!-- Subheader / Table Info -->
+<div class="h-7 px-space-md bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-space-sm font-label-md text-label-md">
+<span class="font-semibold text-on-surface uppercase tracking-wider">Obligation Register</span>
+<span class="text-secondary">(7 entries, sorted by downstream severity)</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-secondary">
+<span>Sort: Downstream Impact ↓</span>
+<span class="material-symbols-outlined text-[14px] text-outline cursor-pointer">swap_vert</span>
+</div>
+</div>
+<!-- Register Dense Data Table -->
+<div class="flex-1 overflow-x-auto overflow-y-auto">
+<table class="w-full border-collapse text-left font-body-sm text-body-sm">
+<thead class="bg-surface-container font-label-md text-label-md text-secondary sticky top-0 border-b border-outline-variant z-10 select-none">
+<tr>
+<th class="py-1 px-2 font-semibold w-24">ID</th>
+<th class="py-1 px-2 font-semibold w-28">Status</th>
+<th class="py-1 px-2 font-semibold w-32">Category</th>
+<th class="py-1 px-2 font-semibold w-40">Target Object</th>
+<th class="py-1 px-2 font-semibold min-w-[240px]">Engineering Question / Claim</th>
+<th class="py-1 px-2 font-semibold w-48">Downstream Impact</th>
+<th class="py-1 px-2 font-semibold w-20 text-right">Rev</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant font-code-sm text-code-sm">
+<!-- ROW 1 (SELECTED ROW) -->
+<tr class="bg-secondary-container/40 border-l-2 border-primary cursor-pointer hover:bg-secondary-container/60 transition-colors">
+<td class="py-1.5 px-2 font-bold text-primary font-mono flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">arrow_right</span>
+<span>V-OBL-102</span>
+</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-bold bg-error-container text-on-error-container inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                  OPEN
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Routing / Progress</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">Router R_1_2 [N/E Xbar]</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Is deadlock-freedom mathematically preserved under adaptive dimension-order routing fallback during east egress saturation?</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 bg-error-container text-on-error-container rounded font-bold font-code-sm text-code-sm tracking-tight">BLOCKS: TSMC N5 Tapeout</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 2 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1.5 px-2 font-bold text-on-surface font-mono">V-OBL-110</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-bold bg-error-container text-on-error-container inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                  OPEN
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Target Qual / CDC</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">Async_FIFO_1400_800</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Metastability MTBF calculation ≥ 10^9 hours under TSMC N5 slow-slow corner @ 1.4 GHz / 800 MHz.</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 bg-error-container text-on-error-container rounded font-bold font-code-sm text-code-sm tracking-tight">BLOCKS: TSMC N5 Tapeout</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 3 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1.5 px-2 font-bold text-on-surface font-mono">V-OBL-109</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-medium bg-surface-container-highest text-on-surface-variant inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+                  INVESTIGATING
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Generation Support</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">EP_NPU_CORE_0..3</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Does Srota RTL Generator v2.3 possess macro cell wrappers for 256-bit synchronous FIFO buffers?</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 bg-surface-container-high text-on-surface rounded font-code-sm text-code-sm font-semibold">BLOCKS: RTL Gen (Prod)</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 4 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1.5 px-2 font-bold text-on-surface font-mono">V-OBL-108</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-semibold bg-secondary-container text-on-secondary-fixed inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">pending_actions</span>
+                  EVID. PROPOSED
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Interface Contract</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">HBM_CTRL_0 (EP_08)</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Does the narrow flit burst packer guarantee zero credit starvation under out-of-order read return bursts?</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 bg-surface-container text-secondary rounded font-code-sm text-code-sm">BLOCKS: Model-RTL Parity</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 5 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors opacity-80">
+<td class="py-1.5 px-2 font-bold text-on-surface font-mono">V-OBL-105</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-medium bg-surface-container-high text-secondary inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">flag</span>
+                  WAIVED
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Model Assumption</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">PCIe_Gen5_x16 (EP_00)</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Missing physical 32.0 GT/s equalization jitter model in cycle-approximate BookSim adapter.</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="text-secondary font-code-sm text-code-sm">Limits latency claims (±4.2%)</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 6 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors opacity-70">
+<td class="py-1.5 px-2 font-bold text-primary font-mono">V-OBL-104</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-semibold bg-surface-container text-primary inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">check</span>
+                  RESOLVED
+                </span>
+</td>
+<td class="py-1.5 px-2 text-on-surface-variant">Routing / Progress</td>
+<td class="py-1.5 px-2 font-mono font-medium text-on-surface">R_0_0 .. R_3_3 [DOR XY]</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-on-surface">
+<div class="line-clamp-2">Strict monotonic XY dimension order routing graph cycle-free guarantee.</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="text-secondary font-code-sm text-code-sm">None (Artifact PRF-XY-881)</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-secondary">d7a4e9b</td>
+</tr>
+<!-- ROW 7 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors opacity-50 bg-surface-container-low/40">
+<td class="py-1.5 px-2 font-bold text-outline font-mono">V-OBL-111</td>
+<td class="py-1.5 px-2">
+<span class="px-1.5 py-0.5 rounded font-label-md text-label-md font-medium bg-surface-container text-outline inline-flex items-center gap-1">
+                  N/A (DEPRECATED)
+                </span>
+</td>
+<td class="py-1.5 px-2 text-outline">Interface Contract</td>
+<td class="py-1.5 px-2 font-mono font-medium text-outline">Token Ring Arbiter</td>
+<td class="py-1.5 px-2 font-body-sm text-body-sm text-outline">
+<div class="line-clamp-2">Fairness starvation bounds on round-robin token ring protocol.</div>
+</td>
+<td class="py-1.5 px-2">
+<span class="text-outline font-code-sm text-code-sm">None (Topology replaced)</span>
+</td>
+<td class="py-1.5 px-2 text-right font-mono text-outline">c8f42a1</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Center Pane Footer: Selection Summary Bar -->
+<div class="h-6 px-space-md bg-surface-container-low border-t border-outline-variant flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<div class="flex items-center gap-space-md">
+<span>Row 1 of 7 selected (V-OBL-102)</span>
+<span>Scope: Falcon8_NoC_Gen2</span>
+</div>
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-on-surface">Tapeout Signoff Blocked</span>
+</div>
+</div>
+</div>
+<!-- ========================================== -->
+<!-- RIGHT PANE: INSPECTOR & RESOLUTION REVIEW -->
+<!-- ========================================== -->
+<div class="col-span-4 bg-surface-container-lowest flex flex-col overflow-y-auto">
+<!-- Inspector Header Strip -->
+<div class="h-7 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Obligation Inspector:</span>
+<span class="font-code-sm text-code-sm font-bold text-primary">V-OBL-102</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary" title="Previous item">
+<span class="material-symbols-outlined text-[15px]">arrow_upward</span>
+</button>
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary" title="Next item">
+<span class="material-symbols-outlined text-[15px]">arrow_downward</span>
+</button>
+</div>
+</div>
+<!-- Inspector Body Content -->
+<div class="p-space-md space-y-space-md text-on-surface">
+<!-- Key Metadata Tags -->
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="px-2 py-0.5 rounded font-label-md text-label-md font-bold bg-error-container text-on-error-container">STATE: OPEN</span>
+<span class="px-2 py-0.5 rounded font-label-md text-label-md bg-surface-container text-on-surface font-medium">Domain: Routing / Deadlock</span>
+<span class="px-2 py-0.5 rounded font-code-sm text-code-sm bg-surface-container-low text-secondary border border-outline-variant">Locked: d7a4e9b</span>
+<span class="px-2 py-0.5 rounded font-label-md text-label-md bg-error text-on-error font-bold tracking-tight">HIGH SEVERITY</span>
+</div>
+<!-- Section 1: Statement & Engineering Claim -->
+<div class="space-y-1">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">psychology</span>
+<span>1. Precise Engineering Question &amp; Context</span>
+</div>
+<div class="p-space-sm bg-surface-container-low rounded border border-outline-variant space-y-1.5 font-body-sm text-body-sm leading-relaxed">
+<p class="font-medium text-on-surface">
+              “Is deadlock-freedom mathematically preserved under adaptive dimension-order routing fallback during east egress saturation?”
+            </p>
+<p class="text-secondary text-body-sm">
+              In simulation trace <span class="font-code-sm text-code-sm text-primary font-mono">SIM-402</span>, North port ingress of <span class="font-code-sm text-code-sm font-semibold">Router R_1_2</span> sustained heavy flit burst convergence under workload <span class="font-code-sm text-code-sm text-on-surface">ResNet50_Burst [w12]</span>, attaining 78.2% peak buffer utilization.
+            </p>
+<div class="p-1.5 bg-error-container/40 rounded border border-error/30 font-body-sm text-body-sm text-on-error-container flex items-start gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-error shrink-0 mt-[1px]">warning</span>
+<span class="text-body-sm">
+<strong>Critical Verification Axiom:</strong> Simulation absence of deadlock under 100M cycles does <em class="underline">NOT</em> prove mathematical freedom from deadlock or unreachable state space. Formal channel dependency acyclicity is mandatory.
+              </span>
+</div>
+</div>
+</div>
+<!-- Section 2: Why This Matters / Downstream Consequence -->
+<div class="space-y-1">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">gavel</span>
+<span>2. Downstream Risk &amp; Signoff Consequences</span>
+</div>
+<div class="p-space-sm bg-surface-container-low rounded border border-outline-variant space-y-1 font-body-sm text-body-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-error">cancel</span>
+<span class="font-headline-sm text-headline-sm text-error">Blocks: TSMC N5 Tapeout Signoff</span>
+</div>
+<p class="text-on-surface-variant">
+              If adaptive fallback allows cyclic channel dependencies between Virtual Channel 0 (<code class="font-code-sm text-code-sm">VC0</code>) and Virtual Channel 1 (<code class="font-code-sm text-code-sm">VC1</code>), a single backpressured read flit at <code class="font-code-sm text-code-sm font-mono">HBM_CTRL_0</code> can initiate an irrecoverable multi-cycle circular wait throughout Mesh rows 1 and 2.
+            </p>
+<div class="pt-1 text-secondary font-code-sm text-code-sm flex items-center justify-between">
+<span>RTL emission: Permitted with advisory</span>
+<span class="text-error font-semibold">Physical tapeout: HALTED</span>
+</div>
+</div>
+</div>
+<!-- Section 3: Dependent Artifacts & Target Requirements -->
+<div class="space-y-1">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">link</span>
+<span>3. Dependent Artifacts &amp; Traceability</span>
+</div>
+<div class="border border-outline-variant rounded divide-y divide-outline-variant font-code-sm text-code-sm">
+<!-- Linked Req -->
+<div class="p-1.5 flex items-center justify-between bg-surface-container-lowest">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary">rule</span>
+<span class="font-semibold text-on-surface">REQ-SAF-01</span>
+<span class="text-secondary">(Livelock/Deadlock Freedom)</span>
+</div>
+<span class="text-error font-medium">Unsatisfied</span>
+</div>
+<!-- Linked Req 2 -->
+<div class="p-1.5 flex items-center justify-between bg-surface-container-lowest">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">rule</span>
+<span class="font-semibold text-on-surface">REQ-LAT-04</span>
+<span class="text-secondary">(P99 Burst Tail Latency ≤ 24 cycles)</span>
+</div>
+<span class="text-primary font-medium">Conditional</span>
+</div>
+<!-- Linked Object -->
+<div class="p-1.5 flex items-center justify-between bg-surface-container-lowest">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">memory</span>
+<span class="text-on-surface">Design Node: <strong class="text-primary font-mono">R_1_2</strong></span>
+</div>
+<a class="text-primary hover:underline flex items-center gap-[2px]" href="#">Inspect <span class="material-symbols-outlined text-[12px]">open_in_new</span></a>
+</div>
+<!-- Linked Simulation -->
+<div class="p-1.5 flex items-center justify-between bg-surface-container-lowest">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">timeline</span>
+<span class="text-on-surface">Sim Trace: <strong class="font-mono">SIM-402</strong> (18.4% HOL Stall)</span>
+</div>
+<a class="text-primary hover:underline flex items-center gap-[2px]" href="#">View <span class="material-symbols-outlined text-[12px]">open_in_new</span></a>
+</div>
+</div>
+</div>
+<!-- Section 4: Resolution & Evidence Review Flow -->
+<div class="space-y-1">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">fact_check</span>
+<span>4. Required Evidence &amp; Resolution Actions</span>
+</div>
+<div class="p-space-sm bg-surface-container-low rounded border border-outline-variant space-y-space-sm">
+<div class="font-body-sm text-body-sm text-on-surface">
+<span class="font-semibold text-secondary uppercase font-label-md text-label-md block mb-1">Satisfying Criteria:</span>
+              Bounded Model Checking (BMC depth k≥64) or inductive Turn-Model graph proving acyclicity of channel dependency graph across all injection permutations.
+            </div>
+<!-- Action Selector: Option A -->
+<div class="p-2 bg-surface-container-lowest rounded border border-outline-variant space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">attach_file</span>
+<span>Option A: Link Formal Proof Artifact</span>
+</span>
+<span class="font-label-md text-label-md text-secondary">Preferred</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<select class="flex-1 h-6 px-1.5 font-code-sm text-code-sm bg-surface-container-low border border-outline-variant rounded text-on-surface">
+<option>Select from completed check runs...</option>
+<option>CHK-FV-042 [JasperGold k=32 - Inconclusive Engine Timeout]</option>
+<option>CHK-FV-049 [Srota-FV k=64 - Running in Job Queue SIM-403]</option>
+<option>Upload offline formal .proof archive...</option>
+</select>
+<button class="h-6 px-2.5 bg-primary text-on-primary rounded font-label-md text-label-md font-semibold hover:bg-primary-container">
+                  Link Artifact
+                </button>
+</div>
+</div>
+<!-- Action Selector: Option B -->
+<div class="p-2 bg-surface-container-lowest rounded border border-outline-variant space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]">flag</span>
+<span>Option B: Submit Engineering Waiver</span>
+</span>
+<span class="font-code-sm text-code-sm text-error">Requires Signoff Peer</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">
+                Waiving this obligation requires explicit documented proof that downstream traffic injectors are rate-limited to avoid saturation thresholds.
+              </p>
+<div class="pt-1 flex items-center justify-between">
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded font-label-md text-label-md text-on-surface">
+                  Initiate Waiver Request...
+                </button>
+<span class="material-symbols-outlined text-[15px] text-outline">help_outline</span>
+</div>
+</div>
+<!-- Disclaimer notice -->
+<div class="p-1.5 bg-surface-container rounded text-secondary font-code-sm text-code-sm">
+<em>Note:</em> Acknowledging an obligation does not resolve it. A waiver does not modify hardware or prove RTL compliance; it merely accepts downstream risk.
+            </div>
+</div>
+</div>
+<!-- Section 5: Provenance & Audit Trail -->
+<div class="space-y-1">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">history</span>
+<span>5. Provenance &amp; Automation Audit</span>
+</div>
+<div class="p-space-sm bg-surface-container-low rounded border border-outline-variant space-y-1 font-code-sm text-code-sm text-secondary">
+<div class="flex items-center justify-between">
+<span>Auto-generated by:</span>
+<span class="text-on-surface font-mono font-medium">Arch-Rule: R-DEADLOCK-04</span>
+</div>
+<div class="flex items-center justify-between">
+<span>Timestamp:</span>
+<span class="text-on-surface">2025-02-14 10:22:18 UTC</span>
+</div>
+<div class="flex items-center justify-between">
+<span>Git snapshot:</span>
+<span class="font-mono text-primary font-semibold">d7a4e9b (Locked)</span>
+</div>
+<div class="flex items-center justify-between">
+<span>Re-assessment trigger:</span>
+<span class="text-on-surface">Any changes to Crossbar Arbiter Verilog</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Inspector Footer Bar -->
+<div class="h-8 px-space-md bg-surface-container-low border-t border-outline-variant mt-auto flex items-center justify-between">
+<button class="font-code-sm text-code-sm text-secondary hover:text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span>Copy Obligation URI</span>
+</button>
+<div class="flex items-center gap-space-xs font-label-md text-label-md">
+<button class="h-6 px-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded text-on-surface">
+            Add Internal Note
+          </button>
+<button class="h-6 px-2.5 bg-primary text-on-primary rounded font-semibold hover:bg-primary-container">
+            Save Status
+          </button>
+</div>
+</div>
+</div>
+</div>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-7 bg-surface-container-high border-t border-outline-variant z-40 flex items-center justify-between px-space-md"><div class="flex items-center gap-space-xs font-label-md text-label-md"><button class="h-5 px-space-sm flex items-center gap-space-xs bg-surface-container-lowest text-on-surface border border-outline-variant rounded"><span class="material-symbols-outlined text-[13px] text-primary">terminal</span><span>Jobs &amp; Logs (1)</span></button><button class="h-5 px-space-sm flex items-center gap-space-xs bg-surface-container text-on-surface-variant hover:bg-surface-container-lowest rounded"><span class="material-symbols-outlined text-[13px] text-secondary">warning</span><span>Problems (0)</span></button><button class="h-5 px-space-sm flex items-center gap-space-xs bg-surface-container text-on-surface-variant hover:bg-surface-container-lowest rounded"><span class="material-symbols-outlined text-[13px] text-primary">checklist</span><span>Obligations (3 Pending)</span></button></div><div class="flex items-center gap-space-md font-code-sm text-code-sm text-secondary"><div class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>Sim Conv: 99.8%</span></div><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[13px]">speed</span><span>Cycle: 4,892,100</span></div><div class="flex items-center gap-space-xs"><span>Srota Engine v2.14.0</span></div></div></footer></body></html>

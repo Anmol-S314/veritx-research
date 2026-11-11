@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"on-surface":"#151c24","surface":"#f7f9ff","on-secondary":"#ffffff","surface-container":"#e8eef9","surface-container-high":"#e2e9f4","surface-container-highest":"#dce3ee","on-primary":"#ffffff","on-primary-fixed-variant":"#004b71","on-secondary-container":"#546770","background":"#f7f9ff","inverse-primary":"#8fcdff","on-tertiary-fixed-variant":"#3d4853","primary-fixed":"#cbe6ff","on-primary-fixed":"#001e30","tertiary-fixed-dim":"#bcc8d5","inverse-on-surface":"#eaf1fc","inverse-surface":"#2a3139","on-primary-container":"#d0e8ff","surface-bright":"#f7f9ff","error-container":"#ffdad6","on-tertiary-container":"#dae6f4","secondary-fixed":"#d2e6f1","on-background":"#151c24","outline":"#707880","primary":"#00537c","error":"#ba1a1a","surface-tint":"#006494","on-surface-variant":"#40484f","on-error":"#ffffff","primary-container":"#0f6c9e","outline-variant":"#c0c7d0","tertiary-container":"#5c6773","on-tertiary-fixed":"#121d27","on-secondary-fixed":"#0a1e26","surface-container-lowest":"#ffffff","on-secondary-fixed-variant":"#374952","primary-fixed-dim":"#8fcdff","on-error-container":"#93000a","secondary":"#4e616a","surface-container-low":"#eef4ff","on-tertiary":"#ffffff","secondary-container":"#d2e6f1","surface-variant":"#dce3ee","tertiary":"#444f5a","surface-dim":"#d4dae5","secondary-fixed-dim":"#b6c9d4","tertiary-fixed":"#d8e4f2"},borderRadius:{DEFAULT:"0.125rem",lg:"0.25rem",xl:"0.5rem",full:"0.75rem"},spacing:{"space-md":"0.75rem","space-sm":"0.5rem","space-xs":"0.25rem","space-lg":"1rem","space-xl":"1.5rem",margin:"0.5rem",gutter:"0.5rem"},fontFamily:{"code-md":["JetBrains Mono"],"body-sm":["Inter"],"headline-lg":["Inter"],"body-md":["Inter"],"label-md":["Inter"],"headline-sm":["Inter"],"code-table":["JetBrains Mono"],"code-sm":["JetBrains Mono"],"headline-md":["Inter"]},fontSize:{"code-md":["12px",{lineHeight:"16px",fontWeight:"400"}],"body-sm":["12px",{lineHeight:"16px",fontWeight:"400"}],"headline-lg":["20px",{lineHeight:"28px",letterSpacing:"-0.015em",fontWeight:"600"}],"body-md":["13px",{lineHeight:"18px",fontWeight:"400"}],"label-md":["11px",{lineHeight:"14px",letterSpacing:"0.02em",fontWeight:"600"}],"headline-sm":["14px",{lineHeight:"20px",letterSpacing:"-0.005em",fontWeight:"600"}],"code-table":["11px",{lineHeight:"14px",letterSpacing:"-0.02em",fontWeight:"500"}],"code-sm":["11px",{lineHeight:"14px",fontWeight:"400"}],"headline-md":["16px",{lineHeight:"24px",letterSpacing:"-0.01em",fontWeight:"600"}]}}}};</script></head><body class="bg-surface font-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-9 px-space-md flex items-center justify-between border-b border-outline-variant bg-surface-container-low"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[16px]">developer_board</span><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-bold">SROTA / VERITX</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm"><span class="text-on-surface font-semibold">Falcon8_NoC_Gen2</span><span class="text-secondary bg-surface-container-high px-1.5 py-0.5 rounded">rev: d7a4e9b-draft*</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant"><span class="material-symbols-outlined text-[13px] text-tertiary">schedule</span><span>CLK: 1.4 GHz</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface"><span class="w-1.5 h-1.5 rounded-full bg-error"></span>Jobs: 1 Stalled</span><span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>DRC Clean</span><span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface"><span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>Daemon Active</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs bg-surface-container-highest px-2 py-0.5 rounded"><span class="font-label-md text-label-md text-on-surface-variant">EDA Copilot (Offline)</span><span class="material-symbols-outlined text-secondary text-[16px]">toggle_off</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">person</span></div></div></div><div class="h-9 px-space-md flex items-center justify-between bg-surface-container-lowest"><nav class="flex items-center gap-space-xs" data-active-classes="bg-primary text-on-primary font-semibold"><a class="px-3 py-1 rounded text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="design" href="#">Design</a><a class="px-3 py-1 rounded text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-3 py-1 rounded text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-3 py-1 rounded text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="explore" href="#">Explore</a><a class="px-3 py-1 rounded text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="verify" href="#">Verify</a><a aria-current="page" class="px-3 py-1 rounded bg-primary text-on-primary font-semibold" data-path="deliver-generation-jobs" href="#">Deliver</a></nav><div class="flex items-center gap-space-sm font-label-md text-label-md"><span class="text-on-surface-variant uppercase tracking-wider">Sub-Workspace:</span><nav class="flex items-center gap-1 bg-surface-container-high p-0.5 rounded" data-active-classes="bg-secondary-container text-on-secondary-fixed font-semibold"><a class="px-2 py-0.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface" data-path="deliver-readiness" href="#">Readiness</a><a class="px-2 py-0.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface" data-path="deliver-output-configuration" href="#">Output Configuration</a><a aria-current="page" class="px-2 py-0.5 rounded bg-secondary-container text-on-secondary-fixed font-semibold" data-path="deliver-generation-jobs" href="#">Generation Jobs</a></nav></div></div></header><aside class="fixed left-0 top-18 bottom-6 w-72 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between"><div class="flex flex-col h-full overflow-hidden"><div class="h-7 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-low"><span class="font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">Deliver Navigation</span><span class="material-symbols-outlined text-[15px] text-tertiary">tune</span></div><div class="p-space-sm border-b border-outline-variant bg-surface-container-lowest"><div class="text-label-md font-label-md text-tertiary uppercase tracking-wider mb-space-xs">Target Profile Filter</div><div class="flex flex-col gap-1"><label class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface hover:bg-surface-container-low px-1.5 py-0.5 rounded"><input checked="" class="accent-primary" type="checkbox"/><span>TSMC N5 RTL Package</span></label><label class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface hover:bg-surface-container-low px-1.5 py-0.5 rounded"><input checked="" class="accent-primary" type="checkbox"/><span>FPGA Prototype Netlist</span></label><label class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface hover:bg-surface-container-low px-1.5 py-0.5 rounded"><input class="accent-primary" type="checkbox"/><span>Architecture IP-XACT Manifest</span></label></div></div><div class="h-7 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-low"><span class="font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">Job Selector</span><span class="font-code-sm text-code-sm text-tertiary">3 Profiles</span></div><nav class="flex-1 overflow-y-auto" data-active-classes="bg-secondary-container text-on-secondary-fixed border-l-2 border-primary"><div class="p-space-xs flex flex-col gap-0.5"><a aria-current="page" class="flex flex-col p-space-sm rounded bg-secondary-container text-on-secondary-fixed border-l-2 border-primary" data-path="deliver-generation-jobs" href="#"><div class="flex items-center justify-between font-code-sm text-code-sm"><span class="font-semibold">JOB-GEN-204</span><span class="text-error font-semibold">FAILED/PARTIAL</span></div><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">TSMC N5 RTL (Mesh 4x4 Interconnect)</div><div class="font-code-sm text-code-sm text-tertiary mt-1 flex justify-between"><span>Step: Synopsys DRC</span><span>14:02:18</span></div></a><a aria-current="page" class="flex flex-col p-space-sm rounded transition-colors bg-secondary-container text-on-secondary-fixed border-l-2 border-primary" data-path="deliver-generation-jobs" href="#"><div class="flex items-center justify-between font-code-sm text-code-sm"><span class="font-semibold">JOB-GEN-203</span><span class="text-primary font-semibold">COMPLETED</span></div><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">FPGA Vivado Emulation Netlist</div><div class="font-code-sm text-code-sm text-tertiary mt-1 flex justify-between"><span>Artifacts: 4.8 GB</span><span>12:45:02</span></div></a><a aria-current="page" class="flex flex-col p-space-sm rounded transition-colors bg-secondary-container text-on-secondary-fixed border-l-2 border-primary" data-path="deliver-generation-jobs" href="#"><div class="flex items-center justify-between font-code-sm text-code-sm"><span class="font-semibold">JOB-GEN-201</span><span class="text-outline font-semibold">CANCELLED</span></div><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Architecture IP-XACT Bundle</div><div class="font-code-sm text-code-sm text-tertiary mt-1 flex justify-between"><span>By: J. Mercer (Architect)</span><span>09:12:40</span></div></a></div></nav><div class="p-space-sm border-t border-outline-variant bg-surface-container-low"><div class="flex items-center justify-between font-label-md text-label-md text-on-surface-variant mb-1"><span>Active Pipeline Queue</span><span class="font-code-sm text-code-sm">1 Active / 4 Total</span></div><div class="w-full bg-surface-container-highest h-1.5 rounded overflow-hidden"><div class="bg-primary h-full w-2/3"></div></div></div></div></aside><div class="pl-72"><main class="relative pt-18 pb-6 bg-surface"><div class="flex flex-col w-full">
+<!-- Execution Header Banner -->
+<div class="bg-surface-container-low p-space-md flex flex-col gap-space-sm shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-error-container text-on-error-container font-code-sm text-code-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">error</span>
+          STAGE 4/6 PARTIAL FAILURE
+        </span>
+<div class="flex items-center gap-1 font-headline-md text-headline-md font-bold text-on-surface">
+<span>JOB-GEN-204</span>
+<span class="text-tertiary font-normal">/</span>
+<span class="text-primary-container font-medium">TSMC N5 Tapeout RTL Package v2.3</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface-variant">Illustrative Execution Sample</span>
+<button class="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px] text-secondary">compare_arrows</span>
+          Compare JOB-GEN-203
+        </button>
+<button class="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px] text-secondary">content_copy</span>
+          Clone Settings
+        </button>
+<button class="px-2.5 py-1 rounded bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[14px]">download</span>
+          Download Partial Tarball (.tar.gz, 48.2 MB)
+        </button>
+</div>
+</div>
+<!-- Metadata Grid & Diagnostic Callout -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-space-xs font-code-sm text-code-sm">
+<div class="p-space-xs rounded bg-surface-container-lowest flex flex-col justify-between">
+<div class="text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">lock</span>
+<span>Target Immutable Snapshot</span>
+</div>
+<div class="text-on-surface font-semibold truncate mt-0.5" title="Falcon8_NoC_Gen2 [rev: d7a4e9b]">Falcon8_NoC_Gen2 [d7a4e9b]</div>
+<div class="text-[10px] text-secondary truncate">SHA-256: d7a4e9b881f402c918e8..</div>
+</div>
+<div class="p-space-xs rounded bg-surface-container-lowest flex flex-col justify-between">
+<div class="text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">memory</span>
+<span>Engine Sandbox</span>
+</div>
+<div class="text-on-surface font-semibold truncate mt-0.5">Srota-GenCore v2.3.4 (PID: 49102)</div>
+<div class="text-[10px] text-secondary truncate">Linux 6.1.0-eda-rt · Dual Xeon 8480+</div>
+</div>
+<div class="p-space-xs rounded bg-surface-container-lowest flex flex-col justify-between">
+<div class="text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">timer</span>
+<span>Elapsed Runtime</span>
+</div>
+<div class="text-on-surface font-semibold mt-0.5">42.10s (Halted at 14:02:18 UTC)</div>
+<div class="text-[10px] text-error font-medium">Exit Code: 127 (ELAB_FAIL)</div>
+</div>
+<div class="p-space-xs rounded bg-surface-container-lowest flex flex-col justify-between">
+<div class="text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">inventory_2</span>
+<span>Artifact Quarantine</span>
+</div>
+<div class="text-on-surface font-semibold truncate mt-0.5">/build/out/job_204_partial/</div>
+<div class="text-[10px] text-secondary">14/22 SystemVerilog modules preserved</div>
+</div>
+</div>
+<!-- Alert Sub-banner -->
+<div class="p-space-xs rounded bg-error-container text-on-error-container flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-[18px] text-error shrink-0 mt-0.5">warning</span>
+<div class="font-body-sm text-body-sm">
+<span class="font-semibold text-error">Job execution terminated prematurely:</span> Failed during Radix-8 Synchronous FIFO Macro Elaboration. Emitted partial artifacts are strictly quarantined.
+        <span class="font-semibold underline ml-1">Output presence is NOT functional verification or physical signoff.</span>
+</div>
+</div>
+</div>
+<!-- Primary Workspace Content (Three Column Splitter) -->
+<div class="grid grid-cols-12 gap-space-sm p-space-sm">
+<!-- Center Left (7 Cols): Execution Stages & Console Excerpt -->
+<div class="col-span-12 xl:col-span-7 flex flex-col gap-space-sm">
+<!-- Sub-tabs Navigation -->
+<div class="bg-surface-container-lowest p-space-xs rounded flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-1" id="tab-controls">
+<button class="px-2.5 py-1 rounded bg-secondary-container text-on-secondary-fixed font-label-md text-label-md font-semibold transition-colors" id="btn-tab-stages" onclick="switchExecutionTab('stages')">
+            Execution Stages &amp; Timeline
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md transition-colors flex items-center gap-1" id="btn-tab-console" onclick="switchExecutionTab('console')">
+<span>Live Console Diagnostics</span>
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+</button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md transition-colors" id="btn-tab-envelope" onclick="switchExecutionTab('envelope')">
+            Qualification Envelope
+          </button>
+</div>
+<div class="flex items-center gap-2 font-code-sm text-code-sm text-secondary px-2">
+<span>Active Pipeline: 6 Stages</span>
+</div>
+</div>
+<!-- Tab Content Area -->
+<!-- View 1: Stages & Timeline -->
+<div class="flex flex-col gap-space-xs" id="view-stages">
+<!-- Stage 1 -->
+<div class="bg-surface-container-lowest p-space-sm rounded shadow-sm flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-primary flex items-center justify-center text-on-primary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">check</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-on-surface">Stage 1: Architecture Intent &amp; IP-XACT Validation</span>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1.5 py-0.5 rounded">1.24s</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Parsed interconnect schema against schema specification v2014. Validated 16 routers (<code class="font-code-sm bg-surface-container px-1 rounded">R_0_0</code> through <code class="font-code-sm bg-surface-container px-1 rounded">R_3_3</code>), 4 HBM3 channels, and 4 high-radix AXI5 crossbar bridges. Zero constraint deviations.
+            </p>
+</div>
+</div>
+<!-- Stage 2 -->
+<div class="bg-surface-container-lowest p-space-sm rounded shadow-sm flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-primary flex items-center justify-center text-on-primary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">check</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-on-surface">Stage 2: Topology Graph Elaboration &amp; Routing Logic</span>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1.5 py-0.5 rounded">4.82s</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Deterministic Dimension-Order XY Routing synthesized. Deadlock prevention matrix verified across 8 Virtual Channels per physical port with credit-based flow control.
+            </p>
+</div>
+</div>
+<!-- Stage 3 -->
+<div class="bg-surface-container-lowest p-space-sm rounded shadow-sm flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-primary flex items-center justify-center text-on-primary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">check</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-on-surface">Stage 3: Router Crossbar RTL Emission</span>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1.5 py-0.5 rounded">18.40s</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Emitted 16 SystemVerilog router modules (<code class="font-code-sm bg-surface-container px-1 rounded">srota_router_4x4_mesh_*.sv</code>). Total 42,108 lines of synthesizable RTL emitted with full lint compliance checks.
+            </p>
+</div>
+</div>
+<!-- Stage 4: FAILED -->
+<div class="bg-surface-container-lowest p-space-sm rounded shadow-sm flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-error flex items-center justify-center text-on-error shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">close</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-error">Stage 4: Asynchronous FIFO &amp; Buffer Macro Wrapping</span>
+<span class="font-code-sm text-code-sm text-error bg-error-container px-1.5 py-0.5 rounded font-semibold">HALTED AT 42.10s</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              ERROR: Target foundry macro <code class="font-code-sm text-error bg-error-container px-1 rounded">FIFO_SYNC_R8_256B</code> not found in mapped foundry cell profile TSMC-N5-SC12. Missing LEF/LIB macro wrapper or behavioral replacement switch in output config.
+            </p>
+<div class="mt-space-xs p-space-xs rounded bg-surface-container-high flex items-center justify-between">
+<span class="font-code-sm text-code-sm text-on-surface-variant">Diagnostics: Reference obligation <span class="text-primary font-semibold underline">V-OBL-109</span></span>
+<button class="text-primary font-label-md text-label-md hover:underline flex items-center gap-0.5" onclick="switchExecutionTab('console')">
+                Inspect Raw Diagnostic <span class="material-symbols-outlined text-[13px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Stage 5: BLOCKED -->
+<div class="bg-surface-container-low p-space-sm rounded shadow-sm opacity-60 flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-surface-container-highest flex items-center justify-center text-secondary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">block</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-on-surface-variant">Stage 5: Testbench Collateral &amp; Assertion Generation</span>
+<span class="font-code-sm text-code-sm text-secondary">SKIPPED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Execution skipped due to upstream Stage 4 macro binding failure. SVA interface assertion bindings blocked.
+            </p>
+</div>
+</div>
+<!-- Stage 6: BLOCKED -->
+<div class="bg-surface-container-low p-space-sm rounded shadow-sm opacity-60 flex items-start gap-space-sm">
+<div class="w-6 h-6 rounded bg-surface-container-highest flex items-center justify-center text-secondary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[15px]">block</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm font-semibold text-on-surface-variant">Stage 6: Signoff Constraints &amp; Package Manifest Packing</span>
+<span class="font-code-sm text-code-sm text-secondary">SKIPPED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Synthesis timing constraints (<code class="font-code-sm">.sdc</code>) and top-level compilation manifest generation aborted.
+            </p>
+</div>
+</div>
+</div>
+<!-- View 2: Live Console (Hidden initially or toggled) -->
+<div class="hidden flex flex-col rounded shadow-sm overflow-hidden bg-inverse-surface text-inverse-on-surface font-code-sm text-code-sm" id="view-console">
+<div class="bg-surface-container-highest/20 px-space-sm py-1.5 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-error inline-block"></span>
+<span class="text-inverse-on-surface font-semibold text-label-md">JOB-GEN-204 Console Output (/build/out/job_204.log)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="text-tertiary-fixed-dim text-[10px]">Filter: [STDERR/ERR]</span>
+<button class="px-1.5 py-0.5 rounded bg-surface-container-highest/30 text-[10px] text-inverse-on-surface hover:bg-surface-container-highest/50">Wrap Lines</button>
+<button class="px-1.5 py-0.5 rounded bg-surface-container-highest/30 text-[10px] text-inverse-on-surface hover:bg-surface-container-highest/50">Copy All</button>
+</div>
+</div>
+<div class="p-space-sm space-y-1 overflow-x-auto max-h-[380px] overflow-y-auto leading-relaxed">
+<div class="text-secondary-fixed-dim">[14:01:36.002] INF: Srota-GenCore engine initialized on host 'srota-eda-grid-04'.</div>
+<div class="text-secondary-fixed-dim">[14:01:36.140] INF: Lock acquired on immutable snapshot 'Falcon8_NoC_Gen2@d7a4e9b'.</div>
+<div class="text-secondary-fixed-dim">[14:01:37.380] INF: STAGE 1 OK: IP-XACT component integrity check passed. 24 sub-blocks verified.</div>
+<div class="text-secondary-fixed-dim">[14:01:42.202] INF: STAGE 2 OK: 4x4 mesh crossbar interconnect topology elaborated.</div>
+<div class="text-secondary-fixed-dim">[14:02:00.602] INF: STAGE 3 OK: Emitted srota_router_4x4_mesh_0_0.sv .. srota_router_4x4_mesh_3_3.sv.</div>
+<div class="text-secondary-fixed-dim">[14:02:00.610] INF: STAGE 4 BEGIN: Elaborating hard IP &amp; buffer macro wrappers...</div>
+<div class="text-secondary-fixed-dim">[14:02:15.110] WRN: Cell library TSMC-N5-SC12 provides no behavioral model for synchronous FIFO radix &gt; 4.</div>
+<div class="p-1.5 rounded bg-error/20 text-error-container mt-1 mb-1">
+<div class="font-bold text-error">[14:02:18.014] FATAL ERROR [E-MACRO-404]: Undefined macro cell 'FIFO_SYNC_R8_256B' required by Router R_1_2 North Ingress wrapper.</div>
+<div class="text-[11px] text-inverse-on-surface mt-0.5 font-sans">
+              &gt;&gt; Cause: Selected profile target 'TSMC N5 Tapeout RTL' mandates foundry macro cell mapping.<br/>
+              &gt;&gt; Action Required: Provide foundry LEF/LIB in `/pdk/tsmc_n5/macros/` OR enable behavioral soft-macro fallback in Output Configuration.<br/>
+              &gt;&gt; Reference Obligation: [V-OBL-109] Missing foundry cell wrapper for Radix-8 FIFO.
+            </div>
+</div>
+<div class="text-error font-semibold">[14:02:18.020] ABORT: Macro elaboration engine failed. 1 error, 1 warning. Exit Code 127.</div>
+<div class="text-secondary-fixed-dim">[14:02:18.025] INF: Quarantining 14 partial SystemVerilog artifacts in /build/out/job_204_partial/.</div>
+<div class="text-secondary-fixed-dim">[14:02:18.028] INF: Retaining execution log and stack trace. Execution halted.</div>
+</div>
+</div>
+<!-- View 3: Qualification Envelope -->
+<div class="hidden bg-surface-container-lowest p-space-md rounded shadow-sm space-y-space-sm" id="view-envelope">
+<div class="flex items-center gap-space-xs text-primary">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+<span class="font-headline-sm text-headline-sm font-bold">Qualification Envelope &amp; Non-Verification Axiom</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          In strict compliance with mission-critical silicon verification guidelines, emitted RTL does not imply timing, functional, or CDC closure:
+        </p>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-xs text-code-sm font-code-sm">
+<div class="p-space-xs rounded bg-surface-container-low flex flex-col gap-1">
+<span class="text-tertiary">Functional Simulation Signoff</span>
+<span class="text-error font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">cancel</span> NOT ATTAINED (Aborted upstream)
+            </span>
+</div>
+<div class="p-space-xs rounded bg-surface-container-low flex flex-col gap-1">
+<span class="text-tertiary">Clock Domain Crossing (CDC) Signoff</span>
+<span class="text-secondary font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">help</span> UNCHECKED (Missing FIFO Macro)
+            </span>
+</div>
+<div class="p-space-xs rounded bg-surface-container-low flex flex-col gap-1">
+<span class="text-tertiary">Static Timing Analysis (STA 1.4 GHz)</span>
+<span class="text-error font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">cancel</span> SDC CONSTRAINTS UNGENERATED
+            </span>
+</div>
+<div class="p-space-xs rounded bg-surface-container-low flex flex-col gap-1">
+<span class="text-tertiary">Design Rule Checking (DRC)</span>
+<span class="text-primary font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> ARCHITECTURE DRC PASSED
+            </span>
+</div>
+</div>
+</div>
+<!-- Quick Metrics Strip -->
+<div class="grid grid-cols-3 gap-space-xs">
+<div class="bg-surface-container-lowest p-space-xs rounded shadow-sm">
+<div class="font-code-sm text-code-sm text-tertiary">Modules Emitted</div>
+<div class="font-headline-md text-headline-md font-bold text-on-surface mt-0.5">14 <span class="text-secondary text-body-sm font-normal">/ 22 total</span></div>
+</div>
+<div class="bg-surface-container-lowest p-space-xs rounded shadow-sm">
+<div class="font-code-sm text-code-sm text-tertiary">RTL Size On Disk</div>
+<div class="font-headline-md text-headline-md font-bold text-on-surface mt-0.5">2.7 <span class="text-secondary text-body-sm font-normal">MB (Partial)</span></div>
+</div>
+<div class="bg-surface-container-lowest p-space-xs rounded shadow-sm">
+<div class="font-code-sm text-code-sm text-tertiary">Active Warnings</div>
+<div class="font-headline-md text-headline-md font-bold text-error mt-0.5">1 Blocker <span class="text-secondary text-body-sm font-normal">/ 1 Warn</span></div>
+</div>
+</div>
+</div>
+<!-- Center Right (5 Cols): Generated Artifacts Manifest & Remediation Inspector -->
+<div class="col-span-12 xl:col-span-5 flex flex-col gap-space-sm">
+<!-- Artifacts Manifest Card -->
+<div class="bg-surface-container-lowest rounded shadow-sm overflow-hidden flex flex-col">
+<div class="bg-surface-container-high px-space-sm py-1.5 flex items-center justify-between">
+<div class="flex items-center gap-1.5 font-headline-sm text-headline-sm font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-primary">inventory</span>
+<span>Partial Manifest (14 Files)</span>
+</div>
+<span class="font-code-sm text-code-sm text-error bg-error-container px-1.5 py-0.2 rounded font-semibold">NOT FOR TAPEOUT</span>
+</div>
+<div class="p-space-xs bg-surface-container-low text-[11px] text-secondary font-code-sm flex items-center justify-between">
+<span>Target Path: /build/out/job_204_partial/</span>
+<span>Preserved under quarantine</span>
+</div>
+<!-- File List Table -->
+<div class="divide-y divide-surface-container overflow-x-auto">
+<!-- File 1 -->
+<div class="p-space-xs flex items-center justify-between hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-primary">description</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-on-surface truncate">srota_top_falcon8.sv</div>
+<div class="text-[10px] text-secondary truncate">Valid Syntax · Incomplete Top Stitching</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-on-surface">384 KB</div>
+<span class="text-primary text-[10px]">SHA: 4a9f..</span>
+</div>
+</div>
+<!-- File 2 -->
+<div class="p-space-xs flex items-center justify-between hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-primary">folder_zip</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-on-surface truncate">srota_router_r00_r33.sv</div>
+<div class="text-[10px] text-secondary truncate">16 Modular Mesh Crossbars (Complete)</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-on-surface">1.8 MB</div>
+<span class="text-primary text-[10px]">16 Files</span>
+</div>
+</div>
+<!-- File 3 -->
+<div class="p-space-xs flex items-center justify-between hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-primary">alt_route</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-on-surface truncate">srota_axi_bridge_hbm.sv</div>
+<div class="text-[10px] text-secondary truncate">4 AXI5 to NoC Protocol Adapters</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-on-surface">512 KB</div>
+<span class="text-primary text-[10px]">4 Files</span>
+</div>
+</div>
+<!-- File 4 -->
+<div class="p-space-xs flex items-center justify-between hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-secondary">code_blocks</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-on-surface truncate">falcon8_mesh.ipxact.xml</div>
+<div class="text-[10px] text-secondary truncate">Schema v2014 Manifest (Stage 1 Verified)</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-on-surface">128 KB</div>
+<span class="text-secondary text-[10px]">Validated</span>
+</div>
+</div>
+<!-- File 5: FAILED -->
+<div class="p-space-xs flex items-center justify-between bg-error-container/20">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-error">error</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-error truncate">falcon8_pin_constraints.sdc</div>
+<div class="text-[10px] text-error font-medium truncate">STAGE 6 OBLIGATION UNMET (Missing)</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-error font-bold">0 KB</div>
+<span class="text-error text-[10px]">Failed</span>
+</div>
+</div>
+<!-- File 6 -->
+<div class="p-space-xs flex items-center justify-between hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-[15px] text-primary">terminal</span>
+<div class="truncate">
+<div class="font-code-sm text-code-sm font-semibold text-on-surface truncate">build_job_204.log</div>
+<div class="text-[10px] text-secondary truncate">Complete Stdout/Stderr Execution Trace</div>
+</div>
+</div>
+<div class="text-right shrink-0 font-code-sm text-code-sm">
+<div class="text-on-surface">4.2 MB</div>
+<span class="text-secondary text-[10px]">Diagnostic</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Diagnostic & Remediation Inspector Card -->
+<div class="bg-surface-container-lowest rounded shadow-sm overflow-hidden flex flex-col">
+<div class="bg-surface-container-high px-space-sm py-1.5 flex items-center justify-between">
+<div class="flex items-center gap-1.5 font-headline-sm text-headline-sm font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-error">assignment_late</span>
+<span>Remediation Inspector</span>
+</div>
+<span class="font-code-sm text-code-sm text-error font-semibold">BLOCKER</span>
+</div>
+<div class="p-space-sm space-y-space-sm">
+<div>
+<div class="font-label-md text-label-md uppercase text-secondary tracking-wider">Active Finding</div>
+<div class="font-headline-sm text-headline-sm font-semibold text-error mt-0.5">[E-MACRO-404] Missing Foundry Macro Definition</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+              Selected target <strong class="text-on-surface">TSMC N5</strong> requires dedicated Radix-8 256-bit synchronous FIFO primitives for ingress crossbars. Elaboration stalled on instance: <code class="font-code-sm text-on-surface bg-surface-container px-1 rounded">R_1_2.north_ingress_fifo</code>.
+            </div>
+</div>
+<!-- Remediation Actions -->
+<div class="space-y-space-xs">
+<div class="font-label-md text-label-md uppercase text-secondary tracking-wider">Recommended Remediation Pathways</div>
+<!-- Pathway A -->
+<div class="p-space-xs rounded bg-surface-container hover:bg-surface-container-high transition-colors flex items-start gap-space-xs cursor-pointer">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">folder_open</span>
+<div class="flex-1 min-w-0">
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center justify-between">
+<span>Pathway A: Import Foundry LEF/LIB</span>
+<span class="text-[10px] text-primary font-code-sm font-semibold">RECOMMENDED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                  Supply the missing <code class="font-code-sm">FIFO_SYNC_R8_256B.lib</code> cell definition in project PDK macro directory. Retains 1.4 GHz timing closure.
+                </p>
+</div>
+</div>
+<!-- Pathway B -->
+<div class="p-space-xs rounded bg-surface-container hover:bg-surface-container-high transition-colors flex items-start gap-space-xs cursor-pointer">
+<span class="material-symbols-outlined text-tertiary text-[18px] shrink-0 mt-0.5">tune</span>
+<div class="flex-1 min-w-0">
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center justify-between">
+<span>Pathway B: Fallback to Soft Behavioral FIFO</span>
+<span class="text-[10px] text-error font-code-sm font-semibold">FMAX IMPACT</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                  Switch output configuration to synthesize pure register array FIFOs. Gate area increases by ~14%; maximum operational frequency degrades to 1.15 GHz.
+                </p>
+</div>
+</div>
+<!-- Pathway C -->
+<div class="p-space-xs rounded bg-surface-container hover:bg-surface-container-high transition-colors flex items-start gap-space-xs cursor-pointer">
+<span class="material-symbols-outlined text-secondary text-[18px] shrink-0 mt-0.5">link</span>
+<div class="flex-1 min-w-0">
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center justify-between">
+<span>Pathway C: Resolve Obligation V-OBL-109</span>
+<span class="text-[10px] text-secondary font-code-sm">SIGN-OFF LINK</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                  Inspect unresolved verification debt in the Verify workspace to grant foundry exemption or route through fallback test bench.
+                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Workspace Drawer: Diagnostics & Active Engine Queue -->
+<div class="mx-space-sm mb-space-sm bg-surface-container-lowest rounded shadow-sm overflow-hidden">
+<div class="bg-surface-container-high px-space-md py-1 flex items-center justify-between">
+<div class="flex items-center gap-space-md font-label-md text-label-md">
+<span class="text-on-surface font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-error">flag</span>
+          Workspace Problems (1 Blocker, 0 Warnings)
+        </span>
+<span class="text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">pending_actions</span>
+          Concurrent Daemons (SIM-403 Active)
+        </span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary">
+<span>DRC Engine: Strict Tapeout Ruleset</span>
+</div>
+</div>
+<div class="p-space-xs px-space-md bg-surface-container-low flex items-center justify-between font-code-sm text-code-sm">
+<div class="flex items-center gap-space-sm">
+<span class="text-error font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+          [E-MACRO-404]
+        </span>
+<span class="text-on-surface">Stage 4 Macro wrapper unmapped: FIFO_SYNC_R8_256B (R_1_2 North Ingress)</span>
+</div>
+<div class="flex items-center gap-space-xs text-secondary">
+<span>File: srota_router_r12.sv:384</span>
+<button class="px-2 py-0.5 rounded bg-surface-container-highest hover:bg-surface-container text-on-surface text-[10px] font-semibold">Inspect Code</button>
+</div>
+</div>
+</div>
+<!-- Micro-interaction Script for Tab Switching -->
+<script>
+    function switchExecutionTab(tabId) {
+      const views = ['stages', 'console', 'envelope'];
+      views.forEach(v => {
+        const el = document.getElementById('view-' + v);
+        const btn = document.getElementById('btn-tab-' + v);
+        if (v === tabId) {
+          el.classList.remove('hidden');
+          btn.className = 'px-2.5 py-1 rounded bg-secondary-container text-on-secondary-fixed font-label-md text-label-md font-semibold transition-colors flex items-center gap-1';
+        } else {
+          el.classList.add('hidden');
+          btn.className = 'px-2.5 py-1 rounded hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md transition-colors flex items-center gap-1';
+        }
+      });
+    }
+  </script>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-highest border-t border-outline-variant z-50 flex items-center justify-between px-space-md font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary">sync</span><span>Cycle: 42,910,240</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-tertiary">analytics</span><span>Sim Convergence: 99.82%</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary-container">memory</span><span>Process: Vivado synth_1 [PID 38102]</span></div></div><div class="flex items-center gap-space-md"><span>Synthesis Memory: 6.4 GB RSS</span><div class="h-3 w-px bg-outline-variant"></div><span class="text-error font-medium">1 DRC Alert</span><div class="h-3 w-px bg-outline-variant"></div><span class="text-on-surface font-semibold">VERITX v2.14.0-r3</span></div></footer></body></html>

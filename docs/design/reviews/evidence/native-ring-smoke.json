@@ -1,0 +1,98 @@
+{
+  "claims": [
+    "All 4032 router/destination pairs are present in the producer's legal-choice union.",
+    "3968 deterministic pairs match the model's hop and native output port exactly.",
+    "64 diametral pairs are confined to their two legal hops (both covered by the CDG proof).",
+    "Every executed hop's VC half equals dateline_partition(injection router, destination).",
+    "No flit changes ring direction; transit input port is the opposite of the previous output port.",
+    "The recorded workload's trace contains no exact antipodal pair, so its 0 diametral executed rows are expected; the tie evidence is the union dump (64 diametral pairs) and the pinned-seed test differential."
+  ],
+  "compile": {
+    "certificate": "PASS",
+    "status": "COMPILED"
+  },
+  "deadlock_proof": {
+    "acyclic": true,
+    "edges": 248,
+    "expansion": "dateline_restricted_1d",
+    "method": "channel-vc-cdg/v2",
+    "nodes": 256,
+    "status": "PASS",
+    "tie_mirrors": 64,
+    "turn_crosses": 0
+  },
+  "design_hash": "55a97653f8c8538b9c5a8b9992a55486426b313f5badb2d059cce9acf807076c",
+  "evaluation": {
+    "executed": {
+      "diametral_rows": 0,
+      "endpoints": 64,
+      "flits": 24192,
+      "halves": [
+        23814,
+        378
+      ],
+      "rows": 24192
+    },
+    "metrics": {
+      "completion_cycles": 24225,
+      "delivered_packets": 24192,
+      "flits_accepted": 169344,
+      "flits_injected": 169344,
+      "packet_latency_avg": 27.0
+    },
+    "route_dump_sha256": "ad6c43a834ec01d3b0f9ac0a36076640d6e94a8ced2edc5c5f6467877bcca011",
+    "route_observation": "EXECUTED_ROUTE_OBSERVED",
+    "status": "EVALUATED",
+    "union": {
+      "deterministic_pairs": 3968,
+      "diametral_pairs": 64,
+      "endpoints": 64,
+      "pairs": 4032
+    }
+  },
+  "evidence_class": "MODEL_EXECUTION_NOT_HARDWARE_MEASUREMENT",
+  "fabric": {
+    "allowed_transitions": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "directed_channels": 128,
+    "routers": 64,
+    "routing_class": [
+      "RING_DATELINE"
+    ],
+    "terminal_seats": 64,
+    "vc_count": 2
+  },
+  "non_claims": [
+    "Not a hardware measurement or an energy claim.",
+    "Not a claim about odd-k rings, which are outside the certified domain.",
+    "Not a reuse of the square-torus DOR_TORUS_XY qualification.",
+    "Not a claim that this workload exercised the midpoint tie; a run only exercises the flows its trace contains."
+  ],
+  "preset": "ring_native64",
+  "producer": {
+    "binary_sha256": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+    "recipe_version": "booksim2-fork/v2",
+    "source_dirty": false,
+    "source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6"
+  },
+  "recorded_from": "/tmp/native-ring-evidence-2bnii9ij",
+  "rendered_config": {
+    "k": "64",
+    "n": "1",
+    "native_route_observation_file": "native_route_observations.txt",
+    "num_vcs": "2",
+    "routing_dump_choice_probes": "8",
+    "routing_dump_file": "routing.dump",
+    "routing_function": "dim_order",
+    "topology": "torus"
+  },
+  "type": "srota/NativeRingSmoke"
+}

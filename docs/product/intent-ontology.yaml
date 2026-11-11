@@ -1361,6 +1361,31 @@ nodes:
       blast_radius: "FabricArtifact"
       primitive: [1, 3]
       action: "name the power domain; all agents must share one today"
+  - id: agent.group_name
+    domain: SYSTEM
+    fields: [Agent.group_name]
+    real: R2
+    owner: CI
+    edit: TC-
+    kind: CMT
+    stored: Agent -> Endpoint.group_name -> AgentAttachmentArtifact
+    depends_on: [AgentAttachmentArtifact]
+    invalidates: B
+    validation: [L1n, L3d]
+    unsupported: null
+    visual: [1]
+    evidence: V
+    cite: model/compile_request_v4.py:96
+    plan:
+      surface: "Agents"
+      control: "text (optional; alphanumeric, hyphen, underscore)"
+      default: "null (unnamed group)"
+      validation_timing: "L1n + L3d"
+      refusal: "null"
+      change_class: "B"
+      blast_radius: "AgentAttachmentArtifact -> resolved_fabric_hash -> certificate"
+      primitive: [1, 6]
+      action: "name an agent group; if any group is named, every group must be named and the names must be unique"
 
   - id: agent.ip_identity
     domain: SYSTEM
@@ -1910,6 +1935,31 @@ nodes:
       blast_radius: "none"
       primitive: [4]
       action: "removed from workload science; belongs experiment/workflow"
+  - id: workload.traffic_profiles
+    domain: WORKLOAD
+    fields: [WorkloadV3.traffic_profiles]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: CMT
+    stored: request -> WavedOperationGraph (KIND_P2P TRANSFER), address-permission traffic
+    depends_on: [WavedOperationGraph, PhysicalTrafficArtifactV2]
+    invalidates: B
+    validation: [L1n, L3d]
+    unsupported: null
+    visual: [1]
+    evidence: V
+    cite: workload/intent_lowering.py:198
+    plan:
+      surface: "Communication"
+      control: "repeatable {src_rank, dst_rank, traffic_class, payload_bytes}"
+      default: "() (no declared profiles)"
+      validation_timing: "L1n + L3d"
+      refusal: "src == dst, duplicate (src_rank, dst_rank, traffic_class), or a rank outside tp*pp*ep*dp"
+      change_class: "MODEL_SEMANTIC"
+      blast_radius: "workload -> lowering -> traffic -> evaluation"
+      primitive: [1, 6]
+      action: "declare an explicit initiator->target transfer; a profile-only workload needs no collectives"
   - id: collective.kind
     domain: WORKLOAD
     fields: [CollectiveIntent.kind]

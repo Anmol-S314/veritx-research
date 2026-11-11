@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"error-container":"#ffdad6","on-primary":"#ffffff","primary-fixed-dim":"#8fcdff","surface-container-highest":"#dce3ee","surface-container-lowest":"#ffffff","on-secondary":"#ffffff","on-surface-variant":"#40484f","surface-bright":"#f7f9ff","on-background":"#151c24","surface-variant":"#dce3ee","on-error":"#ffffff","tertiary-container":"#5c6773","secondary":"#4e616a","surface-tint":"#006494","on-secondary-container":"#546770","on-error-container":"#93000a","on-tertiary":"#ffffff","surface-container-low":"#eef4ff","inverse-on-surface":"#eaf1fc","on-surface":"#151c24","surface":"#f7f9ff","inverse-surface":"#2a3139","on-secondary-fixed-variant":"#374952","on-tertiary-fixed-variant":"#3d4853","on-primary-fixed-variant":"#004b71","primary-container":"#0f6c9e","on-primary-container":"#d0e8ff","tertiary":"#444f5a","on-tertiary-container":"#dae6f4","outline-variant":"#c0c7d0","surface-container":"#e8eef9","on-secondary-fixed":"#0a1e26","secondary-fixed-dim":"#b6c9d4","on-primary-fixed":"#001e30","tertiary-fixed-dim":"#bcc8d5","background":"#f7f9ff","inverse-primary":"#8fcdff","primary-fixed":"#cbe6ff","tertiary-fixed":"#d8e4f2","error":"#ba1a1a","on-tertiary-fixed":"#121d27","outline":"#707880","primary":"#00537c","secondary-fixed":"#d2e6f1","surface-dim":"#d4dae5","secondary-container":"#d2e6f1","surface-container-high":"#e2e9f4"},borderRadius:{DEFAULT:"0.125rem",lg:"0.25rem",xl:"0.5rem",full:"0.75rem"},spacing:{"space-xs":"0.25rem",margin:"0.5rem","space-xl":"1.5rem","space-md":"0.75rem","space-sm":"0.5rem",gutter:"0.5rem","space-lg":"1rem"},fontFamily:{"headline-sm":["Inter"],"label-md":["Inter"],"headline-lg":["Inter"],"headline-md":["Inter"],"code-table":["JetBrains Mono"],"body-sm":["Inter"],"body-md":["Inter"],"code-sm":["JetBrains Mono"],"code-md":["JetBrains Mono"]},fontSize:{"headline-sm":["14px",{lineHeight:"20px",letterSpacing:"-0.005em",fontWeight:"600"}],"label-md":["11px",{lineHeight:"14px",letterSpacing:"0.02em",fontWeight:"600"}],"headline-lg":["20px",{lineHeight:"28px",letterSpacing:"-0.015em",fontWeight:"600"}],"headline-md":["16px",{lineHeight:"24px",letterSpacing:"-0.01em",fontWeight:"600"}],"code-table":["11px",{lineHeight:"14px",letterSpacing:"-0.02em",fontWeight:"500"}],"body-sm":["12px",{lineHeight:"16px",fontWeight:"400"}],"body-md":["13px",{lineHeight:"18px",fontWeight:"400"}],"code-sm":["11px",{lineHeight:"14px",fontWeight:"400"}],"code-md":["12px",{lineHeight:"16px",fontWeight:"400"}]}}}}</script></head><body class="bg-background font-body-sm text-body-sm text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 h-14 bg-surface-container-lowest z-40 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-8 px-space-md flex items-center justify-between bg-surface-container-low"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-bold">VERITX</span><span class="font-label-md text-label-md text-outline px-space-xs py-0 bg-surface-container-highest rounded">Srota Studio</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm text-on-surface">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-tertiary bg-surface-container px-space-xs rounded">d7a4e9b</span><span class="font-code-sm text-code-sm text-primary-container bg-secondary-fixed px-space-xs rounded">[rev: d7a4e9b-draft*]</span></div></div><div class="flex items-center gap-space-md"><button class="flex items-center gap-space-xs px-space-sm py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[16px] text-primary">auto_awesome</span><span class="font-label-md text-label-md">Copilot EDA</span><span class="font-code-sm text-code-sm text-outline">Ctrl+K</span></button><div class="h-3 w-px bg-outline-variant"></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="h-6 px-space-md flex items-center bg-surface-container-lowest"><nav class="flex items-center gap-space-xs h-full" data-active-classes="bg-primary-container text-on-primary-container font-headline-sm"><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="design" href="#">Design</a><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="workloads-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="explore" href="#">Explore</a><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="verify" href="#">Verify</a><a class="px-space-md py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="deliver" href="#">Deliver</a></nav></div></header><aside class="fixed left-0 top-14 bottom-8 w-64 bg-surface-container-lowest z-30 flex flex-col shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-7 px-space-md flex items-center justify-between bg-surface-container-low"><span class="font-label-md text-label-md text-tertiary uppercase tracking-wider">Explore Workspace</span><span class="material-symbols-outlined text-[16px] text-outline">tune</span></div><nav class="flex-1 px-space-xs py-space-sm flex flex-col gap-0.5" data-active-classes="bg-primary-container text-on-primary-container font-headline-sm"><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="exploration-briefs" href="#"><span class="material-symbols-outlined text-[16px]">description</span><span>Exploration Briefs</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="study-execution-budgets" href="#"><span class="material-symbols-outlined text-[16px]">play_circle</span><span>Study Execution &amp; Budgets</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="candidate-results-trade-offs" href="#"><span class="material-symbols-outlined text-[16px]">bar_chart</span><span>Candidate Results &amp; Trade-offs</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="candidate-comparison" href="#"><span class="material-symbols-outlined text-[16px]">compare_arrows</span><span>Candidate Comparison</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="candidate-adoption-branch" href="#"><span class="material-symbols-outlined text-[16px]">fork_right</span><span>Candidate Adoption / Branch</span></a></nav><div class="p-space-sm bg-surface-container-low"><div class="flex items-center justify-between text-outline mb-1"><span class="font-label-md text-label-md uppercase tracking-wider">Exploration Run</span><span class="font-code-sm text-code-sm text-primary">OPT-892</span></div><div class="w-full bg-surface-container-highest rounded h-1.5 overflow-hidden"><div class="bg-primary h-full w-3/4"></div></div><div class="flex justify-between items-center mt-1 font-code-sm text-code-sm text-tertiary"><span>75% Budget Used</span><span>18/24 PPA Converged</span></div></div></aside><div class="pl-64"><main class="relative pt-14 pb-8 w-full bg-background min-h-screen"><div class="flex flex-col w-full">
+<!-- Immutability & Illustrative Notice Bar -->
+<div class="w-full bg-surface-container-high px-space-md py-1 flex items-center justify-between text-on-surface">
+<div class="flex items-center gap-space-sm">
+<span class="flex items-center gap-1 font-label-md text-label-md bg-secondary-fixed text-on-secondary-fixed px-space-xs py-0.5 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">verified_user</span>
+        IMMUTABLE EVALUATION SNAPSHOT
+      </span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">
+        Historical candidate evaluations (SIM-402, SIM-415) remain locked to their captured baseline. Adoption creates an explicit branch or parameter patch; it never silently mutates active files.
+      </span>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-tertiary">
+<span class="bg-surface-container px-space-xs py-0.5 rounded text-on-surface font-medium">Design: Illustrative Data</span>
+<span class="text-outline">Engine: Srota-NoC v4.8b</span>
+</div>
+</div>
+<!-- Workspace Subheader / Context Bar -->
+<div class="w-full bg-surface-container-lowest px-space-md py-space-sm flex flex-col gap-space-xs shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Breadcrumb & Target Comparison -->
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center gap-1">
+<span class="font-label-md text-label-md text-tertiary uppercase">Explore</span>
+<span class="material-symbols-outlined text-[14px] text-outline">chevron_right</span>
+<span class="font-headline-sm text-headline-sm text-primary">Candidate Adoption / Branch</span>
+</div>
+<div class="h-3 w-px bg-surface-container-highest"></div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-0.5 rounded">
+<span class="font-label-md text-label-md text-tertiary">SOURCE:</span>
+<span class="font-code-md text-code-md text-primary font-semibold">CAND-042</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate max-w-xs">(2x2 Concentrated Mesh + Dedicated HBM Bypass)</span>
+<span class="font-code-sm text-code-sm bg-surface-container-lowest px-1 rounded text-outline font-mono">c8f42a1</span>
+</div>
+<span class="material-symbols-outlined text-[16px] text-primary">swap_horiz</span>
+<div class="flex items-center gap-space-xs bg-error-container text-on-error-container px-space-sm py-0.5 rounded">
+<span class="font-label-md text-label-md uppercase font-semibold">ACTIVE WORKING DRAFT:</span>
+<span class="font-code-md text-code-md font-bold font-mono">[rev: d7a4e9b-phys04*]</span>
+<span class="font-label-md text-label-md bg-on-error text-error px-1 rounded uppercase tracking-wider font-bold">Uncommitted Edits</span>
+</div>
+</div>
+<!-- Provenance Metatags -->
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-space-xs px-space-sm py-0.5 bg-surface-container-low rounded text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-primary">folder_open</span>
+<span>Study: STD-08 (Brief_rev_3.1)</span>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-0.5 bg-surface-container-low rounded text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-secondary">tune</span>
+<span>Workload: ResNet50_Burst [w12]</span>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-0.5 bg-secondary-fixed text-on-secondary-fixed rounded font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-primary">check_circle</span>
+<span>Reqs: 4/5 Met (1 Advisory)</span>
+</div>
+</div>
+</div>
+<!-- Mode & View Switcher -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-1 bg-surface-container p-0.5 rounded">
+<button class="px-space-md py-0.5 rounded bg-surface-container-lowest text-primary font-headline-sm text-headline-sm shadow-sm flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[14px]">view_column</span>
+<span>Side-by-Side Architectural Diff</span>
+</button>
+<button class="px-space-md py-0.5 rounded text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[14px]">account_tree</span>
+<span>Graph Topology &amp; Path Diff</span>
+</button>
+<button class="px-space-md py-0.5 rounded text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[14px]">rule</span>
+<span>Impact on Downstream &amp; Verification</span>
+</button>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md text-tertiary">BASELINE PINNED:</span>
+<span class="font-code-sm text-code-sm text-on-surface bg-surface-container px-space-xs rounded">d7a4e9b (Falcon8_NoC_Gen2)</span>
+</div>
+</div>
+</div>
+<!-- Central Workspace Grid -->
+<div class="w-full p-space-md grid grid-cols-12 gap-space-md">
+<!-- LEFT PANE: Candidate Source, Conflict State & Adoption Strategy (3 cols) -->
+<div class="col-span-12 xl:col-span-3 flex flex-col gap-space-md">
+<!-- Active Conflict Callout -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-start gap-space-xs text-error">
+<span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5">warning</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-error font-bold leading-tight">ACTIVE DRAFT CONFLICT</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant mt-0.5">2 uncommitted modifications detected</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant bg-surface-container-low p-space-xs rounded leading-relaxed">
+          The working draft <code class="font-code-sm text-code-sm font-semibold text-on-surface">d7a4e9b-phys04*</code> modified CST-PLC-08 router macro coordinates to (2550, 2550) µm. Direct replacement will destroy these floorplan adjustments.
+        </p>
+<div class="flex items-center justify-between text-tertiary font-code-sm text-code-sm bg-surface-container-high px-space-xs py-0.5 rounded">
+<span>Staged Diff Count:</span>
+<span class="text-error font-semibold">1 Spatial Conflict</span>
+</div>
+</div>
+<!-- Adoption Action Selection -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Adoption Strategy</span>
+<span class="font-label-md text-label-md text-tertiary uppercase">Target Protocol</span>
+</div>
+<div class="flex flex-col gap-space-sm" id="adoption-options">
+<!-- Option 1: Recommended Branching -->
+<label class="group relative flex flex-col p-space-sm rounded bg-surface-container-low hover:bg-surface-container cursor-pointer transition-colors shadow-sm">
+<div class="flex items-start gap-space-xs">
+<input checked="" class="mt-0.5 text-primary accent-primary" name="adoption_strategy" type="radio" value="branch"/>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-primary font-bold">Create New Branch</span>
+<span class="font-label-md text-label-md bg-primary-container text-on-primary-container px-1 rounded uppercase tracking-wider">Recommended</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Preserves active draft and baseline provenance. Boots clean branch for candidate exploration.</span>
+</div>
+</div>
+<!-- Branch Name Input -->
+<div class="mt-space-sm pl-5 flex flex-col gap-1">
+<span class="font-label-md text-label-md text-tertiary uppercase">Branch Target Identifier:</span>
+<div class="flex items-center bg-surface-container-lowest rounded px-2 py-1">
+<span class="font-code-sm text-code-sm text-tertiary select-none">refs/heads/</span>
+<input class="w-full bg-transparent font-code-sm text-code-sm text-on-surface font-semibold focus:outline-none ml-1" type="text" value="falcon8-cand042-concentrated"/>
+</div>
+</div>
+</label>
+<!-- Option 2: Selective Patch -->
+<label class="group relative flex flex-col p-space-sm rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start gap-space-xs">
+<input class="mt-0.5 text-primary accent-primary" name="adoption_strategy" type="radio" value="patch"/>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface font-medium">Apply Supported Parameter Diff</span>
+<span class="font-code-sm text-code-sm text-tertiary">7/8 clean</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Selectively applies non-conflicting routing changes into working draft. Leaves CST-PLC-08 untouched.</span>
+</div>
+</div>
+</label>
+<!-- Option 3: Destructive Overwrite -->
+<label class="group relative flex flex-col p-space-sm rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start gap-space-xs">
+<input class="mt-0.5 text-error accent-error" name="adoption_strategy" type="radio" value="replace"/>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-error font-medium">Replace Active Design</span>
+<span class="font-label-md text-label-md bg-error-container text-on-error-container px-1 rounded uppercase">Destructive</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Forces working draft to candidate snapshot <code class="font-mono text-code-sm font-semibold">c8f42a1</code>. Local draft commits discarded.</span>
+</div>
+</div>
+<!-- Confirmation Checkbox -->
+<div class="mt-space-sm pl-5 flex items-start gap-1.5 opacity-60 pointer-events-none" id="replace-ack">
+<input class="mt-0.5 accent-error" id="ack-check" type="checkbox"/>
+<label class="font-body-sm text-body-sm text-on-surface-variant leading-tight" for="ack-check">I acknowledge active simulation cache and uncommitted floorplan shifts will be erased.</label>
+</div>
+</label>
+<!-- Option 4: Read-Only Inspection -->
+<label class="group relative flex flex-col p-space-sm rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start gap-space-xs">
+<input class="mt-0.5 text-secondary accent-secondary" name="adoption_strategy" type="radio" value="view"/>
+<div class="flex flex-col flex-1">
+<span class="font-headline-sm text-headline-sm text-on-surface font-medium">Open in Read-Only Isolated View</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Inspect CAND-042 in Design canvas without modifying any working workspace files.</span>
+</div>
+</div>
+</label>
+</div>
+</div>
+<!-- Snapshot Provenance Card -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-xs font-code-sm text-code-sm text-tertiary">
+<span class="font-label-md text-label-md text-tertiary uppercase tracking-wider font-sans">Snapshot Metadata</span>
+<div class="flex justify-between py-0.5">
+<span>Captured Simulation:</span>
+<span class="text-on-surface font-mono font-medium">SIM-415 [Run 08]</span>
+</div>
+<div class="flex justify-between py-0.5">
+<span>Engine Seed / Mode:</span>
+<span class="text-on-surface font-mono">0x44AF93 / BookSim-Srota</span>
+</div>
+<div class="flex justify-between py-0.5">
+<span>Latency Reduction:</span>
+<span class="text-primary font-bold">-32.1% (Peak)</span>
+</div>
+<div class="flex justify-between py-0.5">
+<span>Area Overhead:</span>
+<span class="text-error font-medium">+14.2% (Macro delta)</span>
+</div>
+</div>
+</div>
+<!-- CENTER PANE: Synchronized Parameter & Architectural Diff Matrix (6 cols) -->
+<div class="col-span-12 xl:col-span-6 flex flex-col gap-space-md">
+<!-- Diff Matrix Card -->
+<div class="bg-surface-container-lowest rounded shadow-sm overflow-hidden flex flex-col">
+<!-- Diff Toolbar Header -->
+<div class="bg-surface-container-low px-space-md py-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">difference</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Architectural Object &amp; Parameter Diff</span>
+<span class="font-code-sm text-code-sm bg-surface-container-highest px-space-xs rounded text-on-surface-variant">8 Parameters Evaluated</span>
+</div>
+<div class="flex items-center gap-space-xs text-label-md font-label-md">
+<span class="flex items-center gap-0.5 text-on-surface-variant bg-surface-container-highest px-1 rounded">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Candidate Change
+            </span>
+<span class="flex items-center gap-0.5 text-error bg-error-container px-1 rounded">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span> Active Conflict
+            </span>
+</div>
+</div>
+<!-- Table View -->
+<div class="w-full overflow-x-auto">
+<table class="w-full text-left font-body-sm text-body-sm">
+<thead class="bg-surface-container font-label-md text-label-md text-tertiary uppercase select-none">
+<tr>
+<th class="py-1 px-space-sm">Architectural Object</th>
+<th class="py-1 px-space-sm">Active Baseline <span class="font-mono lowercase text-tertiary">(d7a4e9b)</span></th>
+<th class="py-1 px-space-sm bg-primary-fixed/30 text-on-primary-fixed font-bold">Candidate <span class="font-mono lowercase">(CAND-042: c8f42a1)</span></th>
+<th class="py-1 px-space-sm">Impact / Verification</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-high font-code-sm text-code-sm text-on-surface">
+<!-- Row 1: Topology -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">hub</span>
+<span>Topology Family</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-tertiary">4x4 Standard 2D Mesh (16 Routers)</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  2x2 Concentrated Mesh (4 Routers)
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="bg-surface-container px-1 py-0.5 rounded text-on-surface-variant">Macro count -75%</span>
+</td>
+</tr>
+<!-- Row 2: Router Radix -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">router</span>
+<span>Router Radix &amp; Ports</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-tertiary">5-Port (1 Local, 4 Mesh Links)</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  8-Port (4 Local Endpoints + 4 Mesh)
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="text-error font-medium">Crossbar complexity 4x</span>
+</td>
+</tr>
+<!-- Row 3: Link Width & Clock -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">speed</span>
+<span>Flit Width &amp; Frequency</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-tertiary">128-bit flit @ 1.4 GHz (22.4 GB/s)</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  256-bit flit @ 1.2 GHz (38.4 GB/s)
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="bg-secondary-fixed text-on-secondary-fixed px-1 py-0.5 rounded">+71% B/W per channel</span>
+</td>
+</tr>
+<!-- Row 4: Endpoints Attached -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">lan</span>
+<span>Endpoint Clustering</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-tertiary">16 EP (1:1 per router)</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  16 EP (Concentrated 4:1 per router)
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="text-primary font-medium">V-OBL-108..111 Fairness</span>
+</td>
+</tr>
+<!-- Row 5: HBM Access Latency -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">timelapse</span>
+<span>HBM Mean Latency</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-error font-medium">
+                  28.6 ns <span class="text-body-sm font-sans text-error-container bg-error px-1 rounded font-bold">FAIL REQ-04</span>
+</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  19.4 ns <span class="text-body-sm font-sans text-on-primary bg-primary px-1 rounded">MET REQ-04</span>
+</td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="bg-secondary-fixed text-on-secondary-fixed px-1 py-0.5 rounded">-32% Direct Bypass</span>
+</td>
+</tr>
+<!-- Row 6: Hop Count -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">alt_route</span>
+<span>Average Link Hops</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-tertiary">2.25 hops</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-bold text-primary">
+                  1.15 hops
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="text-on-surface-variant font-medium">Zero-hop local cross</span>
+</td>
+</tr>
+<!-- Row 7: Floorplan Fit (Conflict Row) -->
+<tr class="bg-error-container/30 hover:bg-error-container/50 transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1 text-error">
+<span class="material-symbols-outlined text-[14px]">grid_goldenratio</span>
+<span class="font-bold">Floorplan &amp; Keepouts</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-on-surface-variant">
+                  4800x4800 µm (500x500 macros)
+                </td>
+<td class="py-1.5 px-space-sm font-bold text-error">
+                  Macro shift: 650x650 µm keepouts
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="text-error font-bold bg-error-container px-1 py-0.5 rounded">CST-PLC-08 Conflict</span>
+</td>
+</tr>
+<!-- Row 8: RTL Eligibility -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-1.5 px-space-sm font-sans font-medium text-on-surface">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">terminal</span>
+<span>Downstream RTL Gen</span>
+</div>
+</td>
+<td class="py-1.5 px-space-sm text-primary font-medium">Production Qualified (v2.3)</td>
+<td class="py-1.5 px-space-sm bg-primary-fixed/20 font-medium text-on-surface">
+                  Model-Only (BookSim-Srota)
+                </td>
+<td class="py-1.5 px-space-sm font-sans text-body-sm">
+<span class="bg-surface-container-high text-tertiary px-1 py-0.5 rounded uppercase font-label-md text-label-md">Ineligible Signoff</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Compact SVG Graphic: Topology Shift Summary -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Topology Transformation Scheme</span>
+<span class="font-code-sm text-code-sm text-tertiary">4x4 Standard vs 2x2 Concentrated</span>
+</div>
+<div class="w-full bg-surface-container-low p-space-sm rounded flex items-center justify-center">
+<svg class="w-full h-28 text-on-surface select-none" fill="none" viewbox="0 0 600 130" xmlns="http://www.w3.org/2000/svg">
+<!-- Left: 4x4 Grid Abstract -->
+<g transform="translate(30, 15)">
+<text class="fill-current text-tertiary font-label-md text-[9px] uppercase tracking-wider" x="0" y="0">Baseline 4x4 (16 Nodes)</text>
+<!-- 4x4 Dots -->
+<g class="fill-current text-outline" transform="translate(0, 15)">
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="0" y="0"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="25" y="0"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="50" y="0"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="75" y="0"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="0" y="22"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="25" y="22"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="50" y="22"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="75" y="22"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="0" y="44"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="25" y="44"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="50" y="44"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="75" y="44"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="0" y="66"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="25" y="66"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="50" y="66"></rect>
+<rect class="fill-surface-container-highest" height="12" rx="2" width="12" x="75" y="66"></rect>
+</g>
+</g>
+<!-- Arrow Transition -->
+<g class="text-primary" transform="translate(180, 55)">
+<line stroke="currentColor" stroke-dasharray="3 3" stroke-width="2" x1="0" x2="60" y1="10" y2="10"></line>
+<polygon fill="currentColor" points="65,10 55,5 55,15"></polygon>
+<text class="fill-current text-primary font-code-sm text-[10px] font-bold" text-anchor="middle" x="32" y="0">Adopt Cluster</text>
+</g>
+<!-- Right: 2x2 Concentrated Mesh -->
+<g transform="translate(300, 15)">
+<text class="fill-current text-primary font-label-md text-[9px] uppercase tracking-wider font-bold" x="0" y="0">CAND-042: 2x2 Concentrated + Direct HBM Bypass</text>
+<g transform="translate(0, 15)">
+<!-- 4 Macro Routers -->
+<rect class="fill-primary text-on-primary" height="35" rx="4" width="45" x="0" y="5"></rect>
+<text class="fill-current text-on-primary font-code-sm text-[10px] font-bold" text-anchor="middle" x="22" y="26">R_0_0</text>
+<rect class="fill-primary text-on-primary" height="35" rx="4" width="45" x="90" y="5"></rect>
+<text class="fill-current text-on-primary font-code-sm text-[10px] font-bold" text-anchor="middle" x="112" y="26">R_0_1</text>
+<rect class="fill-primary text-on-primary" height="35" rx="4" width="45" x="0" y="55"></rect>
+<text class="fill-current text-on-primary font-code-sm text-[10px] font-bold" text-anchor="middle" x="22" y="76">R_1_0</text>
+<rect class="fill-primary text-on-primary" height="35" rx="4" width="45" x="90" y="55"></rect>
+<text class="fill-current text-on-primary font-code-sm text-[10px] font-bold" text-anchor="middle" x="112" y="76">R_1_1</text>
+<!-- Mesh Links -->
+<line class="text-primary" stroke="currentColor" stroke-width="3" x1="45" x2="90" y1="22" y2="22"></line>
+<line class="text-primary" stroke="currentColor" stroke-width="3" x1="45" x2="90" y1="72" y2="72"></line>
+<line class="text-primary" stroke="currentColor" stroke-width="3" x1="22" x2="22" y1="40" y2="55"></line>
+<line class="text-primary" stroke="currentColor" stroke-width="3" x1="112" x2="112" y1="40" y2="55"></line>
+<!-- Dedicated West HBM Bypass Link -->
+<path class="text-secondary" d="M 0 22 C -30 22 -30 72 0 72" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+<rect class="fill-secondary text-on-secondary" height="12" rx="2" width="26" x="-42" y="42"></rect>
+<text class="fill-current text-on-secondary font-code-sm text-[8px] font-bold" text-anchor="middle" x="-29" y="51">HBM</text>
+</g>
+</g>
+</svg>
+</div>
+</div>
+</div>
+<!-- RIGHT PANE: Downstream Impact, Verification Obligations & Pre-flight Execution (3 cols) -->
+<div class="col-span-12 xl:col-span-3 flex flex-col gap-space-md">
+<!-- Downstream Qualification Card -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Downstream Impact</span>
+<span class="font-label-md text-label-md bg-surface-container-high px-1 rounded text-on-surface-variant uppercase font-mono">Pre-flight</span>
+</div>
+<!-- RTL Ineligibility Badge -->
+<div class="bg-surface-container-low p-space-sm rounded flex flex-col gap-1">
+<div class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[16px]">info</span>
+<span class="font-headline-sm text-headline-sm font-semibold">RTL Readiness: MODEL-ONLY</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Candidate uses a 256-bit radix-8 concentrated router. Srota RTL Generator v2.3 does not possess an approved ASIC cell template for this radix.
+          </p>
+<span class="font-label-md text-label-md text-tertiary">ACTION: Adopting will place branch in Architectural Sim Mode.</span>
+</div>
+<!-- Verification Obligations Counter -->
+<div class="flex flex-col gap-1 pt-1">
+<div class="flex justify-between items-center font-code-sm text-code-sm">
+<span class="text-tertiary font-sans">New Verification Obligations:</span>
+<span class="font-bold text-on-surface bg-surface-container px-space-xs rounded">4 New Obligations</span>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">check_box_outline_blank</span>
+<span class="truncate">V-OBL-108: Concentrated Port 0-3 Arb Fairness</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">check_box_outline_blank</span>
+<span class="truncate">V-OBL-109: HBM West Link Buffer Credit Starvation</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">check_box_outline_blank</span>
+<span class="truncate">V-OBL-110: 256-bit Flit Serialization Integrity</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">check_box_outline_blank</span>
+<span class="truncate">V-OBL-111: Radix-8 Crossbar Deadlock Avoidance</span>
+</div>
+</div>
+</div>
+<!-- Simulation Cache Note -->
+<div class="flex items-start gap-1 text-tertiary bg-surface-container p-space-xs rounded font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[15px] shrink-0 mt-0.5">history</span>
+<span>14 baseline simulation runs (including SIM-402) will be marked Historical relative to this branch.</span>
+</div>
+</div>
+<!-- Adoption Control Box -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col gap-space-sm">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Execute Adoption</span>
+<button class="w-full py-2 px-space-md bg-primary-container hover:bg-primary text-on-primary rounded font-headline-sm text-headline-sm font-semibold flex items-center justify-center gap-space-xs transition-colors shadow-sm" id="btn-branch-adopt" type="button">
+<span class="material-symbols-outlined text-[18px]">fork_right</span>
+<span>Create Branch &amp; Switch Context</span>
+</button>
+<button class="w-full py-1.5 px-space-md bg-surface-container hover:bg-surface-container-high text-on-surface rounded font-body-sm text-body-sm font-medium flex items-center justify-center gap-space-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-tertiary">file_download</span>
+<span>Export Architectural Intent (.json / .def)</span>
+</button>
+<button class="w-full py-1 px-space-md text-tertiary hover:text-on-surface font-body-sm text-body-sm flex items-center justify-center gap-space-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">arrow_back</span>
+<span>Dismiss / Return to Trade-off Matrix</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Bottom Engineering Drawer & Problems Tray -->
+<div class="w-full bg-surface-container-lowest shadow-[0_-1px_6px_rgba(0,0,0,0.04)] flex flex-col">
+<!-- Tray Header / Tabs -->
+<div class="h-7 bg-surface-container px-space-md flex items-center justify-between text-on-surface select-none">
+<div class="flex items-center gap-space-md h-full">
+<!-- Tab 1: Problems (Active) -->
+<button class="h-full px-space-sm bg-surface-container-lowest text-primary font-headline-sm text-headline-sm flex items-center gap-1 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[14px] text-error">error</span>
+<span>Problems</span>
+<span class="bg-error-container text-on-error-container font-code-sm text-code-sm px-1 rounded-full font-bold">2</span>
+</button>
+<!-- Tab 2: Verification Obligations -->
+<button class="h-full px-space-sm text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px] text-tertiary">checklist</span>
+<span>Verification Obligations</span>
+<span class="bg-surface-container-highest font-code-sm text-code-sm px-1 rounded-full text-on-surface">4</span>
+</button>
+<!-- Tab 3: Background Jobs -->
+<button class="h-full px-space-sm text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary animate-spin">sync</span>
+<span>Background Jobs</span>
+<span class="font-code-sm text-code-sm text-primary font-medium">[SIM-403: 42%]</span>
+</button>
+<!-- Tab 4: Simulation Logs -->
+<button class="h-full px-space-sm text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px] text-outline">terminal</span>
+<span>Adoption Logs</span>
+</button>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-tertiary">
+<span>Workspace Isolation: ENFORCED</span>
+<button class="hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Tray Content Pane -->
+<div class="p-space-sm bg-surface-container-low max-h-36 overflow-y-auto font-code-sm text-code-sm flex flex-col gap-1">
+<div class="flex items-center justify-between p-space-xs bg-surface-container-lowest rounded shadow-xs">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[15px] text-error">cancel</span>
+<span class="font-bold text-error">[CONFLICT-DRAFT-01]</span>
+<span class="text-on-surface">CST-PLC-08 physical placement in active draft conflicts with CAND-042 router grid.</span>
+</div>
+<span class="bg-secondary-fixed text-on-secondary-fixed px-space-xs rounded font-label-md text-label-md uppercase">Action: Branching Recommended</span>
+</div>
+<div class="flex items-center justify-between p-space-xs bg-surface-container-lowest rounded shadow-xs">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[15px] text-primary">info</span>
+<span class="font-bold text-primary">[RTL-GEN-QUAL-04]</span>
+<span class="text-on-surface">No ASIC RTL generation template registered for Radix-8 256-bit Router in current PDK.</span>
+</div>
+<span class="bg-surface-container-highest text-tertiary px-space-xs rounded font-label-md text-label-md uppercase">Model-Only Mode</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Dynamic handling of adoption strategy selections
+  const strategyRadios = document.querySelectorAll('input[name="adoption_strategy"]');
+  const replaceAck = document.getElementById('replace-ack');
+  const btnBranchAdopt = document.getElementById('btn-branch-adopt');
+
+  strategyRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      if (e.target.value === 'replace') {
+        replaceAck.classList.remove('opacity-60', 'pointer-events-none');
+        btnBranchAdopt.innerHTML = '<span class="material-symbols-outlined text-[18px]">warning</span><span>Overwrite Active Draft</span>';
+        btnBranchAdopt.classList.remove('bg-primary-container', 'hover:bg-primary');
+        btnBranchAdopt.classList.add('bg-error', 'hover:bg-on-error-container', 'text-on-error');
+      } else if (e.target.value === 'patch') {
+        replaceAck.classList.add('opacity-60', 'pointer-events-none');
+        btnBranchAdopt.innerHTML = '<span class="material-symbols-outlined text-[18px]">build</span><span>Apply 7 Clean Patches to Draft</span>';
+        btnBranchAdopt.classList.remove('bg-error', 'hover:bg-on-error-container', 'text-on-error');
+        btnBranchAdopt.classList.add('bg-primary-container', 'hover:bg-primary', 'text-on-primary');
+      } else if (e.target.value === 'view') {
+        replaceAck.classList.add('opacity-60', 'pointer-events-none');
+        btnBranchAdopt.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility</span><span>Inspect CAND-042 in Design Canvas</span>';
+        btnBranchAdopt.classList.remove('bg-error', 'hover:bg-on-error-container', 'text-on-error');
+        btnBranchAdopt.classList.add('bg-primary-container', 'hover:bg-primary', 'text-on-primary');
+      } else {
+        replaceAck.classList.add('opacity-60', 'pointer-events-none');
+        btnBranchAdopt.innerHTML = '<span class="material-symbols-outlined text-[18px]">fork_right</span><span>Create Branch & Switch Context</span>';
+        btnBranchAdopt.classList.remove('bg-error', 'hover:bg-on-error-container', 'text-on-error');
+        btnBranchAdopt.classList.add('bg-primary-container', 'hover:bg-primary', 'text-on-primary');
+      }
+    });
+  });
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-8 bg-surface-container-low z-40 flex items-center justify-between px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md h-full"><div class="flex items-center gap-space-xs px-space-sm py-0.5 rounded bg-surface-container-lowest font-code-sm text-code-sm text-on-surface"><span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span><span>SIM-403: Running Mesh Latency [Cycle 142,000]</span></div><div class="h-4 w-px bg-outline-variant"></div><nav class="flex items-center gap-space-md" data-active-classes="text-primary font-headline-sm"><a class="flex items-center gap-space-xs text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="drawer-problems" href="#"><span class="material-symbols-outlined text-[15px] text-error">error</span><span>Problems</span><span class="bg-error-container text-on-error-container font-code-sm text-code-sm px-space-xs rounded-full">3</span></a><a class="flex items-center gap-space-xs text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="drawer-verification" href="#"><span class="material-symbols-outlined text-[15px] text-tertiary">verified</span><span>Verification Obligations</span><span class="bg-surface-container text-on-surface-variant font-code-sm text-code-sm px-space-xs rounded-full">12/12</span></a><a class="flex items-center gap-space-xs text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-colors" data-path="drawer-logs" href="#"><span class="material-symbols-outlined text-[15px] text-outline">terminal</span><span>Simulation Logs</span></a></nav></div><div class="flex items-center gap-space-lg font-code-sm text-code-sm text-tertiary"><span>Mesh Radix: 8x8</span><span>Flit Width: 256b</span><span>Clock: 1.8GHz Nominal</span><span class="text-primary font-bold">DRC: CLEAN</span></div></footer></body></html>

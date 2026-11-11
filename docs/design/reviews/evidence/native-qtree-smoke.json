@@ -1,0 +1,38 @@
+{
+  "preset": "qtree_native64",
+  "design_hash": "bc70eb3f1fe79c65b330532b2a7b681337ca5225ca10b39253f691f66c6712b7",
+  "routers": 21,
+  "channels": 40,
+  "terminals": 64,
+  "routing_class": {
+    "id": "QTREE_NCA",
+    "algorithm": "nearest_common_ancestor",
+    "algorithm_version": 1,
+    "parameters": {
+      "radix": 4,
+      "router_levels": 3,
+      "terminal_scope": "leaf_only"
+    }
+  },
+  "status": "EVALUATED",
+  "evidence_id": "sha256:69d8290c50bdb97a2d762e712ebab8428f597f57a48738806323b3b863cee469",
+  "realization_digest": "sha256:cbd3398215d1784e9d1f52adff9a94cd062764a33d8a77c6925b8d186a211f6a",
+  "metrics": {
+    "loaded_trace_packets": 24192,
+    "injected_trace_packets": 24192,
+    "completion_cycles": 24240,
+    "sample_window_cycles": 25210,
+    "packet_latency_avg": 25.125,
+    "flit_latency_avg": 11.8393,
+    "p50": 24.0,
+    "p95": 39.0,
+    "p99": 49.0,
+    "honest_latency": 25.125,
+    "pkt_count": 24192,
+    "delivered_packets": 24192,
+    "flits_injected": 169344,
+    "flits_accepted": 169344
+  },
+  "local_evidence_directory": "/tmp/qtree-native-qualified-n7he28ut",
+  "scope": "Native QTree NCA, exact 21-router/64-leaf-terminal law; single class and derived VC. All 1344 native router/terminal hops and output ports authenticated; not hardware calibrated; not a relabel of historical four-VC research runs."
+}

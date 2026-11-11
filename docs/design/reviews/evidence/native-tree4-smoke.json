@@ -1,0 +1,87 @@
+{
+  "_comment": "Native Tree4 product execution through the authenticated BookSim producer. MODEL EXECUTION, NOT A HARDWARE MEASUREMENT.",
+  "kind": "srota/NativeTree4Smoke",
+  "claim_class": "MODEL_EXECUTION_NOT_HARDWARE_MEASUREMENT",
+  "preset": "tree4_native64",
+  "profile_id": "CERTIFIED_BOOKSIM_TREE4_NCA_V1",
+  "lowerer_version": null,
+  "route_observation": "EXECUTED_ROUTE_OBSERVED",
+  "route_dump_sha256": "25ad126f24b9c3cbe958053efaf2ae52c5fd137ba547736c14c3fab9f1d1386d",
+  "metrics": {
+    "flits_injected": 169344,
+    "flits_accepted": 169344,
+    "delivered_packets": 24192,
+    "pkt_count": 24192,
+    "packet_latency_avg": 25.125,
+    "flit_latency_avg": 11.8393,
+    "honest_latency": 25.125,
+    "p50": 24.0,
+    "p95": 39.0,
+    "p99": 49.0,
+    "completion_cycles": 24240,
+    "simulation_unstable": false
+  },
+  "tree4_route_union": {
+    "choice_pairs": 1600,
+    "choice_probes": 64,
+    "deterministic_pairs": 192,
+    "pairs": 1792,
+    "routers": 28,
+    "terminals": 64
+  },
+  "tree4_route_computations": {
+    "ejections": 24192,
+    "flits": 24192,
+    "rows": 39312,
+    "terminals": 64,
+    "vc_range": [
+      0,
+      0
+    ]
+  },
+  "construction": {
+    "routers": 28,
+    "directed_channels": 128,
+    "terminals": 64,
+    "levels": {
+      "roots": 4,
+      "middles": 8,
+      "leaves": 16
+    },
+    "seats_per_leaf": 4,
+    "seats_on_transit_routers": 0,
+    "routing_class": "TREE4_NCA",
+    "deadlock": {
+      "verdict": "PASS",
+      "expansion": "tree4_destination_indexed",
+      "nodes": 128
+    }
+  },
+  "evidence_source": {
+    "union_dump": "routing.dump (legal-choice union v2, choice_probes=64)",
+    "runtime_dump": "native_route_observations.txt (native-route-compute/v1)",
+    "producer": "third_party/booksim2/src/booksim.build-manifest.json"
+  },
+  "claims": [
+    "every legal Tree4 first hop and native output port is inside the declared union for all 1792 router/terminal pairs",
+    "192 deterministic pairs match the producer's realisation exactly; 1600 pairs are choice-valued and every legal face is realised somewhere in the dump",
+    "the executed decisions (39312 across 24192 flits) are inside that union, enter through the source terminal's seat port, use the full VC range, eject only at the destination, and never climb after descending",
+    "the destination-indexed channel/VC dependency graph has 128 nodes and is acyclic"
+  ],
+  "non_claims": [
+    "no hardware calibration: these are simulator results for a declared model",
+    "no claim about the structured balanced `tree4` preset, which keeps its own graph and identity",
+    "no claim that the union dump is an exhaustive enumeration of the RNG; the law is derived from the fork's own routing function and the dump is checked against it in both directions",
+    "no retroactive relabeling of historical Tree4 research runs"
+  ],
+  "producer": {
+    "binary_sha256": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+    "binary_size": 24884344,
+    "source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+    "producer_dirty": false,
+    "build_recipe_version": "booksim2-fork/v2",
+    "execution_fidelity": "QUALIFIED",
+    "transport": "SUPERVISED_PROCESS",
+    "seed": 0
+  }
+}

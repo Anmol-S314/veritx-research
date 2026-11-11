@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "outline": "#707880",
+        "on-tertiary-fixed-variant": "#3d4853",
+        "tertiary-fixed-dim": "#bcc8d5",
+        "on-background": "#151c24",
+        "secondary-fixed": "#d2e6f1",
+        "on-tertiary-fixed": "#121d27",
+        "on-secondary": "#ffffff",
+        "surface-dim": "#d4dae5",
+        "on-tertiary": "#ffffff",
+        "on-primary": "#ffffff",
+        "on-secondary-container": "#546770",
+        "surface-bright": "#f7f9ff",
+        "on-primary-container": "#d0e8ff",
+        "on-primary-fixed": "#001e30",
+        "on-error": "#ffffff",
+        "surface-container": "#e8eef9",
+        "secondary-container": "#d2e6f1",
+        "error-container": "#ffdad6",
+        "tertiary-fixed": "#d8e4f2",
+        "surface-variant": "#dce3ee",
+        "primary-fixed-dim": "#8fcdff",
+        "tertiary-container": "#5c6773",
+        "on-surface": "#151c24",
+        "outline-variant": "#c0c7d0",
+        "tertiary": "#444f5a",
+        "secondary-fixed-dim": "#b6c9d4",
+        "on-error-container": "#93000a",
+        "on-primary-fixed-variant": "#004b71",
+        "background": "#f7f9ff",
+        "surface-container-lowest": "#ffffff",
+        "surface-tint": "#006494",
+        "on-tertiary-container": "#dae6f4",
+        "primary-container": "#0f6c9e",
+        "surface-container-highest": "#dce3ee",
+        "surface-container-low": "#eef4ff",
+        "on-secondary-fixed-variant": "#374952",
+        "inverse-surface": "#2a3139",
+        "on-surface-variant": "#40484f",
+        "primary-fixed": "#cbe6ff",
+        "surface": "#f7f9ff",
+        "secondary": "#4e616a",
+        "inverse-primary": "#8fcdff",
+        "primary": "#00537c",
+        "surface-container-high": "#e2e9f4",
+        "inverse-on-surface": "#eaf1fc",
+        "on-secondary-fixed": "#0a1e26",
+        "error": "#ba1a1a"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.125rem",
+        "lg": "0.25rem",
+        "xl": "0.5rem",
+        "full": "0.75rem"
+      },
+      "spacing": {
+        "space-xs": "0.25rem",
+        "margin": "0.5rem",
+        "space-sm": "0.5rem",
+        "space-md": "0.75rem",
+        "gutter": "0.5rem",
+        "space-lg": "1rem",
+        "space-xl": "1.5rem"
+      },
+      "fontFamily": {
+        "headline-md": ["Inter"],
+        "code-md": ["JetBrains Mono"],
+        "body-md": ["Inter"],
+        "headline-sm": ["Inter"],
+        "headline-lg": ["Inter"],
+        "label-md": ["Inter"],
+        "code-table": ["JetBrains Mono"],
+        "body-sm": ["Inter"],
+        "code-sm": ["JetBrains Mono"]
+      },
+      "fontSize": {
+        "headline-md": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+        "code-md": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "body-md": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+        "headline-sm": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600"}],
+        "headline-lg": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+        "label-md": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+        "code-table": ["11px", {"lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500"}],
+        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "code-sm": ["11px", {"lineHeight": "14px", "fontWeight": "400"}]
+      }
+    }
+  }
+}</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-9 px-space-md flex items-center justify-between border-b border-outline-variant text-body-sm"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">developer_board</span><span class="font-headline-sm text-headline-sm font-bold text-on-surface tracking-tight">VERITX</span><span class="font-code-sm text-code-sm bg-surface-container-high px-space-xs py-0.5 rounded text-on-surface-variant font-medium">SROTA</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="font-label-md text-label-md text-on-surface font-semibold">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-on-surface-variant">[rev: d7a4e9b evaluated]</span></div><div class="h-4 w-px bg-outline-variant"></div><span class="font-code-sm text-code-sm text-secondary bg-surface-container-low px-space-xs py-0.5 rounded">Design: Evaluated Baseline</span><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-on-surface-variant text-[14px]">speed</span><span class="font-code-sm text-code-sm text-on-surface-variant">Clock: 1.4 GHz</span></div></div><div class="flex items-center gap-space-sm"><div class="flex items-center gap-1.5 px-space-xs py-0.5 rounded bg-secondary-container text-on-secondary-fixed"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span class="font-code-sm text-code-sm font-medium">2 Active Jobs (SIM-403)</span></div><div class="flex items-center gap-1 px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm"><span class="material-symbols-outlined text-[14px] text-primary">check_circle</span><span>SIM Clean</span></div><div class="flex items-center gap-1 px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm"><span class="material-symbols-outlined text-[14px] text-tertiary">shield</span><span>DRC OK</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-1 px-space-xs py-0.5 rounded bg-surface-container-high text-on-surface font-code-sm text-code-sm"><span class="font-code-sm text-code-sm text-on-surface-variant">⌘K</span></div><div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-primary"></span><span>Daemon :9082</span></div><button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded"><span class="material-symbols-outlined text-[16px]">settings</span></button><div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">person</span></div></div></div><div class="h-8 px-space-md flex items-center justify-between bg-surface-container-low border-b border-outline-variant"><nav class="flex items-center h-full gap-1" data-active-classes="bg-surface-container-lowest text-primary font-bold border-b-2 border-primary"><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" data-path="design" href="#">Design</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" data-path="explore-candidate-comparison" href="#">Explore</a><a class="px-space-md h-full flex items-center bg-surface-container-lowest text-primary font-bold border-b-2 border-primary font-label-md text-label-md transition-colors" data-path="verify-check-setup-and-results" href="#">Verify</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-sm"><span class="font-code-sm text-code-sm text-on-surface-variant">Profile: Formal Check &amp; Assertion Suite</span><button class="px-space-sm py-0.5 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">rule</span><span>Run All Checks</span></button></div></div><div class="h-7 px-space-md flex items-center justify-between bg-surface-container"><nav class="flex items-center h-full gap-1" data-active-classes="bg-surface-container-lowest text-primary font-semibold shadow-sm"><a class="px-space-sm py-0.5 rounded bg-surface-container-lowest text-primary font-semibold shadow-sm font-label-md text-label-md" data-path="verify-check-setup-and-results" href="#">Check Setup &amp; Results</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md" data-path="evidence-overview" href="#">Evidence Overview</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md" data-path="configuration-support-checks" href="#">Configuration Support Checks</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md" data-path="outstanding-obligations" href="#">Outstanding Obligations</a></nav><div class="flex items-center gap-space-md text-code-sm font-code-sm text-on-surface-variant"><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">verified</span>36 Passed / 2 Pending</span><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">history</span>Check Sync: 6s ago</span></div></div></header><aside class="fixed left-0 top-[6.75rem] bottom-6 w-64 bg-surface-container-lowest border-r border-outline-variant z-30 flex flex-col"><div class="p-space-sm border-b border-outline-variant bg-surface-container-low"><div class="flex items-center justify-between mb-1"><span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Verification Target</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">unfold_more</span></div><div class="font-body-sm text-body-sm font-semibold text-on-surface truncate">Falcon8_NoC_Gen2 [d7a4e9b]</div><div class="font-code-sm text-code-sm text-secondary truncate">Rule Set: SROTA-PCIe-CCIX • 1.4 GHz</div></div><div class="p-space-sm border-b border-outline-variant bg-surface-container"><div class="flex items-center justify-between mb-1"><span class="font-label-md text-label-md text-on-surface-variant uppercase">Active Check Suites</span><button class="text-primary hover:text-on-surface font-code-sm text-code-sm">Rerun</button></div><div class="space-y-1"><div class="p-1.5 rounded bg-surface-container-high border border-outline-variant flex items-center justify-between"><div class="flex items-center gap-1.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><div class="truncate"><div class="font-label-md text-label-md text-on-surface font-semibold truncate">CHK-01 Deadlock Freedom</div><div class="font-code-sm text-code-sm text-secondary-fixed-dim">Formal L-Turn • PASS</div></div></div><span class="material-symbols-outlined text-[14px] text-primary">check_circle</span></div><div class="p-1.5 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-between"><div class="flex items-center gap-1.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><div class="truncate"><div class="font-label-md text-label-md text-on-surface font-semibold truncate">CHK-02 Protocol Liveness</div><div class="font-code-sm text-code-sm text-on-surface-variant">Credit Throttle • PASS</div></div></div><span class="material-symbols-outlined text-[14px] text-primary">check_circle</span></div><div class="p-1.5 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-between"><div class="flex items-center gap-1.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-outline"></span><div class="truncate"><div class="font-label-md text-label-md text-on-surface font-semibold truncate">CHK-03 Buffer Overflow</div><div class="font-code-sm text-code-sm text-on-surface-variant">Dynamic 16B • IN PROGRESS</div></div></div><span class="material-symbols-outlined text-[14px] text-on-surface-variant">hourglass_top</span></div><div class="p-1.5 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-between"><div class="flex items-center gap-1.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span><div class="truncate"><div class="font-label-md text-label-md text-on-surface font-semibold truncate">CHK-04 Clock Domain Crossing</div><div class="font-code-sm text-code-sm text-on-surface-variant">1.4 GHz / 800 MHz • WAIVED</div></div></div><span class="material-symbols-outlined text-[14px] text-secondary">assignment_turned_in</span></div></div></div><div class="flex-1 overflow-y-auto p-space-sm"><div class="font-label-md text-label-md text-on-surface-variant uppercase mb-2">Filter by Obligation Severity</div><div class="space-y-1.5 font-code-sm text-code-sm"><label class="flex items-center gap-2 text-on-surface"><input checked="" class="accent-primary" type="checkbox"/> Critical Assertions (0)</label><label class="flex items-center gap-2 text-on-surface"><input checked="" class="accent-primary" type="checkbox"/> Structural Warnings (1)</label><label class="flex items-center gap-2 text-on-surface"><input checked="" class="accent-primary" type="checkbox"/> Protocol Waivers (3)</label><label class="flex items-center gap-2 text-on-surface"><input checked="" class="accent-primary" type="checkbox"/> Informational Checks (12)</label></div></div><div class="p-space-xs border-t border-outline-variant bg-surface-container text-center font-code-sm text-code-sm text-on-surface-variant">SROTA Verification Engine v4.2</div></aside><aside class="fixed right-0 top-[6.75rem] bottom-6 w-80 bg-surface-container-lowest border-l border-outline-variant z-30 flex flex-col"><div class="h-8 px-space-sm border-b border-outline-variant bg-surface-container-low flex items-center justify-between"><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[15px] text-primary">fact_check</span><span class="font-label-md text-label-md text-on-surface font-semibold uppercase">Check Inspector</span></div><div class="flex items-center gap-1"><button class="p-0.5 text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[15px]">dock_to_right</span></button><button class="p-0.5 text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[15px]">close</span></button></div></div><div class="p-space-md border-b border-outline-variant"><div class="flex items-center justify-between mb-1"><span class="font-headline-sm text-headline-sm text-on-surface">CHK-01: L-Turn Deadlock</span><span class="font-code-sm text-code-sm bg-secondary-container text-on-secondary-fixed px-1.5 py-0.5 rounded">Verified Clean</span></div><p class="font-body-sm text-body-sm text-on-surface-variant">Exhaustive proof on minimal West-First turn model across 4x4 mesh router coordinates.</p></div><div class="p-space-md flex-1 overflow-y-auto space-y-space-md"><div class="border border-outline-variant rounded p-space-sm bg-surface-container-lowest"><span class="font-label-md text-label-md text-on-surface-variant uppercase">Solver Properties</span><div class="mt-2 space-y-1 font-code-sm text-code-sm"><div class="flex justify-between"><span class="text-on-surface-variant">Engine:</span><span class="text-on-surface font-semibold">Formal Bounded Model</span></div><div class="flex justify-between"><span class="text-on-surface-variant">Proof Depth:</span><span class="text-on-surface font-semibold">64 Cycles (Inductive)</span></div><div class="flex justify-between"><span class="text-on-surface-variant">Solver Time:</span><span class="text-on-surface font-semibold">18.4s</span></div><div class="flex justify-between"><span class="text-on-surface-variant">Witness Trace:</span><span class="text-on-surface font-semibold">None (Exhaustive)</span></div></div></div><div class="border border-outline-variant rounded p-space-sm bg-surface-container-lowest"><span class="font-label-md text-label-md text-on-surface-variant uppercase">Evidence Reference</span><div class="mt-2 space-y-1 font-code-sm text-code-sm"><div class="flex justify-between text-primary"><span>Certificate SHA</span><span>f82c40...a19e</span></div><div class="flex justify-between text-on-surface-variant"><span>Sign-off Role</span><span>System Architect</span></div><div class="flex justify-between text-on-surface-variant"><span>Status</span><span>Approved</span></div></div></div></div><div class="p-space-sm border-t border-outline-variant bg-surface-container-low flex gap-2"><button class="flex-1 py-1 rounded bg-surface-container border border-outline-variant text-on-surface font-label-md text-label-md hover:bg-surface-container-high">Inspect Proof Log</button><button class="flex-1 py-1 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container">Sign-Off Check</button></div></aside><div class="pl-64 pr-80"><main class="relative pt-[6.75rem] pb-6 min-h-screen bg-surface"><div class="flex flex-col w-full text-on-surface select-none">
+<!-- CONTEXT BANNER & CHECK RUN METADATA -->
+<div class="bg-surface-container-low px-space-md py-space-sm border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-md flex-wrap min-w-0">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight">Check Setup &amp; Results</span>
+</div>
+<div class="h-4 w-px bg-outline-variant hidden sm:block"></div>
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-2 py-0.5 rounded border border-outline-variant">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Target:</span>
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">Falcon8_NoC_Gen2 [d7a4e9b]</span>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded text-[10px]">4x4 Mesh</span>
+</div>
+<div class="flex items-center gap-1.5 text-body-sm font-code-sm text-on-surface-variant">
+<span>PDK: <strong class="text-on-surface font-medium">TSMC N5 v1.2</strong></span>
+<span>•</span>
+<span>Clock: <strong class="text-on-surface font-medium">1.4 GHz</strong></span>
+<span>•</span>
+<span>128-bit / 2 VC</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container border border-outline-variant font-code-sm text-code-sm">
+<span class="flex items-center gap-1 text-primary font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>5 Executed
+        </span>
+<span class="text-outline-variant">/</span>
+<span class="flex items-center gap-1 text-secondary font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>1 Running
+        </span>
+<span class="text-outline-variant">/</span>
+<span class="flex items-center gap-1 text-error font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>1 Inconclusive
+        </span>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex items-center gap-space-xs">
+<div class="relative inline-block text-left">
+<button class="h-7 px-2.5 rounded bg-surface-container-lowest border border-outline-variant font-code-sm text-code-sm text-on-surface hover:bg-surface-container flex items-center gap-1.5 transition-colors" id="scopeFilterBtn">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">filter_alt</span>
+<span>Domain: All Domains (6)</span>
+<span class="material-symbols-outlined text-[13px] text-on-surface-variant">expand_more</span>
+</button>
+</div>
+<button class="h-7 px-2.5 rounded bg-surface-container-lowest border border-outline-variant font-code-sm text-code-sm text-on-surface hover:bg-surface-container flex items-center gap-1.5 transition-colors" title="Export current formal matrix and solver certificates">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">file_download</span>
+<span>Export Matrix (.json)</span>
+</button>
+<button class="h-7 px-2.5 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container flex items-center gap-1.5 transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[14px]">add_circle</span>
+<span>+ Configure New Check</span>
+</button>
+</div>
+</div>
+<!-- 3-PANE WORKSPACE BODY -->
+<div class="flex flex-1 min-h-[calc(100vh-14.75rem)] w-full overflow-hidden bg-surface">
+<!-- PANE A: CHECK CATALOGUE & EXECUTION INVENTORY (LEFT) -->
+<section class="w-80 flex-shrink-0 border-r border-outline-variant bg-surface-container-lowest flex flex-col">
+<!-- Search & Filters -->
+<div class="p-2 border-b border-outline-variant bg-surface-container-low space-y-1.5">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2 text-[14px] text-on-surface-variant pointer-events-none">search</span>
+<input class="w-full h-6 pl-7 pr-2 rounded bg-surface-container-lowest border border-outline-variant font-code-sm text-code-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary" placeholder="Filter checks (ID, rule, engine)..." type="text"/>
+</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant px-0.5">
+<span>7 Defined Checks</span>
+<div class="flex items-center gap-1">
+<button class="text-primary hover:underline">Select All</button>
+<span>•</span>
+<button class="text-on-surface-variant hover:text-on-surface">Batch Rerun</button>
+</div>
+</div>
+</div>
+<!-- Category Filter Pills -->
+<div class="px-2 py-1.5 border-b border-outline-variant bg-surface-container flex gap-1 overflow-x-auto no-scrollbar text-code-sm font-code-sm">
+<button class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-primary font-semibold whitespace-nowrap text-[10px]">All (7)</button>
+<button class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant hover:text-on-surface whitespace-nowrap text-[10px]">Formal (2)</button>
+<button class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant hover:text-on-surface whitespace-nowrap text-[10px]">Sim (2)</button>
+<button class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant hover:text-on-surface whitespace-nowrap text-[10px]">Lint/DRC (3)</button>
+</div>
+<!-- Checklist Items -->
+<div class="flex-1 overflow-y-auto divide-y divide-outline-variant font-body-sm text-body-sm">
+<!-- 1: CHK-FRM-02 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">CHK-FRM-02</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-primary border border-outline-variant font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>PASS (k=32)
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface line-clamp-1">Deadlock-Freedom Bounded Proof</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>Srota-Formal v1.8 (Z3)</span>
+<span>28.4s</span>
+</div>
+</div>
+<!-- 2: CHK-LNT-01 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">CHK-LNT-01</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-secondary-container font-code-sm text-[10px] text-on-secondary-fixed border border-outline-variant font-medium">
+<span class="material-symbols-outlined text-[11px]">info</span>PASS w/ 2 ADV
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface line-clamp-1">Verilog RTL Lint &amp; CDC Elaboration</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>Verilator v5.022 lint</span>
+<span>4.2s</span>
+</div>
+</div>
+<!-- 3: CHK-PRG-05 (SELECTED FOCUS) -->
+<div class="p-2.5 bg-surface-container-high border-l-2 border-primary cursor-pointer transition-colors shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-bold text-primary">CHK-PRG-05</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-error-container text-on-error-container font-code-sm text-[10px] font-semibold border border-error/30">
+<span class="material-symbols-outlined text-[11px]">timelapse</span>TIMEOUT / INCONCL
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-semibold text-on-surface line-clamp-1">L-Turn / Dim-Order Turn Model Proof</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span class="text-on-surface font-medium">Srota-Formal (k=48)</span>
+<span class="text-error font-medium">600.0s (Max)</span>
+</div>
+<div class="mt-1.5 flex items-center gap-1 text-[10px] font-code-sm text-on-surface-variant bg-surface-container-lowest px-1.5 py-0.5 rounded border border-outline-variant">
+<span class="material-symbols-outlined text-[12px] text-error">warning</span>
+<span class="truncate">1 Open Candidate Trace • Blocked Signoff</span>
+</div>
+</div>
+<!-- 4: CHK-BUF-01 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">CHK-BUF-01</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-primary border border-outline-variant font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>PASS
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface line-clamp-1">Credit Flow Control Underflow/Overflow</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>CycleAccurate Sim</span>
+<span>112.5s</span>
+</div>
+</div>
+<!-- 5: CHK-PLC-03 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">CHK-PLC-03</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-error-container text-on-error-container font-code-sm text-[10px] font-semibold border border-error/30">
+<span class="material-symbols-outlined text-[11px]">cancel</span>VIOLATED (1)
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface line-clamp-1">Router Macro Keepout &amp; Boundary DRC</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>OpenROAD N5 DRC</span>
+<span>14.1s</span>
+</div>
+</div>
+<!-- 6: CHK-EMIT-04 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent opacity-75">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface-variant">CHK-EMIT-04</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface-variant border border-outline-variant">
+              UNSUPPORTED
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface-variant line-clamp-1">Radix-8 Concentrated Router RTL Synthesis</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>Yosys Target Qual</span>
+<span>0.0s (Skipped)</span>
+</div>
+</div>
+<!-- 7: CHK-LAT-09 -->
+<div class="p-2.5 hover:bg-surface-container-low cursor-pointer transition-colors border-l-2 border-transparent">
+<div class="flex items-start justify-between gap-1 mb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">CHK-LAT-09</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-secondary-container font-code-sm text-[10px] text-on-secondary-fixed border border-outline-variant font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>RUNNING (42%)
+            </span>
+</div>
+<div class="font-body-sm text-body-sm font-medium text-on-surface line-clamp-1">ResNet50 Tail-Latency SLA Assertion</div>
+<div class="flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant mt-1.5">
+<span>Job: SIM-403 (2.1M / 5M)</span>
+<span>341s elapsed</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded-full mt-1.5 overflow-hidden">
+<div class="bg-primary h-full w-[42%]"></div>
+</div>
+</div>
+</div>
+<!-- Catalog Footer Metainfo -->
+<div class="p-2 border-t border-outline-variant bg-surface-container text-[11px] font-code-sm text-on-surface-variant flex items-center justify-between">
+<span>Suite Checksum: <strong class="text-on-surface">94d1..e3</strong></span>
+<button class="text-primary hover:underline">Batch Validate</button>
+</div>
+</section>
+<!-- PANE B: CENTRAL WORKSPACE — DETAILED SETUP & RESULTS (MAIN) -->
+<main class="flex-1 min-w-0 bg-surface flex flex-col overflow-y-auto">
+<!-- Top Header & Sub-Tabs -->
+<div class="p-space-md border-b border-outline-variant bg-surface-container-lowest">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-2">
+<div class="flex items-center gap-2">
+<span class="font-code-sm text-code-sm bg-surface-container text-primary font-bold px-1.5 py-0.5 rounded border border-outline-variant">CHK-PRG-05</span>
+<h1 class="font-headline-md text-headline-md font-semibold text-on-surface">Minimal West-First / L-Turn Deadlock-Freedom Formal Assertion</h1>
+</div>
+<div class="flex items-center gap-1.5">
+<button class="h-6 px-2 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">refresh</span>
+<span>Re-run with k=64</span>
+</button>
+<button class="h-6 px-2 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">terminal</span>
+<span>CLI Reproduce</span>
+</button>
+</div>
+</div>
+<!-- Metadata Ribbon -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-outline-variant font-code-sm text-code-sm">
+<div>
+<span class="text-on-surface-variant block text-[10px] uppercase font-semibold">Verification Class</span>
+<span class="text-on-surface font-medium">Formal Safety &amp; Progress (BMC)</span>
+</div>
+<div>
+<span class="text-on-surface-variant block text-[10px] uppercase font-semibold">Target Scope</span>
+<span class="text-on-surface font-medium">Fabric Mesh R[0..3]_[0..3] (16 Routers)</span>
+</div>
+<div>
+<span class="text-on-surface-variant block text-[10px] uppercase font-semibold">Engine &amp; Version</span>
+<span class="text-on-surface font-medium">Srota-Formal v1.8 (SMT-Z3 4.12.2)</span>
+</div>
+<div>
+<span class="text-on-surface-variant block text-[10px] uppercase font-semibold">Execution Time</span>
+<span class="text-error font-medium">600.0s (Budget Reached)</span>
+</div>
+</div>
+</div>
+<!-- Execution Outcome Callout (Explicit Discipline: Timeout != Theorem) -->
+<div class="mx-space-md mt-space-md p-space-sm rounded bg-surface-container-high border-l-4 border-error border-y border-r border-outline-variant shadow-sm">
+<div class="flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-error text-[20px] mt-0.5">timer_off</span>
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-label-md text-label-md font-bold text-on-surface uppercase tracking-wider">EXECUTION: TIMEOUT REACHED (600s Budget)</span>
+<span class="text-outline-variant">|</span>
+<span class="font-code-sm text-code-sm font-bold text-error bg-error-container/40 px-1.5 py-0.5 rounded">RESULT OUTCOME: INCONCLUSIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface mt-1 leading-snug">
+              Proof search exhausted max induction/unrolling bound (<strong class="font-code-sm font-semibold">k=48</strong> cycles) without generating an inductive invariant or finding an invariant violation.
+              <span class="text-on-surface-variant">Bounded non-failure up to k=47 does <strong>NOT</strong> constitute unbounded deadlock-freedom. 1 candidate circular wait configuration was left unresolved when timeout struck.</span>
+</p>
+</div>
+<button class="h-6 px-2 bg-surface-container-lowest border border-outline-variant rounded font-label-md text-label-md text-on-surface hover:bg-surface-container flex-shrink-0 text-[11px]">
+            Inspect Solver Traces
+          </button>
+</div>
+</div>
+<!-- Sub-Tabs Navigation for Central Detail -->
+<div class="px-space-md pt-space-sm flex items-center justify-between border-b border-outline-variant">
+<nav class="flex items-center gap-4">
+<button class="pb-2 border-b-2 border-primary text-primary font-label-md text-label-md font-semibold flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">checklist</span>
+<span>Results &amp; Findings (1 Finding)</span>
+</button>
+<button class="pb-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>Setup &amp; Constraints</span>
+</button>
+<button class="pb-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">psychology</span>
+<span>Assumptions &amp; Abstractions (3)</span>
+</button>
+<button class="pb-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+<span>Raw Solver Log</span>
+</button>
+</nav>
+<span class="font-code-sm text-[10px] text-on-surface-variant mb-2">Evaluated against Falcon8 RTL revision d7a4e9b</span>
+</div>
+<!-- Main Results Content -->
+<div class="p-space-md space-y-space-md">
+<!-- 1. Evaluated Formal Claims Table -->
+<div class="border border-outline-variant rounded bg-surface-container-lowest overflow-hidden">
+<div class="px-space-sm py-1.5 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase tracking-wide">Evaluated SVA Assertion Claims</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">3 Claims Compiled</span>
+</div>
+<table class="w-full text-left font-body-sm text-body-sm border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container text-on-surface-variant font-label-md text-[10px] uppercase">
+<th class="py-1.5 px-3 font-semibold">Assertion Name / Target Property</th>
+<th class="py-1.5 px-3 font-semibold">Bound / Scope</th>
+<th class="py-1.5 px-3 font-semibold">Proof Engine</th>
+<th class="py-1.5 px-3 font-semibold text-right">Result Outcome</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant font-code-sm text-code-sm">
+<tr class="hover:bg-surface-container-low">
+<td class="py-2 px-3">
+<div class="font-semibold text-on-surface">assert_no_credit_deadlock_xy</div>
+<div class="text-[10px] text-on-surface-variant font-sans">Strict Dimension-Order X-then-Y forward progression</div>
+</td>
+<td class="py-2 px-3 text-on-surface-variant">Inductive k=16 (Closed)</td>
+<td class="py-2 px-3 text-on-surface-variant">Z3-QFBV</td>
+<td class="py-2 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-primary font-semibold text-[11px]">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>PASS (Inductive)
+                  </span>
+</td>
+</tr>
+<tr class="bg-surface-container-high/40">
+<td class="py-2 px-3">
+<div class="font-semibold text-primary">assert_l_turn_cycle_freedom</div>
+<div class="text-[10px] text-on-surface-variant font-sans">West-First escape channel routing acyclic dependencies</div>
+</td>
+<td class="py-2 px-3 text-on-surface font-medium">BMC Step 48 (Timed out)</td>
+<td class="py-2 px-3 text-on-surface-variant">Z3-QFBV BMC</td>
+<td class="py-2 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-semibold text-[11px]">
+<span class="material-symbols-outlined text-[13px]">hourglass_empty</span>INCONCLUSIVE (Timeout)
+                  </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low opacity-75">
+<td class="py-2 px-3">
+<div class="font-semibold text-on-surface">assert_starvation_free_egress</div>
+<div class="text-[10px] text-on-surface-variant font-sans">Egress router fairness under sustained flit pressure</div>
+</td>
+<td class="py-2 px-3 text-on-surface-variant">Dependent on assert_l_turn</td>
+<td class="py-2 px-3 text-on-surface-variant">—</td>
+<td class="py-2 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-medium text-[11px]">
+                    NOT EVALUATED
+                  </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- 2. Detailed Finding Card -->
+<div class="border border-outline-variant rounded bg-surface-container-lowest overflow-hidden">
+<div class="p-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="font-code-sm text-code-sm font-bold text-on-error-container bg-error-container px-1.5 py-0.5 rounded">FND-FRM-051</span>
+<span class="font-label-md text-label-md font-bold text-on-surface">Circular Dependency Candidate Under Heavy Buffer Backpressure</span>
+</div>
+<div class="flex items-center gap-1.5 font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Object:</span>
+<span class="text-on-surface font-semibold bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant">Router R_1_2 -&gt; Port_West [Link: L_R12_R11]</span>
+</div>
+</div>
+<div class="p-space-md space-y-space-md">
+<div>
+<div class="text-[11px] font-code-sm font-semibold text-on-surface-variant uppercase tracking-wide">Violated Rule Reference</div>
+<p class="font-body-sm text-body-sm text-on-surface mt-0.5">
+<strong class="font-code-sm font-semibold">RULE-NOC-DL-04:</strong> Channel Dependency Graph (CDG) must remain strictly acyclic under all admissible virtual channel allocation permutations.
+              </p>
+</div>
+<!-- Evidence / Diagnostic Details -->
+<div class="bg-surface-container-low p-space-sm rounded border border-outline-variant">
+<div class="font-label-md text-label-md font-semibold text-on-surface-variant uppercase mb-1">Diagnostic Evidence Excerpt</div>
+<p class="font-body-sm text-body-sm text-on-surface">
+                Unresolved circular wait candidate identified between <strong class="font-code-sm text-primary">VC_0</strong> (Request class) and <strong class="font-code-sm text-primary">VC_1</strong> (Response class) when input buffer occupancy exceeds <strong>14 / 16 flits</strong> under egress congestion. Path traced from Node (1,2) to Node (1,1) attempting South turn while holding West egress reservation.
+              </p>
+</div>
+<!-- SystemVerilog Assertion Snippet with Line Highlighting -->
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="font-label-md text-label-md font-semibold text-on-surface-variant uppercase">SVA Assertion Property &amp; Context (`noc_router_mesh_rules.sv`)</span>
+<span class="font-code-sm text-[11px] text-on-surface-variant">Lines 184–191</span>
+</div>
+<div class="rounded bg-surface-container-highest border border-outline-variant font-code-sm text-code-sm overflow-x-auto text-on-surface">
+<div class="px-3 py-1 flex items-start gap-3 hover:bg-surface-container-high">
+<span class="w-7 text-right text-outline select-none">184</span>
+<span class="text-on-surface-variant">// Guard: ensure Request and Response VCs never mutually block</span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 bg-secondary-container/40 border-l-2 border-primary">
+<span class="w-7 text-right text-primary font-bold select-none">185</span>
+<span><strong class="text-primary font-semibold">property</strong> p_acyclic_channel_dep;</span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 bg-secondary-container/40 border-l-2 border-primary">
+<span class="w-7 text-right text-primary font-bold select-none">186</span>
+<span class="pl-4">@(posedge clk) <strong class="text-primary font-semibold">disable iff</strong> (!rst_n)</span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 bg-secondary-container/40 border-l-2 border-primary">
+<span class="w-7 text-right text-primary font-bold select-none">187</span>
+<span class="pl-8">(vc_alloc[1] &amp;&amp; req_pending &amp;&amp; flit_count &gt;= 14) |-&gt;</span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 bg-error-container/50 border-l-2 border-error">
+<span class="w-7 text-right text-error font-bold select-none">188</span>
+<span class="pl-12 font-semibold text-on-error-container">s_eventually (!blocked_by_vc0); <span class="text-[10px] font-normal text-error">// BMC step 48 unresolved</span></span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 bg-secondary-container/40 border-l-2 border-primary">
+<span class="w-7 text-right text-primary font-bold select-none">189</span>
+<span><strong class="text-primary font-semibold">endproperty</strong></span>
+</div>
+<div class="px-3 py-1 flex items-start gap-3 hover:bg-surface-container-high">
+<span class="w-7 text-right text-outline select-none">190</span>
+<span>assert_l_turn_cycle_freedom: <strong class="text-primary font-semibold">assert property</strong> (p_acyclic_channel_dep);</span>
+</div>
+</div>
+</div>
+<!-- Finding Action Bar -->
+<div class="pt-2 flex flex-wrap items-center gap-2 border-t border-outline-variant">
+<button class="h-7 px-2.5 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">grid_view</span>
+<span>Inspect in Design Canvas (R_1_2)</span>
+</button>
+<button class="h-7 px-2.5 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">alt_route</span>
+<span>Draft Routing Restriction Diff</span>
+</button>
+<button class="h-7 px-2.5 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px]">show_chart</span>
+<span>Open Candidate Waveform (.vcd)</span>
+</button>
+<button class="h-7 px-2.5 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container flex items-center gap-1.5 ml-auto">
+<span class="material-symbols-outlined text-[15px]">assignment_add</span>
+<span>Create Verification Obligation</span>
+</button>
+</div>
+</div>
+</div>
+<!-- 3. Microarchitectural State Inspection Snapshot -->
+<div class="border border-outline-variant rounded bg-surface-container-lowest p-space-sm space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase">Unresolved Microarchitectural State Vector (Cycle 48 Witness Horizon)</span>
+<span class="font-code-sm text-[11px] text-on-surface-variant font-mono">clk_cycle = 48.0</span>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-2 font-code-sm text-code-sm">
+<div class="p-2 rounded bg-surface-container border border-outline-variant">
+<div class="text-[10px] text-on-surface-variant uppercase">R_1_2 East VC_0 Queue</div>
+<div class="text-on-surface font-bold mt-0.5">15 / 16 Flits (93%)</div>
+<div class="text-[10px] text-error font-medium">Head Flit: Dest=(0,2)</div>
+</div>
+<div class="p-2 rounded bg-surface-container border border-outline-variant">
+<div class="text-[10px] text-on-surface-variant uppercase">R_1_2 West VC_1 Queue</div>
+<div class="text-on-surface font-bold mt-0.5">14 / 16 Flits (87%)</div>
+<div class="text-[10px] text-error font-medium">Head Flit: Dest=(1,0)</div>
+</div>
+<div class="p-2 rounded bg-surface-container border border-outline-variant">
+<div class="text-[10px] text-on-surface-variant uppercase">Turn Model Arbiter Grant</div>
+<div class="text-on-surface font-bold mt-0.5">Blocked (L-Turn Hold)</div>
+<div class="text-[10px] text-on-surface-variant">Arbiter: Round-Robin</div>
+</div>
+<div class="p-2 rounded bg-surface-container border border-outline-variant">
+<div class="text-[10px] text-on-surface-variant uppercase">Credit Return Status</div>
+<div class="text-on-surface font-bold mt-0.5">0 Credits Returned</div>
+<div class="text-[10px] text-on-surface-variant">Wait duration: 9 cycles</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- PANE C: RIGHT INSPECTOR — CHECK PARAMETERS, ASSUMPTIONS & IMPACT -->
+<aside class="w-80 flex-shrink-0 border-l border-outline-variant bg-surface-container-lowest flex flex-col overflow-y-auto">
+<!-- Inspector Top Bar -->
+<div class="h-8 px-space-sm border-b border-outline-variant bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">rule_settings</span>
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase">Formal Envelope</span>
+</div>
+<span class="font-code-sm text-[10px] text-on-surface-variant">ID: CHK-PRG-05</span>
+</div>
+<div class="p-space-sm space-y-space-md font-body-sm text-body-sm">
+<!-- Section 1: Check Execution Envelope -->
+<div class="border border-outline-variant rounded p-space-sm bg-surface-container-low space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase">Solver Resource Bounds</span>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">memory</span>
+</div>
+<div class="space-y-1.5 font-code-sm text-code-sm">
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant">Snapshot Hash:</span>
+<span class="text-on-surface font-semibold truncate max-w-[120px]" title="d7a4e9b28f9c118e">d7a4e9b28f...</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant">Solver Memory Cap:</span>
+<span class="text-on-surface font-semibold">16.0 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant">Memory Peak Utilized:</span>
+<span class="text-error font-semibold">14.8 GB (92%)</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded-full overflow-hidden">
+<div class="bg-error h-full w-[92%]"></div>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant">Execution Timeout:</span>
+<span class="text-on-surface font-semibold">600 seconds</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant">Engine Flags:</span>
+<span class="text-on-surface font-mono text-[10px]">--bmc --k=48 -t=8</span>
+</div>
+</div>
+</div>
+<!-- Section 2: Mathematical Assumptions & Limitations (Discipline) -->
+<div class="border border-outline-variant rounded p-space-sm bg-surface-container-low space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase">Scope &amp; Abstractions</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">science</span>
+</div>
+<ul class="space-y-2 text-on-surface font-body-sm text-body-sm">
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary mt-0.5 flex-shrink-0">check_small</span>
+<span><strong>Traffic Assumption:</strong> Flit injection modeled as Poisson-bounded ≤ 0.85 flits/node/cycle.</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary mt-0.5 flex-shrink-0">check_small</span>
+<span><strong>Credit Latency:</strong> Fixed 1-cycle credit back-propagation; zero wire jitter modeled.</span>
+</li>
+<li class="flex items-start gap-1.5 p-1 rounded bg-surface-container text-on-surface border border-outline-variant">
+<span class="material-symbols-outlined text-[14px] text-outline mt-0.5 flex-shrink-0">info</span>
+<span class="text-[11px] leading-tight text-on-surface-variant">
+<strong>Boundary Note:</strong> This formal assertion evaluates RTL microarchitecture only. It does NOT model physical thermal throttling or CDC cross-chassis jitter.
+              </span>
+</li>
+</ul>
+</div>
+<!-- Section 3: Downstream Delivery Eligibility Impact -->
+<div class="border border-outline-variant rounded p-space-sm bg-surface-container-low space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase">Delivery Sign-Off Impact</span>
+<span class="material-symbols-outlined text-[14px] text-error">gavel</span>
+</div>
+<div class="space-y-2">
+<div class="p-2 rounded bg-surface-container border border-outline-variant flex items-center justify-between">
+<div>
+<div class="font-label-md text-label-md text-on-surface font-semibold">TSMC N5 Tapeout Signoff</div>
+<div class="font-code-sm text-[10px] text-on-surface-variant">Production GDS Profile</div>
+</div>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-code-sm text-[10px] font-bold">
+                BLOCKED
+              </span>
+</div>
+<div class="p-2 rounded bg-surface-container border border-outline-variant flex items-center justify-between">
+<div>
+<div class="font-label-md text-label-md text-on-surface font-semibold">Emulation Baseline</div>
+<div class="font-code-sm text-[10px] text-on-surface-variant">FPGA Prototype Qual</div>
+</div>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-fixed font-code-sm text-[10px] font-medium">
+                ELIGIBLE
+              </span>
+</div>
+</div>
+<div class="pt-1 text-code-sm font-code-sm text-on-surface-variant flex items-center justify-between">
+<span>Linked Obligation:</span>
+<a class="text-primary hover:underline font-semibold" href="#">OBL-VER-042</a>
+</div>
+</div>
+<!-- Section 4: AI Copilot Assistant Widget (Offline / Collapsed by default) -->
+<div class="border border-outline-variant rounded bg-surface-container overflow-hidden">
+<div class="p-2 flex items-center justify-between bg-surface-container-low cursor-pointer hover:bg-surface-container">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-outline">smart_toy</span>
+<span class="font-label-md text-label-md font-semibold text-on-surface-variant">AI Solver Assistant</span>
+</div>
+<span class="font-code-sm text-[10px] bg-surface-container-high text-on-surface-variant px-1 rounded">Offline</span>
+</div>
+<div class="p-2 text-center text-on-surface-variant text-[11px] font-body-sm">
+            Copilot engine offline. Click to launch local proof-strategy advisor for CHK-PRG-05.
+          </div>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="p-space-sm border-t border-outline-variant bg-surface-container-low mt-auto flex flex-col gap-1.5">
+<button class="w-full py-1 px-2 rounded bg-surface-container border border-outline-variant font-label-md text-label-md text-on-surface hover:bg-surface-container-high flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px]">edit_note</span>
+<span>Waive Check with Rationale</span>
+</button>
+<button class="w-full py-1 px-2 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px]">play_arrow</span>
+<span>Extend Timeout &amp; Re-run</span>
+</button>
+</div>
+</aside>
+</div>
+<!-- PERSISTENT BOTTOM DOCK / PROBLEMS & VERIFICATION DRAWER -->
+<div class="border-t border-outline-variant bg-surface-container-lowest z-20">
+<!-- Drawer Header Tabs -->
+<div class="h-7 px-space-md flex items-center justify-between border-b border-outline-variant bg-surface-container-low">
+<div class="flex items-center h-full gap-2">
+<button class="h-full px-2 border-b-2 border-primary text-primary font-label-md text-label-md font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-error">error</span>
+<span>Problems (2)</span>
+</button>
+<button class="h-full px-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">assignment_late</span>
+<span>Verification Obligations (4)</span>
+</button>
+<button class="h-full px-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-secondary">pending_actions</span>
+<span>Background Jobs (1 Active)</span>
+</button>
+<button class="h-full px-2 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+<span>Solver Console</span>
+</button>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-[11px] text-on-surface-variant">
+<span class="text-outline italic">Illustrative engineering snapshot data</span>
+<div class="flex items-center gap-1">
+<button class="p-0.5 hover:text-on-surface text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">unfold_less</span></button>
+<button class="p-0.5 hover:text-on-surface text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">close</span></button>
+</div>
+</div>
+</div>
+<!-- Drawer Content Row (Sample problems table) -->
+<div class="h-16 px-space-md flex items-center overflow-x-auto divide-x divide-outline-variant font-code-sm text-code-sm bg-surface-container-lowest">
+<div class="px-3 flex items-center gap-2 flex-shrink-0">
+<span class="material-symbols-outlined text-error text-[16px]">cancel</span>
+<div>
+<div class="font-semibold text-on-surface">CST-PLC-08: Router Macro Spacing Overlap</div>
+<div class="text-[10px] text-on-surface-variant">CHK-PLC-03 (OpenROAD N5 DRC) • Node (3,3) border spacing -0.14um</div>
+</div>
+</div>
+<div class="px-3 flex items-center gap-2 flex-shrink-0">
+<span class="material-symbols-outlined text-error text-[16px]">hourglass_top</span>
+<div>
+<div class="font-semibold text-on-surface">TIMEOUT: Proof search reached 600s boundary</div>
+<div class="text-[10px] text-on-surface-variant">CHK-PRG-05 (Srota-Formal) • k=48 unresolved circular wait candidate</div>
+</div>
+</div>
+<div class="px-3 flex items-center gap-2 flex-shrink-0">
+<span class="material-symbols-outlined text-secondary text-[16px]">info</span>
+<div>
+<div class="font-semibold text-on-surface">JOB: SIM-403 Running ResNet50 Trace</div>
+<div class="text-[10px] text-on-surface-variant">CycleAccurate Engine • 2.1M / 5.0M cycles (42%)</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- INTERACTION SCRIPT FOR VERIFICATION TOOLING -->
+<script>
+  (function() {
+    // Simple filter toggle micro-interaction
+    const scopeBtn = document.getElementById('scopeFilterBtn');
+    if (scopeBtn) {
+      scopeBtn.addEventListener('click', function() {
+        const current = this.querySelector('span:nth-child(2)');
+        if (current.innerText.includes('All Domains')) {
+          current.innerText = 'Domain: Formal Proofs (2)';
+        } else {
+          current.innerText = 'Domain: All Domains (6)';
+        }
+      });
+    }
+  })();
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-lowest border-t border-outline-variant z-40 flex items-center justify-between px-space-md font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-md"><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary">terminal</span><button class="hover:text-on-surface font-medium">Drawer: Jobs &amp; Logs (2 Active: SIM-403)</button></div><div class="h-3 w-px bg-outline-variant"></div><span class="text-on-surface">Cycle: 4,820,119</span><span class="text-secondary">Convergence: 99.84%</span><span class="text-on-surface">Flit Queue Depth: 64B</span></div><div class="flex items-center gap-space-md"><span>Timing Slack: +0.038ns</span><div class="h-3 w-px bg-outline-variant"></div><span class="text-on-surface-variant">AI Assistant: Idle (Offline / Collapsed)</span><div class="h-3 w-px bg-outline-variant"></div><span>Mem: 4.8 GB / 32 GB</span></div></footer></body></html>

@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base { html, body { margin: 0; padding: 0; } body { overscroll-behavior: none; } main > :first-child { margin-top: 0 !important; } main > :last-child { margin-bottom: 0 !important; } } ::-webkit-scrollbar { display: none; }</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-variant": "#dce3ee", "on-primary-fixed-variant": "#004b71", "on-secondary": "#ffffff", "tertiary-container": "#5c6773", "surface": "#f7f9ff", "surface-container": "#e8eef9", "tertiary-fixed": "#d8e4f2", "on-tertiary-fixed": "#121d27", "on-tertiary-container": "#dae6f4", "tertiary": "#444f5a", "surface-container-high": "#e2e9f4", "surface-tint": "#006494", "surface-dim": "#d4dae5", "error": "#ba1a1a", "error-container": "#ffdad6", "surface-container-low": "#eef4ff", "inverse-primary": "#8fcdff", "surface-container-highest": "#dce3ee", "tertiary-fixed-dim": "#bcc8d5", "surface-container-lowest": "#ffffff", "outline": "#707880", "on-error-container": "#93000a", "primary-container": "#0f6c9e", "on-primary": "#ffffff", "on-tertiary": "#ffffff", "on-surface-variant": "#40484f", "on-primary-fixed": "#001e30", "primary-fixed": "#cbe6ff", "on-surface": "#151c24", "secondary-fixed-dim": "#b6c9d4", "on-background": "#151c24", "primary": "#00537c", "secondary": "#4e616a", "on-secondary-container": "#546770", "primary-fixed-dim": "#8fcdff", "on-primary-container": "#d0e8ff", "inverse-surface": "#2a3139", "on-secondary-fixed-variant": "#374952", "on-error": "#ffffff", "secondary-fixed": "#d2e6f1", "secondary-container": "#d2e6f1", "on-secondary-fixed": "#0a1e26", "surface-bright": "#f7f9ff", "inverse-on-surface": "#eaf1fc", "on-tertiary-fixed-variant": "#3d4853", "background": "#f7f9ff", "outline-variant": "#c0c7d0" }, "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, "spacing": { "space-sm": "0.5rem", "space-lg": "1rem", "space-xl": "1.5rem", "space-xs": "0.25rem", "margin": "0.5rem", "space-md": "0.75rem", "gutter": "0.5rem" }, "fontFamily": { "headline-sm": ["Inter"], "body-sm": ["Inter"], "headline-lg": ["Inter"], "code-table": ["JetBrains Mono"], "code-md": ["JetBrains Mono"], "code-sm": ["JetBrains Mono"], "label-md": ["Inter"], "headline-md": ["Inter"], "body-md": ["Inter"] }, "fontSize": { "headline-sm": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600" }], "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }], "headline-lg": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600" }], "code-table": ["11px", { "lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500" }], "code-md": ["12px", { "lineHeight": "16px", "fontWeight": "400" }], "code-sm": ["11px", { "lineHeight": "14px", "fontWeight": "400" }], "label-md": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }], "headline-md": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }] } } } };</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 w-full z-50 bg-surface-container-high border-b border-outline-variant"><div class="h-11 px-gutter flex items-center justify-between text-on-surface gap-space-md"><div class="flex items-center gap-space-sm"><img alt="Srota Studio Monogram" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1Ujgq-pTX8c7qQiddHlprIpDKfmuNWUHs7Up91O7dZ4PzJK-UJmN3c-38AOcaQx2rMCz73uaK5UVgPNansarT9o-aygtFlWUVdBVpsKNDK4wVSLF1zTz5xWwVhxbTcQhXwoz-K5D3gk3FgkGdsEvJgDDJO5k_ySNbPX-LyrwKQSbBAVj-bCPlnl5jpuo05CCArxTxiHV1vStmhWacyWEdcckhm0RCaIiW8V8iXzQkFvGoB8U9BtPEz_XSA"/><div class="flex items-center gap-space-xs"><span class="font-label-md text-label-md tracking-wider font-bold text-on-surface">SROTA STUDIO</span><span class="font-code-sm text-code-sm text-outline px-space-xs">/</span><span class="font-code-table text-code-table font-semibold text-secondary">VERITX</span></div><span class="h-4 w-px bg-outline-variant mx-space-xs"></span><div class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container rounded border border-outline-variant hover:bg-surface-container-lowest cursor-pointer transition-colors"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span class="font-code-table text-code-table font-medium text-on-surface">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-on-surface-variant">[rev: d7a4e9b • draft]</span><span class="material-symbols-outlined text-outline text-[14px]">expand_more</span></div></div><div class="hidden xl:flex items-center gap-space-xs px-space-sm py-1 bg-surface-container-lowest rounded border border-outline-variant"><span class="material-symbols-outlined text-primary text-[14px]">memory</span><span class="font-code-table text-code-table text-on-surface-variant">Target: <span class="text-on-surface font-medium">TSMC N5 ASIC (StdCell)</span> • Clkg: <span class="text-on-surface font-medium">1.4 GHz</span> • Non-signoff Architecture Model</span><span class="material-symbols-outlined text-outline text-[14px]">arrow_drop_down</span></div><div class="flex items-center gap-space-md"><div class="hidden lg:flex items-center gap-space-sm bg-surface-container px-space-sm py-1 rounded border border-outline-variant"><span class="material-symbols-outlined text-primary text-[14px] animate-spin">progress_activity</span><span class="font-code-table text-code-table font-semibold text-on-surface">2 Active Jobs</span><span class="font-code-sm text-code-sm text-outline">|</span><span class="font-code-sm text-code-sm text-on-surface-variant">Sim: ResNet50_Burst (42%)</span><span class="font-code-sm text-code-sm text-outline">|</span><span class="font-code-sm text-code-sm text-primary font-medium">DRC: Clean</span></div><div class="hidden 2xl:flex items-center gap-space-xs px-space-xs py-1 rounded bg-surface-container border border-outline-variant"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-code-table text-code-table text-on-surface-variant">Agent: ACP/Local (Idle)</span></div><div class="flex items-center gap-space-xs bg-surface-container-lowest border border-outline-variant px-space-sm py-0.5 rounded text-outline cursor-pointer hover:border-outline"><span class="material-symbols-outlined text-[14px]">search</span><span class="font-code-table text-code-table">Cmd + K</span></div><div class="flex items-center gap-space-xs border-l border-outline-variant pl-space-sm"><div class="flex items-center gap-space-xs text-on-surface-variant px-space-xs py-0.5 rounded bg-surface-container"><span class="w-2 h-2 rounded-full bg-primary-container"></span><span class="font-code-sm text-code-sm">Local Daemon v2.4.1</span></div><button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[16px]">light_mode</span></button><button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[16px]">settings</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></div><div class="h-9 px-gutter bg-surface-container-low border-t border-outline-variant flex items-center justify-between"><nav class="flex items-center h-full gap-space-xs" data-active-classes="bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary"><a aria-current="page" class="h-full flex items-center px-space-md transition-colors bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary" data-path="design" href="#">Design</a><a class="h-full flex items-center px-space-md font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="workloads-and-requirements" href="#">Workloads & Requirements</a><a class="h-full flex items-center px-space-md font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="analysis" href="#">Analysis</a><a class="h-full flex items-center px-space-md font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="explore" href="#">Explore</a><a class="h-full flex items-center px-space-md font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="verify" href="#">Verify</a><a class="h-full flex items-center px-space-md font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant"><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary">grid_4x4</span>Mesh: 4x4 Toroidal</span><span class="text-outline">•</span><span>Buffer Depth: 8 Flits</span></div></div></header><aside class="fixed left-0 top-20 bottom-6 w-60 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between"><div class="flex flex-col h-full"><div class="h-7 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between"><span class="font-label-md text-label-md font-bold text-on-surface uppercase tracking-wider">Navigation & Specs</span><span class="material-symbols-outlined text-outline text-[14px]">tune</span></div><nav class="flex-1 py-space-xs flex flex-col gap-0.5 overflow-y-auto" data-active-classes="bg-surface-container text-primary font-semibold border-l-2 border-primary"><div class="px-space-sm py-1 font-label-md text-label-md text-outline uppercase">Hierarchy</div><a aria-current="page" class="flex items-center gap-space-xs px-space-sm py-1.5 transition-colors bg-surface-container text-primary font-semibold border-l-2 border-primary" data-path="design" href="#"><span class="material-symbols-outlined text-[16px]">account_tree</span>Fabric Topology</a><a class="flex items-center gap-space-xs px-space-sm py-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="workloads-and-requirements" href="#"><span class="material-symbols-outlined text-[16px]">schema</span>Traffic Patterns</a><a class="flex items-center gap-space-xs px-space-sm py-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="analysis" href="#"><span class="material-symbols-outlined text-[16px]">query_stats</span>Latency & Flit Trace</a><a class="flex items-center gap-space-xs px-space-sm py-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="explore" href="#"><span class="material-symbols-outlined text-[16px]">hub</span>Routing Matrix</a><a class="flex items-center gap-space-xs px-space-sm py-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="verify" href="#"><span class="material-symbols-outlined text-[16px]">rule</span>DRC & Rule Alerts</a><a class="flex items-center gap-space-xs px-space-sm py-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="deliver" href="#"><span class="material-symbols-outlined text-[16px]">terminal</span>RTL Export (SystemVerilog)</a></nav><div class="p-space-sm border-t border-outline-variant bg-surface-container-low"><div class="flex items-center justify-between font-label-md text-label-md text-on-surface"><span class="font-medium">Active Floorplan</span><span class="font-code-table text-code-table text-outline">Die_A0</span></div><div class="font-code-sm text-code-sm text-on-surface-variant mt-0.5">Radix-5 Routers: 16 Cores</div></div></div></aside><div class="pl-60"><main class="relative pt-20 pb-6 w-full min-h-screen bg-surface"><div class="flex flex-col w-full h-[calc(100vh-5rem)] overflow-hidden bg-surface text-on-surface">
+<!-- TOP SUB-NAVIGATION & TOOLBAR -->
+<div class="h-9 px-space-md bg-surface-container-low border-b border-outline-variant flex items-center justify-between shrink-0 select-none">
+<!-- View Switcher Pills -->
+<div class="flex items-center gap-1 overflow-x-auto">
+<button class="h-6 px-space-sm bg-primary text-on-primary font-label-md text-label-md rounded flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[13px]">grid_view</span>
+<span>Fabric Topology</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">account_tree</span>
+<span>System/Block Diagram</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">devices</span>
+<span>Hardware Endpoints</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">alt_route</span>
+<span>Initiator-Target Mapping</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">map</span>
+<span>Address Map</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">bolt</span>
+<span>Clock & Power</span>
+</button>
+<button class="h-6 px-space-sm bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md rounded flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">aspect_ratio</span>
+<span>Physical Constraints</span>
+</button>
+</div>
+<!-- Canvas Navigation & Inspection Tools -->
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant rounded p-0.5">
+<button class="w-6 h-6 flex items-center justify-center rounded bg-primary-container text-on-primary" id="tool-select" title="Selection Tool (V)">
+<span class="material-symbols-outlined text-[14px]">near_me</span>
+</button>
+<button class="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container" id="tool-pan" title="Pan Tool (H)">
+<span class="material-symbols-outlined text-[14px]">pan_tool</span>
+</button>
+<button class="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container" id="tool-route" title="Route Inspection Mode (R)">
+<span class="material-symbols-outlined text-[14px]">timeline</span>
+</button>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<!-- Zoom Controls -->
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant rounded px-1 py-0.5">
+<button class="w-5 h-5 flex items-center justify-center text-on-surface-variant hover:text-on-surface" id="zoom-out">
+<span class="material-symbols-outlined text-[13px]">remove</span>
+</button>
+<span class="px-1.5 font-code-table text-code-table font-medium text-on-surface select-none" id="zoom-level">100%</span>
+<button class="w-5 h-5 flex items-center justify-center text-on-surface-variant hover:text-on-surface" id="zoom-in">
+<span class="material-symbols-outlined text-[13px]">add</span>
+</button>
+<button class="w-5 h-5 ml-0.5 flex items-center justify-center text-on-surface-variant hover:text-on-surface" id="zoom-fit" title="Fit to Screen">
+<span class="material-symbols-outlined text-[13px]">crop_free</span>
+</button>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<!-- Diagnostic Layer Dropdown -->
+<div class="flex items-center gap-1 bg-surface-container-lowest border border-outline-variant rounded px-2 py-0.5">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+<span class="font-code-table text-code-table text-on-surface-variant">Layer:</span>
+<select class="bg-transparent font-code-table text-code-table font-medium text-on-surface focus:outline-none cursor-pointer">
+<option>Buffer Utilization (Sim #402)</option>
+<option>Flit Traffic Density (Heatmap)</option>
+<option>Clock Skew / Latency Isoclines</option>
+<option>Deadlock & Bubble Probability</option>
+<option>Raw Physical Floorplan</option>
+</select>
+</div>
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant rounded px-1.5 py-0.5">
+<span class="material-symbols-outlined text-[13px] text-outline mr-1">filter_alt</span>
+<input class="w-24 bg-transparent font-code-sm text-code-sm text-on-surface placeholder:text-outline focus:outline-none focus:w-36 transition-all" placeholder="Filter entities..." type="text"/>
+</div>
+</div>
+</div>
+<!-- WORKBENCH BODY (3-PANE SPLIT) -->
+<div class="flex flex-1 min-h-0 relative">
+<!-- LEFT PANE: HARDWARE HIERARCHY & IP CATALOG -->
+<aside class="w-64 bg-surface-container-lowest border-r border-outline-variant flex flex-col shrink-0 select-none z-10">
+<!-- Search Input Header -->
+<div class="p-space-xs border-b border-outline-variant bg-surface-container-low">
+<div class="flex items-center gap-1 bg-surface-container-lowest border border-outline-variant rounded px-space-xs py-0.5">
+<span class="material-symbols-outlined text-outline text-[14px]">search</span>
+<input class="w-full bg-transparent font-code-sm text-code-sm text-on-surface placeholder:text-outline focus:outline-none" placeholder="Filter nodes, routers, EPs..." type="text"/>
+</div>
+</div>
+<!-- Hierarchy Tree View -->
+<div class="flex-1 overflow-y-auto font-code-sm text-code-sm py-1">
+<!-- Root Mesh -->
+<div class="px-space-xs py-0.5 flex items-center justify-between text-on-surface font-semibold hover:bg-surface-container cursor-pointer">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">arrow_drop_down</span>
+<span class="material-symbols-outlined text-[14px] text-primary">hub</span>
+<span class="truncate">Falcon8_Fabric</span>
+</div>
+<span class="text-outline text-[10px] uppercase font-bold px-1 bg-surface-container rounded">4x4</span>
+</div>
+<!-- Quadrant 0 -->
+<div class="ml-3 pl-2 border-l border-outline-variant">
+<div class="px-space-xs py-0.5 flex items-center gap-1 text-on-surface-variant hover:bg-surface-container cursor-pointer">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span class="font-medium text-on-surface">Quadrant_0</span>
+<span class="text-outline text-[10px]">(NW)</span>
+</div>
+<div class="ml-2 pl-2 border-l border-outline-variant text-[11px] text-on-surface-variant">
+<div class="px-1 py-0.5 hover:bg-surface-container cursor-pointer flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_0_0 <span class="text-outline text-[10px]">[5-VC]</span></div>
+<div class="px-1 py-0.5 hover:bg-surface-container cursor-pointer flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_0_1 <span class="text-outline text-[10px]">[5-VC]</span></div>
+<div class="px-1 py-0.5 hover:bg-surface-container cursor-pointer flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_1_0 <span class="text-outline text-[10px]">[5-VC]</span></div>
+<div class="px-1 py-0.5 hover:bg-surface-container cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[12px] text-outline">arrow_right</span>R_1_1 <span class="text-outline text-[10px]">[5-VC]</span></div>
+</div>
+</div>
+<!-- Quadrant 1 (Focus Area) -->
+<div class="ml-3 pl-2 border-l border-outline-variant mt-0.5">
+<div class="px-space-xs py-0.5 flex items-center gap-1 text-primary font-semibold hover:bg-surface-container cursor-pointer">
+<span class="material-symbols-outlined text-[13px] text-primary">arrow_drop_down</span>
+<span>Quadrant_1</span>
+<span class="text-primary text-[10px] font-bold bg-primary-fixed px-1 rounded">Focus</span>
+</div>
+<div class="ml-2 pl-2 border-l border-outline-variant text-[11px]">
+<div class="px-1 py-0.5 text-on-surface-variant hover:bg-surface-container cursor-pointer flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_0_2 <span class="text-outline text-[10px]">[5-VC]</span>
+</div>
+<div class="px-1 py-0.5 text-on-surface-variant hover:bg-surface-container cursor-pointer flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_0_3 <span class="text-outline text-[10px]">[5-VC]</span>
+</div>
+<!-- SELECTED ROUTER -->
+<div class="px-1.5 py-0.5 my-0.5 bg-primary-fixed text-primary font-bold rounded-sm cursor-pointer flex items-center justify-between border-l-2 border-primary">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span>R_1_2</span>
+<span class="text-on-primary-fixed-variant text-[10px]">[5-Port VC]</span>
+</div>
+<span class="material-symbols-outlined text-[12px] text-primary">check</span>
+</div>
+<div class="px-1 py-0.5 text-on-surface-variant hover:bg-surface-container cursor-pointer flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-sm bg-outline"></span>R_1_3 <span class="text-outline text-[10px]">[5-VC]</span>
+</div>
+</div>
+</div>
+<!-- Quadrant 2 & 3 Collapsed -->
+<div class="ml-3 pl-2 border-l border-outline-variant mt-0.5">
+<div class="px-space-xs py-0.5 flex items-center gap-1 text-on-surface-variant hover:bg-surface-container cursor-pointer">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_right</span>
+<span>Quadrant_2</span>
+<span class="text-outline text-[10px]">(SW)</span>
+</div>
+<div class="px-space-xs py-0.5 flex items-center gap-1 text-on-surface-variant hover:bg-surface-container cursor-pointer">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_right</span>
+<span>Quadrant_3</span>
+<span class="text-outline text-[10px]">(SE)</span>
+</div>
+</div>
+<!-- Hardware Endpoints Section -->
+<div class="mt-2 pt-2 border-t border-outline-variant">
+<div class="px-space-xs py-0.5 flex items-center justify-between text-on-surface font-semibold hover:bg-surface-container cursor-pointer">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">arrow_drop_down</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">memory</span>
+<span class="truncate">Hardware Endpoints</span>
+</div>
+<span class="text-outline text-[10px] px-1 bg-surface-container rounded">32 EPs</span>
+</div>
+<div class="ml-3 pl-2 border-l border-outline-variant text-[11px] text-on-surface-variant">
+<!-- EP 1 -->
+<div class="px-1 py-1 hover:bg-surface-container cursor-pointer flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-medium text-primary">EP_NPU_CORE_0</span>
+<span class="text-[9px] uppercase tracking-wider px-1 bg-secondary-container text-on-secondary-container font-semibold rounded">Init</span>
+</div>
+<div class="text-[10px] text-outline flex items-center justify-between">
+<span>AXI5-128b</span>
+<span>→ R_1_2.Port_L0</span>
+</div>
+</div>
+<!-- EP 2 -->
+<div class="px-1 py-1 hover:bg-surface-container cursor-pointer flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-medium text-primary">EP_NPU_CORE_1</span>
+<span class="text-[9px] uppercase tracking-wider px-1 bg-secondary-container text-on-secondary-container font-semibold rounded">Init</span>
+</div>
+<div class="text-[10px] text-outline flex items-center justify-between">
+<span>AXI5-128b</span>
+<span>→ R_1_2.Port_L1</span>
+</div>
+</div>
+<!-- EP 3 -->
+<div class="px-1 py-1 hover:bg-surface-container cursor-pointer flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-medium text-on-surface">EP_HBM_CH0_CTRL</span>
+<span class="text-[9px] uppercase tracking-wider px-1 bg-tertiary-fixed text-on-tertiary-fixed font-semibold rounded">Target</span>
+</div>
+<div class="text-[10px] text-outline flex items-center justify-between">
+<span>CHI-256b</span>
+<span>→ R_0_0.Port_L0</span>
+</div>
+</div>
+<!-- EP 4 -->
+<div class="px-1 py-1 hover:bg-surface-container cursor-pointer flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-medium text-on-surface">EP_PCIE_GEN5_X16</span>
+<span class="text-[9px] uppercase tracking-wider px-1 bg-primary-fixed text-primary font-semibold rounded">Dual</span>
+</div>
+<div class="text-[10px] text-outline flex items-center justify-between">
+<span>AXI-512b</span>
+<span>→ R_3_3.Port_L0</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom IP Catalog Button -->
+<div class="p-space-xs border-t border-outline-variant bg-surface-container-low">
+<button class="w-full h-7 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[15px] text-primary">add_box</span>
+<span>Add Endpoint IP / Node</span>
+</button>
+</div>
+</aside>
+<!-- CENTER CANVAS: NOC FABRIC TOPOLOGY -->
+<main class="flex-1 flex flex-col min-w-0 bg-surface relative overflow-hidden">
+<!-- Breadcrumb Bar -->
+<div class="h-7 px-space-md bg-surface-container-low border-b border-outline-variant flex items-center justify-between text-on-surface select-none z-10">
+<div class="flex items-center gap-1 font-code-sm text-code-sm">
+<span class="text-outline">Fabric:</span>
+<span class="font-medium">Falcon8_Fabric</span>
+<span class="text-outline">></span>
+<span class="font-medium text-on-surface-variant">Quadrant_1</span>
+<span class="text-outline">></span>
+<span class="font-semibold text-primary px-1 py-0.2 bg-primary-fixed rounded">Router R_1_2 (Active Selection)</span>
+</div>
+<div class="flex items-center gap-3 font-code-sm text-code-sm text-on-surface-variant">
+<span>Clock: <strong class="text-on-surface font-semibold">1.4 GHz</strong></span>
+<span>Flit Width: <strong class="text-on-surface font-semibold">128-bit</strong></span>
+<span>VC: <strong class="text-on-surface font-semibold">4 / Port</strong></span>
+</div>
+</div>
+<!-- Canvas Area with SVG Dot Grid & Microarchitectural Mesh Interconnect -->
+<div class="flex-1 relative overflow-auto bg-surface flex items-center justify-center p-8 select-none" id="noc-canvas-wrapper" style="background-image: radial-gradient(var(--tw-colors-outline-variant) 0.75px, transparent 0.75px); background-size: 16px 16px;">
+<!-- Outer Mesh Floorplan Boundary -->
+<div class="relative w-[780px] h-[540px] bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm p-6 flex flex-col justify-between">
+<!-- Floorplan Metadata Watermark -->
+<div class="absolute top-2 left-3 flex items-center gap-2 font-code-sm text-code-sm text-outline">
+<span class="font-semibold text-on-surface-variant uppercase tracking-wider text-[10px]">Die Floorplan A0 • 4.80mm × 4.80mm</span>
+<span>•</span>
+<span>Pitch: 1.20mm</span>
+<span>•</span>
+<span class="text-primary font-medium">Orthogonal 2D Mesh</span>
+</div>
+<!-- TOPOLOGY SVG LAYER: INTERCONNECT WIRES & BOTTLENECK LABELS -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none z-0" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<!-- Normal Bidirectional Mesh Link Marker -->
+<marker id="arrow" markerheight="4" markerwidth="4" orient="auto-start-reverse" refx="5" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#707880"></path>
+</marker>
+<!-- Bottleneck Uplink Marker -->
+<marker id="arrow-warn" markerheight="5" markerwidth="5" orient="auto-start-reverse" refx="5" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#B35D00"></path>
+</marker>
+<marker id="arrow-active" markerheight="5" markerwidth="5" orient="auto-start-reverse" refx="5" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#00537c"></path>
+</marker>
+</defs>
+<!-- Horizontal Rows Links -->
+<!-- Row 0 Links -->
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="130" x2="275" y1="95" y2="95"></line>
+<line stroke="#C0C7D0" stroke-width="2" x1="345" x2="490" y1="95" y2="95"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="560" x2="705" y1="95" y2="95"></line>
+<!-- Row 1 Links (Selected Router Level) -->
+<line stroke="#C0C7D0" stroke-width="2" x1="130" x2="275" y1="215" y2="215"></line>
+<!-- West Link from R_1_2: Highlighted -->
+<line stroke="#00537c" stroke-width="2.5" x1="345" x2="490" y1="215" y2="215"></line>
+<!-- East Link from R_1_2: Highlighted -->
+<line stroke="#00537c" stroke-width="2.5" x1="560" x2="705" y1="215" y2="215"></line>
+<!-- Row 2 Links -->
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="130" x2="275" y1="335" y2="335"></line>
+<line stroke="#00537c" stroke-width="2.5" x1="345" x2="490" y1="335" y2="335"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="560" x2="705" y1="335" y2="335"></line>
+<!-- Row 3 Links -->
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="130" x2="275" y1="455" y2="455"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="345" x2="490" y1="455" y2="455"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="560" x2="705" y1="455" y2="455"></line>
+<!-- Vertical Columns Links -->
+<!-- Col 0 -->
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="95" x2="95" y1="125" y2="185"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="95" x2="95" y1="245" y2="305"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="95" x2="95" y1="365" y2="425"></line>
+<!-- Col 1 -->
+<line stroke="#C0C7D0" stroke-width="2" x1="310" x2="310" y1="125" y2="185"></line>
+<line stroke="#C0C7D0" stroke-width="2" x1="310" x2="310" y1="245" y2="305"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="310" x2="310" y1="365" y2="425"></line>
+<!-- Col 2 (Selected Router R_1_2 Column: Focus Link Uplink to R_0_2 with Contention) -->
+<!-- BOTTLENECK LINK: North Link R_1_2 -> R_0_2 -->
+<line stroke="#B35D00" stroke-width="3" x1="525" x2="525" y1="125" y2="185"></line>
+<!-- South Link to R_2_2 -->
+<line stroke="#00537c" stroke-width="2.5" x1="525" x2="525" y1="245" y2="305"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="525" x2="525" y1="365" y2="425"></line>
+<!-- Col 3 -->
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="740" x2="740" y1="125" y2="185"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="740" x2="740" y1="245" y2="305"></line>
+<line stroke="#C0C7D0" stroke-dasharray="2 2" stroke-width="2" x1="740" x2="740" y1="365" y2="425"></line>
+<!-- Local EP Connection Drops from R_1_2 -->
+<path d="M 500 245 L 470 270" stroke="#00537c" stroke-dasharray="2 1" stroke-width="1.5"></path>
+<path d="M 550 245 L 580 270" stroke="#00537c" stroke-dasharray="2 1" stroke-width="1.5"></path>
+</svg>
+<!-- 4x4 MESH ROUTER NODE GRID -->
+<div class="relative z-10 grid grid-cols-4 gap-y-16 gap-x-28 mt-6">
+<!-- ROW 0 -->
+<!-- R_0_0 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_0_0</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center truncate">CHI-256b</div>
+</div>
+<!-- R_0_1 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_0_1</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Standard</div>
+</div>
+<!-- R_0_2 (North neighbor of selected R_1_2) -->
+<div class="relative w-18 bg-surface border-2 border-secondary-fixed-dim rounded p-1 shadow-sm cursor-pointer transition-all">
+<div class="bg-secondary-container text-on-secondary-container font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_0_2</span>
+<span class="text-[8px]">North</span>
+</div>
+<div class="text-[9px] font-code-sm text-on-surface-variant mt-1 text-center font-medium">HBM Target</div>
+<!-- Contextual Diagnostic Badge on Contention Link -->
+<div class="absolute -bottom-10 -left-16 z-30 bg-amber-50 border border-amber-600/40 text-amber-900 rounded px-1.5 py-0.5 shadow-md flex items-center gap-1.5 pointer-events-auto">
+<span class="material-symbols-outlined text-[13px] text-amber-700 animate-pulse">warning</span>
+<div class="font-code-sm text-[10px] whitespace-nowrap leading-tight">
+<span class="font-bold">Contention Uplink:</span> 92% Saturation (Sim #402)
+                </div>
+</div>
+</div>
+<!-- R_0_3 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_0_3</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_2</div>
+</div>
+<!-- ROW 1 -->
+<!-- R_1_0 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_1_0</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_4</div>
+</div>
+<!-- R_1_1 (West neighbor) -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_1_1</span>
+<span class="text-[8px] text-outline">West</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center font-code-table">51.2GB/s</div>
+</div>
+<!-- SELECTED ROUTER R_1_2 (ACTIVE FOCUS) -->
+<div class="relative w-20 bg-primary-fixed border-2 border-primary rounded p-1 shadow-md scale-105 z-20">
+<div class="bg-primary text-on-primary font-code-table text-[10.5px] px-1.5 py-0.5 rounded-t flex justify-between items-center font-bold">
+<span>R_1_2</span>
+<span class="text-[8px] tracking-wide uppercase px-1 bg-primary-container text-white rounded">Active</span>
+</div>
+<div class="bg-white/80 p-1 rounded-b mt-0.5 flex flex-col gap-0.5 text-[9px] font-code-sm">
+<div class="flex justify-between text-primary font-semibold">
+<span>Radix: 5</span>
+<span>1.4 GHz</span>
+</div>
+<div class="text-on-surface-variant truncate">NPU Cluster A</div>
+<div class="text-outline text-[8px] flex justify-between border-t border-outline-variant pt-0.5 mt-0.5">
+<span>4 VCs</span>
+<span>8 Flits</span>
+</div>
+</div>
+<!-- Attached Local Endpoints Badges floating below -->
+<div class="absolute -bottom-8 -left-12 bg-secondary-container text-on-secondary-container border border-secondary-fixed-dim rounded px-1.5 py-0.5 shadow-sm text-[9px] font-code-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="font-bold">EP_NPU_0</span>
+<span class="text-outline text-[8px]">AXI5</span>
+</div>
+<div class="absolute -bottom-8 -right-12 bg-secondary-container text-on-secondary-container border border-secondary-fixed-dim rounded px-1.5 py-0.5 shadow-sm text-[9px] font-code-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="font-bold">EP_NPU_1</span>
+<span class="text-outline text-[8px]">AXI5</span>
+</div>
+<!-- Link Annotation Labels -->
+<div class="absolute -right-24 top-2 bg-surface-container-lowest border border-outline-variant px-1 rounded text-[8px] font-code-table text-on-surface-variant pointer-events-none">
+                East: 51.2 GB/s
+              </div>
+<div class="absolute -left-20 top-2 bg-surface-container-lowest border border-outline-variant px-1 rounded text-[8px] font-code-table text-on-surface-variant pointer-events-none">
+                1 cycle hop
+              </div>
+</div>
+<!-- R_1_3 (East neighbor) -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_1_3</span>
+<span class="text-[8px] text-outline">East</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center font-code-table">51.2GB/s</div>
+</div>
+<!-- ROW 2 -->
+<!-- R_2_0 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_2_0</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_8</div>
+</div>
+<!-- R_2_1 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_2_1</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_9</div>
+</div>
+<!-- R_2_2 (South neighbor) -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_2_2</span>
+<span class="text-[8px] text-outline">South</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">DMA_Eng</div>
+</div>
+<!-- R_2_3 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_2_3</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_11</div>
+</div>
+<!-- ROW 3 -->
+<!-- R_3_0 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_3_0</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center truncate">SRAM_0</div>
+</div>
+<!-- R_3_1 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_3_1</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_13</div>
+</div>
+<!-- R_3_2 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_3_2</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-outline mt-1 text-center">Core_14</div>
+</div>
+<!-- R_3_3 -->
+<div class="w-18 bg-surface border border-outline-variant rounded p-1 hover:border-primary cursor-pointer transition-all">
+<div class="bg-surface-container text-on-surface-variant font-code-table text-[10px] px-1 py-0.2 rounded-t flex justify-between items-center font-bold">
+<span>R_3_3</span>
+<span class="text-[8px] text-outline">P:5</span>
+</div>
+<div class="text-[9px] font-code-sm text-primary font-bold mt-1 text-center truncate">PCIe_Gen5</div>
+</div>
+</div>
+<!-- Bottom Canvas Legend / Mini Metric Bar -->
+<div class="w-full pt-2 border-t border-outline-variant flex items-center justify-between text-outline font-code-sm text-[10px]">
+<div class="flex items-center gap-3">
+<span class="flex items-center gap-1"><span class="w-2.5 h-1 bg-outline rounded-full"></span> 128b Mesh Link</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-1 bg-amber-600 rounded-full"></span> Buffer Contention (>85%)</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-1 bg-primary rounded-full"></span> Active Route Traversal</span>
+</div>
+<div>XY Dimension-Ordered Routing (DOR-XY) • Deadlock Safe</div>
+</div>
+</div>
+</div>
+<!-- Canvas Status Bar -->
+<div class="h-6 px-space-md bg-surface-container-low border-t border-outline-variant flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant shrink-0 select-none">
+<div class="flex items-center gap-space-sm">
+<span>Grid: <strong class="text-on-surface">4x4 Mesh (16 Routers)</strong></span>
+<span class="text-outline">•</span>
+<span>Est. Die Footprint: <strong class="text-on-surface">4.8mm × 4.8mm</strong> (TSMC N5)</span>
+<span class="text-outline">•</span>
+<span>Routing Alg: <strong class="text-primary font-medium">XY-Dimension Ordered (Deterministic)</strong></span>
+</div>
+<div class="flex items-center gap- space-sm">
+<span class="text-outline">Cursor: X: 1.20mm, Y: 2.40mm</span>
+<span class="text-outline">•</span>
+<span class="text-primary font-medium">Auto-Layout: Locked</span>
+</div>
+</div>
+</main>
+<!-- RIGHT PANE: SELECTION INSPECTOR -->
+<aside class="w-80 bg-surface-container-lowest border-l border-outline-variant flex flex-col shrink-0 select-none z-10 overflow-y-auto">
+<!-- Inspector Header -->
+<div class="p-space-sm border-b border-outline-variant bg-surface-container-low">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded bg-primary"></span>
+<span class="font-headline-sm text-headline-sm text-on-surface">Router: R_1_2</span>
+</div>
+<span class="font-code-table text-[10px] px-1 py-0.5 bg-primary-fixed text-primary font-bold rounded">Active</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant mt-0.5">Type: 5-Port Virtual Channel Crossbar</div>
+<div class="mt-2 flex items-center gap-1.5">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-table text-[10px]">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mr-1"></span>Synthesizable RTL
+          </span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-table text-[10px]">
+            Verilator Clean
+          </span>
+</div>
+<div class="mt-2 pt-2 border-t border-outline-variant flex items-center gap-1">
+<button class="flex-1 h-6 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-primary">visibility</span>
+<span>Traffic Matrix</span>
+</button>
+<button class="flex-1 h-6 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-secondary">code</span>
+<span>Export Sub-RTL</span>
+</button>
+</div>
+</div>
+<!-- SECTION 1: COMMON PARAMETERS -->
+<div class="border-b border-outline-variant">
+<div class="px-space-sm py-1.5 bg-surface-container flex items-center justify-between text-on-surface font-label-md text-label-md font-bold uppercase tracking-wider">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">tune</span>
+<span>Microarchitecture</span>
+</span>
+<span class="material-symbols-outlined text-[14px] text-outline">expand_less</span>
+</div>
+<div class="p-space-sm flex flex-col gap-2 font-code-sm text-code-sm">
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Coordinates (X, Y)</span>
+<div class="flex items-center gap-1 font-code-table text-code-table">
+<span class="px-1.5 py-0.5 bg-surface-container rounded border border-outline-variant">X: 1</span>
+<span class="px-1.5 py-0.5 bg-surface-container rounded border border-outline-variant">Y: 2</span>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Number of Ports</span>
+<span class="font-code-table text-code-table text-on-surface font-medium">5 (N, S, E, W, Local)</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Flit Data Width</span>
+<span class="font-code-table text-code-table text-outline bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant">128 bits (Fixed)</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Virtual Channels (VC)</span>
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant rounded px-1.5 py-0.5">
+<input class="w-8 font-code-table text-code-table text-on-surface text-right focus:outline-none" type="number" value="4"/>
+<span class="text-[10px] text-outline ml-1">/ port</span>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Buffer Depth / VC</span>
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant rounded px-1.5 py-0.5">
+<input class="w-8 font-code-table text-code-table text-on-surface text-right focus:outline-none" type="number" value="8"/>
+<span class="text-[10px] text-outline ml-1">flits</span>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Arbitration Policy</span>
+<select class="bg-surface-container-lowest border border-outline-variant rounded px-1.5 py-0.5 font-code-table text-code-table text-on-surface focus:outline-none">
+<option selected="">WRR (Weighted Round Robin)</option>
+<option>Strict Priority</option>
+<option>Age-Based (Oldest-First)</option>
+<option>Round Robin (Token)</option>
+</select>
+</div>
+</div>
+</div>
+<!-- SECTION 2: ATTACHED HARDWARE ENDPOINTS -->
+<div class="border-b border-outline-variant">
+<div class="px-space-sm py-1.5 bg-surface-container flex items-center justify-between text-on-surface font-label-md text-label-md font-bold uppercase tracking-wider">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">device_hub</span>
+<span>Attached IP Endpoints</span>
+</span>
+<span class="material-symbols-outlined text-[14px] text-outline">expand_less</span>
+</div>
+<div class="p-space-sm flex flex-col gap-2 font-code-sm text-code-sm">
+<!-- Port Local 0 -->
+<div class="p-1.5 bg-surface-container-low rounded border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-code-table font-semibold text-primary">Port_Local_0</span>
+<span class="text-[10px] text-outline">AXI5-Master</span>
+</div>
+<div class="flex items-center justify-between text-[11px]">
+<span class="text-on-surface font-medium">EP_NPU_CORE_0</span>
+<span class="font-code-table text-outline">ID: 0x0112</span>
+</div>
+<div class="text-[10px] text-on-surface-variant">Clock Domain: clk_mesh @ 1.4 GHz</div>
+</div>
+<!-- Port Local 1 -->
+<div class="p-1.5 bg-surface-container-low rounded border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-code-table font-semibold text-primary">Port_Local_1</span>
+<span class="text-[10px] text-outline">AXI5-Master</span>
+</div>
+<div class="flex items-center justify-between text-[11px]">
+<span class="text-on-surface font-medium">EP_NPU_CORE_1</span>
+<span class="font-code-table text-outline">ID: 0x0113</span>
+</div>
+<div class="text-[10px] text-on-surface-variant">Clock Domain: clk_mesh @ 1.4 GHz</div>
+</div>
+</div>
+</div>
+<!-- SECTION 3: GENERATOR & ESTIMATES -->
+<div class="border-b border-outline-variant">
+<div class="px-space-sm py-1.5 bg-surface-container flex items-center justify-between text-on-surface font-label-md text-label-md font-bold uppercase tracking-wider">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">precision_manufacturing</span>
+<span>Generator & Synthesis</span>
+</span>
+<span class="material-symbols-outlined text-[14px] text-outline">expand_less</span>
+</div>
+<div class="p-space-sm flex flex-col gap-1.5 font-code-sm text-code-sm">
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">RTL Generator</span>
+<span class="font-code-table text-code-table text-on-surface font-medium">veritx_noc_mesh_v2.3</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Pipeline Stages</span>
+<span class="font-code-table text-code-table text-on-surface">2 (Alloc + Xbar)</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Target Standard Cell</span>
+<span class="font-code-table text-code-table text-on-surface">TSMC N5 HVT/SVT</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Architectural Power</span>
+<span class="font-code-table text-code-table text-on-surface font-semibold">14.8 mW @ 1.4GHz</span>
+</div>
+<div class="text-[9px] text-outline italic mt-0.5">* Non-signoff architectural estimation based on standard activity factor α=0.15</div>
+</div>
+</div>
+<!-- SECTION 4: CONTEXTUAL DIAGNOSTIC DETAILS & PROPOSED REPAIR -->
+<div class="p-space-sm flex-1">
+<div class="p-2.5 rounded bg-amber-50 border border-amber-600/50 flex flex-col gap-2">
+<div class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-amber-700 text-[18px] shrink-0 mt-0.5">warning</span>
+<div>
+<div class="font-label-md text-label-md font-bold text-amber-900">Uplink Contention Warning</div>
+<div class="font-code-sm text-[11px] text-amber-800 mt-1 leading-snug">
+                VC Buffer Depth (8 flits) on <strong class="text-amber-950 font-semibold">Port_North</strong> exhibits severe head-of-line blocking under <em>ResNet50_Burst</em> workload (Sim #402).
+              </div>
+</div>
+</div>
+<div class="bg-amber-100/70 p-1.5 rounded text-[11px] font-code-sm text-amber-900 flex flex-col gap-0.5">
+<div class="flex justify-between">
+<span>Expected Latency:</span>
+<span class="font-semibold text-emerald-800">14.2 ns</span>
+</div>
+<div class="flex justify-between">
+<span>Simulated Latency:</span>
+<span class="font-bold text-error">28.6 ns (+101%)</span>
+</div>
+<div class="text-[10px] text-amber-800 mt-0.5">Primary path: EP_NPU_CORE_0 → EP_HBM_CH0_CTRL</div>
+</div>
+<div class="flex flex-col gap-1.5 pt-1">
+<button class="w-full py-1 px-2 bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md rounded flex items-center justify-center gap-1 transition-colors shadow-sm" id="btn-apply-repair">
+<span class="material-symbols-outlined text-[14px]">auto_fix_high</span>
+<span>Increase North VC to 16 Flits (+1.2% area)</span>
+</button>
+<button class="w-full py-1 px-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px] text-secondary">psychology</span>
+<span>Propose Alternative DOR via Agent</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- BOTTOM COLLAPSIBLE PANEL: DIAGNOSTIC & CONSOLE DRAWER -->
+<footer class="h-36 bg-surface-container-lowest border-t border-outline-variant flex flex-col shrink-0 select-none z-20">
+<!-- Drawer Tab Header -->
+<div class="h-7 px-space-md bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-2">
+<button class="h-full px-2 border-b-2 border-primary text-primary font-label-md text-label-md font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-amber-600">warning</span>
+<span>Problems (1 Warning, 0 Errors)</span>
+</button>
+<button class="h-full px-2 text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">sync</span>
+<span>Active Simulation Jobs (2)</span>
+</button>
+<button class="h-full px-2 text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+<span>Console & Simulation Logs</span>
+</button>
+<button class="h-full px-2 text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">rule</span>
+<span>Verification Obligations</span>
+</button>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-code-sm text-code-sm text-outline">Filter: All Severities</span>
+<button class="p-0.5 text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[14px]">unfold_more</span></button>
+<button class="p-0.5 text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[14px]">close</span></button>
+</div>
+</div>
+<!-- Problems Table Content -->
+<div class="flex-1 overflow-y-auto">
+<table class="w-full text-left font-code-sm text-code-sm">
+<thead class="bg-surface-container text-on-surface-variant border-b border-outline-variant text-[10px] uppercase tracking-wider sticky top-0">
+<tr>
+<th class="py-1 px-3 w-8">Sev</th>
+<th class="py-1 px-3 w-28">Code</th>
+<th class="py-1 px-3">Description</th>
+<th class="py-1 px-3 w-40">Object</th>
+<th class="py-1 px-3 w-56">Origin / Run</th>
+<th class="py-1 px-3 w-44 text-right">Quick Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Active Warning Row -->
+<tr class="bg-primary-fixed/30 hover:bg-primary-fixed/60 cursor-pointer">
+<td class="py-1.5 px-3">
+<span class="material-symbols-outlined text-amber-600 text-[14px]">warning</span>
+</td>
+<td class="py-1.5 px-3 font-semibold text-on-surface font-code-table">W-NOC-4021</td>
+<td class="py-1.5 px-3 text-on-surface">
+<span class="font-medium">Head-of-line blocking threshold (>80%) exceeded</span> on R_1_2 → R_0_2 uplink during Phase 2 burst
+            </td>
+<td class="py-1.5 px-3 font-code-table text-primary font-semibold">R_1_2 / Port_North</td>
+<td class="py-1.5 px-3 text-on-surface-variant truncate">Analysis / Cycle-approx Sim #402</td>
+<td class="py-1.5 px-3 text-right">
+<button class="px-2 py-0.5 bg-primary text-on-primary rounded font-label-md text-[10px] hover:bg-primary-container mr-1">
+                Jump to Inspector
+              </button>
+<button class="px-1.5 py-0.5 bg-surface-container border border-outline-variant rounded font-label-md text-[10px] text-on-surface-variant hover:text-on-surface">
+                Ignore
+              </button>
+</td>
+</tr>
+<!-- Second Notification Row -->
+<tr class="hover:bg-surface-container">
+<td class="py-1.5 px-3">
+<span class="material-symbols-outlined text-primary text-[14px]">info</span>
+</td>
+<td class="py-1.5 px-3 font-semibold text-on-surface font-code-table">I-ROUT-1049</td>
+<td class="py-1.5 px-3 text-on-surface-variant">
+              DOR-XY routing topology guarantees zero circular wait states; deadlock-free proof signed off.
+            </td>
+<td class="py-1.5 px-3 font-code-table text-on-surface">Falcon8_Fabric</td>
+<td class="py-1.5 px-3 text-on-surface-variant">Formal / SMT-Solver-Z3</td>
+<td class="py-1.5 px-3 text-right">
+<button class="px-1.5 py-0.5 bg-surface-container border border-outline-variant rounded font-label-md text-[10px] text-on-surface-variant hover:text-on-surface">
+                View Proof
+              </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</footer>
+</div>
+<script>
+  (function initDesignWorkspace() {
+    // Zoom Micro-interaction
+    const zoomLevel = document.getElementById('zoom-level');
+    const zoomIn = document.getElementById('zoom-in');
+    const zoomOut = document.getElementById('zoom-out');
+    const zoomFit = document.getElementById('zoom-fit');
+    let currentZoom = 100;
+
+    if (zoomIn && zoomOut && zoomLevel) {
+      zoomIn.addEventListener('click', () => {
+        if (currentZoom < 200) {
+          currentZoom += 10;
+          zoomLevel.textContent = currentZoom + '%';
+        }
+      });
+
+      zoomOut.addEventListener('click', () => {
+        if (currentZoom > 50) {
+          currentZoom -= 10;
+          zoomLevel.textContent = currentZoom + '%';
+        }
+      });
+
+      zoomFit.addEventListener('click', () => {
+        currentZoom = 100;
+        zoomLevel.textContent = '100%';
+      });
+    }
+
+    // Tool switcher micro-interaction
+    const tools = ['tool-select', 'tool-pan', 'tool-route'];
+    tools.forEach(toolId => {
+      const btn = document.getElementById(toolId);
+      if (btn) {
+        btn.addEventListener('click', () => {
+          tools.forEach(t => {
+            const b = document.getElementById(t);
+            if (b) {
+              b.classList.remove('bg-primary-container', 'text-on-primary');
+              b.classList.add('text-on-surface-variant');
+            }
+          });
+          btn.classList.add('bg-primary-container', 'text-on-primary');
+          btn.classList.remove('text-on-surface-variant');
+        });
+      }
+    });
+
+    // Repair action feedback
+    const repairBtn = document.getElementById('btn-apply-repair');
+    if (repairBtn) {
+      repairBtn.addEventListener('click', () => {
+        repairBtn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span><span>Applying Depth=16 Flits...</span>';
+        repairBtn.classList.remove('bg-primary');
+        repairBtn.classList.add('bg-surface-container', 'text-on-surface');
+        
+        setTimeout(() => {
+          repairBtn.innerHTML = '<span class="material-symbols-outlined text-[14px] text-emerald-700">check_circle</span><span>Repaired: 16 Flits Committed</span>';
+          repairBtn.classList.add('bg-emerald-50', 'text-emerald-900', 'border', 'border-emerald-600/40');
+        }, 850);
+      });
+    }
+  })();
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-high border-t border-outline-variant z-50 flex items-center justify-between px-gutter font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-sm"><span class="flex items-center gap-1 text-on-surface font-medium hover:text-primary cursor-pointer"><span class="material-symbols-outlined text-[13px] text-tertiary">warning</span>Problems (1 Warning, 0 Errors)</span><span class="text-outline-variant">|</span><span class="flex items-center gap-1 hover:text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[13px] text-primary animate-spin">sync</span>Background Jobs (2 running)</span><span class="text-outline-variant">|</span><span class="flex items-center gap-1 hover:text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[13px]">terminal</span>Console & Simulation Logs</span></div><div class="flex items-center gap-space-sm"><span class="text-on-surface-variant">Workspace: <span class="text-on-surface font-medium">Design / Fabric Topology</span></span><span class="text-outline-variant">|</span><span class="text-primary font-medium">Cycles: 1,420,800</span><span class="text-outline-variant">|</span><span>Convergence: 99.8%</span></div></footer></body></html>

@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"on-secondary-container":"#546770","on-primary-container":"#d0e8ff","on-secondary":"#ffffff","on-surface-variant":"#40484f","tertiary-fixed":"#d8e4f2","on-error":"#ffffff","on-tertiary":"#ffffff","on-secondary-fixed-variant":"#374952","on-primary-fixed-variant":"#004b71","surface-container-low":"#eef4ff","error":"#ba1a1a","on-tertiary-fixed-variant":"#3d4853","background":"#f7f9ff","primary-container":"#0f6c9e","primary":"#00537c","surface-container-highest":"#dce3ee","tertiary-container":"#5c6773","secondary":"#4e616a","inverse-primary":"#8fcdff","secondary-fixed":"#d2e6f1","outline-variant":"#c0c7d0","on-tertiary-fixed":"#121d27","surface-dim":"#d4dae5","surface-container":"#e8eef9","on-error-container":"#93000a","on-tertiary-container":"#dae6f4","surface-container-lowest":"#ffffff","primary-fixed-dim":"#8fcdff","on-surface":"#151c24","on-background":"#151c24","surface-variant":"#dce3ee","tertiary":"#444f5a","secondary-fixed-dim":"#b6c9d4","surface-bright":"#f7f9ff","tertiary-fixed-dim":"#bcc8d5","secondary-container":"#d2e6f1","on-secondary-fixed":"#0a1e26","surface":"#f7f9ff","inverse-on-surface":"#eaf1fc","primary-fixed":"#cbe6ff","inverse-surface":"#2a3139","outline":"#707880","surface-tint":"#006494","surface-container-high":"#e2e9f4","on-primary":"#ffffff","error-container":"#ffdad6","on-primary-fixed":"#001e30"},borderRadius:{DEFAULT:"0.125rem",lg:"0.25rem",xl:"0.5rem",full:"0.75rem"},spacing:{"space-md":"0.75rem",gutter:"0.5rem",margin:"0.5rem","space-lg":"1rem","space-xl":"1.5rem","space-xs":"0.25rem","space-sm":"0.5rem"},fontFamily:{"code-table":["JetBrains Mono"],"headline-lg":["Inter"],"headline-sm":["Inter"],"body-sm":["Inter"],"body-md":["Inter"],"label-md":["Inter"],"headline-md":["Inter"],"code-sm":["JetBrains Mono"],"code-md":["JetBrains Mono"]},fontSize:{"code-table":["11px",{lineHeight:"14px",letterSpacing:"-0.02em",fontWeight:"500"}],"headline-lg":["20px",{lineHeight:"28px",letterSpacing:"-0.015em",fontWeight:"600"}],"headline-sm":["14px",{lineHeight:"20px",letterSpacing:"-0.005em",fontWeight:"600"}],"body-sm":["12px",{lineHeight:"16px",fontWeight:"400"}],"body-md":["13px",{lineHeight:"18px",fontWeight:"400"}],"label-md":["11px",{lineHeight:"14px",letterSpacing:"0.02em",fontWeight:"600"}],"headline-md":["16px",{lineHeight:"24px",letterSpacing:"-0.01em",fontWeight:"600"}],"code-sm":["11px",{lineHeight:"14px",fontWeight:"400"}],"code-md":["12px",{lineHeight:"16px",fontWeight:"400"}]}}}}</script></head><body class="bg-surface font-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 h-14 bg-surface-container-lowest z-50 flex items-center justify-between px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm tracking-tight text-primary font-bold">VERITX</span><span class="text-outline-variant font-code-sm text-code-sm">/</span><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface font-semibold">SROTA</span></div><div class="flex items-center gap-space-xs bg-surface-container-low px-space-sm py-space-xs rounded"><span class="font-label-md text-label-md text-on-surface-variant uppercase">PROJ:</span><span class="font-code-table text-code-table font-semibold text-primary">Falcon8_NoC_Gen2</span><span class="text-outline-variant">•</span><span class="font-code-table text-code-table text-tertiary">d7a4e9b-draft*</span><span class="text-outline-variant">•</span><span class="font-code-table text-code-table text-secondary font-medium">1.4 GHz</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center bg-surface-container px-space-sm py-space-xs rounded w-64 justify-between text-on-surface-variant"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[16px]">search</span><span class="font-body-sm text-body-sm">Search symbols, PDKs...</span></div><kbd class="font-code-sm text-code-sm bg-surface-container-lowest px-1 py-0.5 rounded text-tertiary">Ctrl+K</kbd></div><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-outline text-[16px]">smart_toy</span><span class="font-label-md text-label-md text-tertiary">EDA COPILOT:</span><span class="font-code-sm text-code-sm text-on-surface-variant font-medium">OFFLINE</span></div><a class="p-1.5 rounded bg-secondary-container text-on-secondary-fixed flex items-center justify-center" data-path="runtime-and-local-daemon" href="#"><span class="material-symbols-outlined text-[18px]">settings</span></a><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><aside class="fixed left-0 top-14 bottom-10 w-72 bg-surface-container-low z-40 flex flex-col justify-between py-space-md"><div class="flex flex-col gap-space-xs px-space-sm"><div class="px-space-sm py-space-xs font-label-md text-label-md uppercase text-tertiary font-semibold tracking-wider">Environment &amp; Settings</div><nav class="flex flex-col gap-0.5" data-active-classes="bg-primary-container text-on-primary-container font-semibold rounded"><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="runtime-and-local-daemon" href="#">1. Runtime &amp; Local Daemon</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="backend-engines-and-eda-tools" href="#">2. Backend Engines &amp; EDA Tools</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="toolchain-paths-and-pdks" href="#">3. Toolchain Paths &amp; PDKs</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="execution-and-compute-defaults" href="#">4. Execution &amp; Compute Defaults</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="storage-and-artifact-retention" href="#">5. Storage &amp; Artifact Retention</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="privacy-and-network-policy" href="#">6. Privacy &amp; Network Policy</a><a class="flex items-center px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-body-sm text-body-sm transition-all" data-path="appearance-and-system-display" href="#">7. Appearance &amp; System Display</a></nav></div><div class="px-space-md py-space-sm bg-surface-container rounded mx-space-sm"><div class="flex items-center justify-between font-label-md text-label-md text-tertiary mb-1"><span>HOST ENVIRONMENT</span><span class="font-code-table text-code-table text-primary font-bold">READY</span></div><div class="font-code-sm text-code-sm text-on-surface-variant">v1.8.4-x86_64-linux</div></div></aside><div class="pl-72"><main class="relative pt-14 pb-10 w-full min-h-screen bg-surface px-space-lg"><div class="flex flex-col w-full font-body-md text-on-surface">
+<!-- Sub-header Ribbon / Action Strip -->
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container-lowest shadow-sm mb-space-sm rounded">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]">terminal</span>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="text-tertiary">Environment &amp; Local Settings</span>
+<span class="text-outline-variant">/</span>
+<span class="text-primary font-semibold">Backend Engines &amp; EDA Tools</span>
+</div>
+<span class="px-space-xs py-0.5 rounded bg-surface-container-high text-on-surface-variant font-code-table text-code-table">PROFILE: x86_64_LINUX_PROD_RTL</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="flex items-center gap-space-xs px-space-sm py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md transition-colors shadow-sm" id="btn-health-check">
+<span class="material-symbols-outlined text-[15px] text-primary">sync</span>
+<span>Re-run Discovery &amp; Health Checks</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-sm py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[15px] text-tertiary">article</span>
+<span>Inspect Diagnostics Log</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-sm py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[15px] text-outline">history</span>
+<span>Restore Verified Defaults</span>
+</button>
+</div>
+</div>
+<!-- Mandatory Hardware Signoff Disclaimers / Prominent Advisory Badge -->
+<div class="flex items-center justify-between px-space-md py-space-xs bg-surface-container-low mb-space-md rounded shadow-sm">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]">gavel</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+<strong class="font-semibold text-on-surface">Illustrative sample data</strong> — Discovered executable presence or responsive health checks do <span class="font-semibold text-error uppercase">not</span> establish hardware qualification or target signoff eligibility. All tapeout signoffs require certified vendor license seats.
+      </p>
+</div>
+<div class="flex items-center gap-space-xs font-code-table text-code-table text-tertiary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>ISOLATION LEVEL: AIRGAP-VERIFIED</span>
+</div>
+</div>
+<!-- Top System Telemetry Slabs (Grid: 2 Columns) -->
+<div class="grid grid-cols-12 gap-space-md mb-space-md">
+<!-- 1. Local Service & Daemon Runtime Status -->
+<div class="col-span-12 lg:col-span-6 bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between pb-space-xs mb-space-xs bg-surface-container-low px-space-sm py-1 rounded">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[16px]">dns</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold uppercase tracking-wider">Local Daemon Core Engine</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-code-table text-code-table text-primary font-bold">ACTIVE / RESPONDING</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-space-sm font-code-sm text-code-sm my-space-xs">
+<div class="bg-surface-container-low p-space-sm rounded">
+<div class="font-label-md text-label-md text-tertiary uppercase mb-0.5">Engine Daemon</div>
+<div class="font-semibold text-on-surface">veritx-daemon v2.14.0-r3</div>
+<div class="text-tertiary font-code-table text-code-table mt-1">PID: 38102 • PPID: 1</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded">
+<div class="font-label-md text-label-md text-tertiary uppercase mb-0.5">IPC Interface Socket</div>
+<div class="font-semibold text-on-surface truncate" title="/var/run/veritx/daemon.sock">/var/run/veritx/daemon.sock</div>
+<div class="text-tertiary font-code-table text-code-table mt-1">Unix Domain (mode: 0660)</div>
+</div>
+</div>
+<div class="flex items-center justify-between bg-surface-container px-space-sm py-1 rounded font-code-table text-code-table text-on-surface-variant">
+<span>Uptime: <strong class="text-on-surface">4h 12m 38s</strong></span>
+<span>Resident Mem: <strong class="text-on-surface">412.8 MB</strong></span>
+<span>Worker Threads: <strong class="text-on-surface">16 POSIX</strong></span>
+<span>IPC Latency: <strong class="text-primary">&lt;14 µs</strong></span>
+</div>
+</div>
+<!-- Job Engine Sandbox & Hardware Architecture -->
+<div class="col-span-12 lg:col-span-6 bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between pb-space-xs mb-space-xs bg-surface-container-low px-space-sm py-1 rounded">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[16px]">memory</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold uppercase tracking-wider">Job Engine Sandbox &amp; Compute Node</span>
+</div>
+<div class="flex items-center gap-space-xs bg-secondary-container px-space-xs py-0.5 rounded">
+<span class="material-symbols-outlined text-on-secondary-fixed text-[13px]">lock</span>
+<span class="font-code-table text-code-table text-on-secondary-fixed font-bold uppercase">OFFLINE MODE: ACTIVE</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-space-sm font-code-sm text-code-sm my-space-xs">
+<div class="bg-surface-container-low p-space-sm rounded">
+<div class="font-label-md text-label-md text-tertiary uppercase mb-0.5">Host Kernel &amp; Arch</div>
+<div class="font-semibold text-on-surface">Linux 6.1.0-eda-rt #4 SMP</div>
+<div class="text-tertiary font-code-table text-code-table mt-1">Dual Intel Xeon Platinum 8480+</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded">
+<div class="font-label-md text-label-md text-tertiary uppercase mb-0.5">Process Isolation</div>
+<div class="font-semibold text-on-surface">cgroups v2 + seccomp-bpf</div>
+<div class="text-primary font-code-table text-code-table mt-1">Zero Cloud Telemetry Outbound</div>
+</div>
+</div>
+<div class="flex items-center justify-between bg-surface-container px-space-sm py-1 rounded font-code-table text-code-table text-on-surface-variant">
+<span>Cores Allocated: <strong class="text-on-surface">32 / 112 HT</strong></span>
+<span>Node Load: <strong class="text-on-surface">1.84, 2.11, 1.95</strong></span>
+<span>Sandbox Namespace: <strong class="text-primary">ns-eda-falcon8</strong></span>
+</div>
+</div>
+</div>
+<!-- Primary Workspace Split: Dense Toolchain Matrix & Detail Inspector -->
+<div class="grid grid-cols-12 gap-space-md mb-space-md">
+<!-- 2. Backend Engines & Discovered Toolchains (Dense Table / Matrix) -->
+<div class="col-span-12 xl:col-span-8 flex flex-col bg-surface-container-lowest rounded shadow-sm overflow-hidden">
+<!-- Table Header Bar -->
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container-high">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-on-surface">precision_manufacturing</span>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Backend Engines &amp; Discovered Toolchains</h2>
+</div>
+<div class="flex items-center gap-space-xs font-code-table text-code-table text-tertiary">
+<span>6 DEFINED</span>
+<span>•</span>
+<span class="text-primary">3 READY FOR RUNTIME</span>
+<span>•</span>
+<span class="text-error font-medium">1 LICENSE BLOCKED</span>
+</div>
+</div>
+<!-- Dense Matrix Grid Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left font-body-sm text-body-sm">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-label-md text-label-md uppercase">
+<th class="px-space-md py-2">Engine / Executable</th>
+<th class="px-space-md py-2">Discovered Path</th>
+<th class="px-space-sm py-2">Version</th>
+<th class="px-space-sm py-2">Service Status</th>
+<th class="px-space-md py-2">Qualification Scope</th>
+<th class="px-space-md py-2 text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container">
+<!-- Row 1: Srota-GenCore -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-space-md py-2 font-medium text-on-surface">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-semibold text-primary">Srota-GenCore</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">Built-in RTL Emitter</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-on-surface-variant truncate max-w-[180px]" title="/opt/veritx/bin/srota-gencore">
+                /opt/veritx/bin/srota-gencore
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-on-surface">v2.3.4</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container-high text-primary font-code-table text-code-table font-semibold">
+                  Healthy / Active
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-on-surface font-code-table text-code-table">Qualified: TSMC N5 / N7 Radix-4/8 Mesh</div>
+<div class="text-tertiary font-code-table text-code-table text-[10px]">Unqualified: Torus topology RTL</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-table text-code-table">
+                  Inspect
+                </button>
+</td>
+</tr>
+<!-- Row 2: BookSim2 -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-space-md py-2 font-medium text-on-surface">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-semibold text-on-surface">BookSim2 Simulator</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">Cycle-Accurate Interconnect Model</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-on-surface-variant truncate max-w-[180px]" title="/usr/local/bin/booksim2">
+                /usr/local/bin/booksim2
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-on-surface">v2.0.1-srota-p4</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container-high text-primary font-code-table text-code-table font-semibold">
+                  Healthy / Available
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-on-surface font-code-table text-code-table">Qualified: Flit injection, VC latency</div>
+<div class="text-tertiary font-code-table text-code-table text-[10px]">Unqualified: Power estimation</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-table text-code-table">
+                  Inspect
+                </button>
+</td>
+</tr>
+<!-- Row 3: Synopsys VCS -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-space-md py-2 font-medium text-on-surface">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-semibold text-on-surface">Synopsys VCS</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">Commercial Logic Simulator</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-on-surface-variant truncate max-w-[180px]" title="/tools/synopsys/vcs/U-2023.03-SP2/bin/vcs">
+                /tools/synopsys/vcs/U-2023.03...
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-on-surface">2023.03-SP2</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-fixed font-code-table text-code-table font-semibold">
+                  Token Acquired
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-on-surface font-code-table text-code-table">Qualified: IEEE 1800-2017 SV Elab</div>
+<div class="text-primary font-code-table text-code-table text-[10px]">FlexLM: lic-eda-04:27000 (Checked Out)</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-table text-code-table">
+                  Inspect
+                </button>
+</td>
+</tr>
+<!-- Row 4: Cadence Xcelium (Active Selected State) -->
+<tr class="bg-secondary-container/40 transition-colors">
+<td class="px-space-md py-2 font-medium text-on-surface">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span class="font-bold text-on-surface">Cadence Xcelium</span>
+<span class="px-1 bg-surface-container font-code-table text-[9px] uppercase text-primary font-bold rounded">INSPECTOR</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">Parallel Logic Simulator</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-on-surface-variant truncate max-w-[180px]" title="/tools/cadence/xcelium/23.09.002/bin/xrun">
+                /tools/cadence/xcelium/23.09...
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-on-surface">23.09-s002</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-code-table text-code-table font-semibold">
+                  Unlicensed
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-error font-code-table text-code-table font-semibold">Warning: License checkout failed</div>
+<div class="text-on-surface-variant font-code-table text-code-table text-[10px]">Fallback pathway engaged → VCS</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-primary text-on-primary font-code-table text-code-table font-medium shadow-sm">
+                  Active
+                </button>
+</td>
+</tr>
+<!-- Row 5: Synopsys Design Compiler -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-space-md py-2 font-medium text-on-surface">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span class="font-semibold text-on-surface">Synopsys Design Compiler</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">Logic Synthesis &amp; Mapping</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-on-surface-variant truncate max-w-[180px]" title="/tools/synopsys/syn/V-2023.12/bin/dc_shell">
+                /tools/synopsys/syn/V-2023...
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-on-surface">V-2023.12</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container-high text-tertiary font-code-table text-code-table">
+                  Path Unverified
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-on-surface font-code-table text-code-table">SDC timing template export only</div>
+<div class="text-tertiary font-code-table text-code-table text-[10px]">Gate-level requires manual batch flow</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-table text-code-table">
+                  Verify
+                </button>
+</td>
+</tr>
+<!-- Row 6: Xilinx Vivado ML Enterprise -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-space-md py-2 font-medium text-on-surface opacity-80">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span class="font-medium text-on-surface">Xilinx Vivado ML Enterprise</span>
+</div>
+<div class="font-code-table text-code-table text-tertiary pl-2.5">FPGA Implementation Suite</div>
+</td>
+<td class="px-space-md py-2 font-code-table text-code-table text-tertiary truncate max-w-[180px]" title="/opt/Xilinx/Vivado/2023.2/bin/vivado">
+                /opt/Xilinx/Vivado/2023.2/bin/...
+              </td>
+<td class="px-space-sm py-2 font-code-table text-code-table text-tertiary">2023.2</td>
+<td class="px-space-sm py-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container text-tertiary font-code-table text-code-table">
+                  Missing / Unset
+                </span>
+</td>
+<td class="px-space-md py-2">
+<div class="text-tertiary font-code-table text-code-table">Unavailable: FPGA synthesis disabled</div>
+<div class="text-tertiary font-code-table text-code-table text-[10px]">Bitstream signoff inactive</div>
+</td>
+<td class="px-space-md py-2 text-right">
+<button class="px-2 py-0.5 rounded bg-surface-container-high hover:bg-surface-container-highest text-primary font-code-table text-code-table font-semibold">
+                  Configure Path...
+                </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs bg-surface-container-low font-code-table text-code-table text-tertiary">
+<span>FLEXLM DAEMONS: 3 QUERIED</span>
+<span>AUTO-PROBE CADENCE: RETRY IN 300s</span>
+<span>MANUAL OVERRIDE: VERITX_EDA_FORCE_TOOL=vcs</span>
+</div>
+</div>
+<!-- 3. Contextual Inspector / Tabbed Details Panel -->
+<div class="col-span-12 xl:col-span-4 flex flex-col bg-surface-container-lowest rounded shadow-sm">
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container-high">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-primary">search_check</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Selected Engine Inspector</h3>
+</div>
+<span class="font-code-table text-code-table px-1.5 py-0.5 rounded bg-surface-container font-bold text-on-surface-variant">NODE: EDA-04</span>
+</div>
+<!-- Engine Identity Header -->
+<div class="p-space-md bg-surface-container-low flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Cadence Xcelium</span>
+<span class="font-code-table text-code-table px-2 py-0.5 rounded bg-error-container text-on-error-container font-semibold">FAIL: LIC-404</span>
+</div>
+<div class="font-code-table text-code-table text-on-surface-variant">Version 23.09-s002 (64-bit multi-core elab)</div>
+<div class="font-code-sm text-code-sm text-tertiary truncate">Target: /tools/cadence/xcelium/23.09.002/bin/xrun</div>
+</div>
+<!-- Distinction Badges (Engineering Matrix) -->
+<div class="grid grid-cols-4 gap-1 p-space-sm bg-surface-container">
+<div class="flex flex-col items-center justify-center p-space-xs bg-surface-container-lowest rounded text-center">
+<span class="font-label-md text-label-md text-tertiary uppercase">Installed</span>
+<span class="font-code-table text-code-table font-bold text-primary">YES</span>
+</div>
+<div class="flex flex-col items-center justify-center p-space-xs bg-surface-container-lowest rounded text-center">
+<span class="font-label-md text-label-md text-tertiary uppercase">Responding</span>
+<span class="font-code-table text-code-table font-bold text-primary">YES</span>
+</div>
+<div class="flex flex-col items-center justify-center p-space-xs bg-surface-container-lowest rounded text-center">
+<span class="font-label-md text-label-md text-tertiary uppercase">Configured</span>
+<span class="font-code-table text-code-table font-bold text-primary">YES</span>
+</div>
+<div class="flex flex-col items-center justify-center p-space-xs bg-surface-container-lowest rounded text-center">
+<span class="font-label-md text-label-md text-error uppercase">Qualified</span>
+<span class="font-code-table text-code-table font-bold text-error">NO</span>
+</div>
+</div>
+<!-- Diagnostics Log Inset -->
+<div class="p-space-md flex-1 flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-tertiary font-semibold">Health Check Diagnostics Trace</span>
+<button class="font-code-table text-code-table text-primary hover:underline">Copy Log</button>
+</div>
+<div class="p-space-sm bg-surface-container-low rounded font-code-table text-code-table text-on-surface-variant flex flex-col gap-1 overflow-x-auto leading-relaxed">
+<div class="text-tertiary">[14:22:01.018] Executing: xrun -version</div>
+<div class="text-on-surface">[14:22:01.092] Binary architecture: x86_64 ELF POSIX LSB</div>
+<div class="text-tertiary">[14:22:01.104] Connecting FlexLM server lic-server-01:5280...</div>
+<div class="text-error font-semibold">[14:22:01.450] ERROR (EXP-LIC-TOKEN-404): Unable to obtain license token 'Xcelium_Single_Core' from lic-server-01:5280.</div>
+<div class="text-tertiary">[14:22:01.451] Daemon diagnostic exit code: 1 (SIGERR)</div>
+<div class="text-primary font-medium">[14:22:01.453] Action: Fallback engaged according to runtime policy matrix.</div>
+</div>
+<!-- Declared Prerequisites & Fallback Pathway -->
+<div class="p-space-sm bg-surface-container rounded flex flex-col gap-1">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[16px]">alt_route</span>
+<span class="font-label-md text-label-md font-semibold text-on-surface">Fallback Routing Route</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Simulations assigned to Cadence Xcelium will be dynamically routed to:
+          </p>
+<div class="flex items-center justify-between bg-surface-container-lowest px-space-sm py-1 rounded">
+<span class="font-code-table text-code-table font-semibold text-primary">Synopsys VCS v2023.03-SP2</span>
+<span class="font-code-table text-code-table text-tertiary">SEAT: LIC-EDA-04</span>
+</div>
+</div>
+<!-- Quick Config Actions -->
+<div class="flex items-center gap-space-xs mt-auto pt-space-xs">
+<button class="flex-1 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md">
+            Test Port 5280
+          </button>
+<button class="flex-1 py-1 rounded bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md">
+            Update Lic Path
+          </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Lower Configuration Blocks (3 Slabs: Execution Defaults, Storage Retention, Privacy & Network) -->
+<div class="grid grid-cols-12 gap-space-md mb-space-md">
+<!-- 4. Execution Defaults & Compute Containment -->
+<div class="col-span-12 md:col-span-4 bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-space-xs pb-space-xs mb-space-sm bg-surface-container-low px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-primary text-[16px]">tune</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Execution &amp; Compute Defaults</h3>
+</div>
+<div class="flex flex-col gap-space-sm font-body-sm text-body-sm">
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="font-label-md text-label-md text-on-surface font-medium">Max Concurrent Simulation Workers</label>
+<span class="font-code-table text-code-table font-bold text-primary">4 Workers</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<input class="w-full h-1.5 bg-surface-container-high rounded appearance-none cursor-pointer accent-primary" max="32" min="1" type="range" value="4"/>
+<span class="font-code-table text-code-table text-tertiary w-16 text-right">32 Avail</span>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="font-label-md text-label-md text-on-surface font-medium">Worker Memory Limit (Per Job)</label>
+<span class="font-code-table text-code-table font-bold text-primary">16 GB</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<input class="w-full h-1.5 bg-surface-container-high rounded appearance-none cursor-pointer accent-primary" max="64" min="4" step="4" type="range" value="16"/>
+<span class="font-code-table text-code-table text-tertiary w-16 text-right">64 GB Total</span>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="font-label-md text-label-md text-on-surface font-medium">Simulation Job Timeout Policy</label>
+<span class="font-code-table text-code-table font-bold text-primary">3,600s (1 Hour)</span>
+</div>
+<div class="grid grid-cols-3 gap-1">
+<button class="py-1 rounded bg-surface-container-high font-code-table text-code-table text-on-surface hover:bg-surface-container-highest">900s</button>
+<button class="py-1 rounded bg-primary text-on-primary font-code-table text-code-table font-semibold">3,600s</button>
+<button class="py-1 rounded bg-surface-container-high font-code-table text-code-table text-on-surface hover:bg-surface-container-highest">14,400s</button>
+</div>
+</div>
+</div>
+</div>
+<div class="p-space-xs bg-surface-container-low rounded mt-space-md">
+<p class="font-code-table text-code-table text-tertiary leading-tight">
+<strong class="text-on-surface">NOTICE:</strong> Adjusting execution defaults does not rewrite existing study briefs or historical evaluation configurations.
+        </p>
+</div>
+</div>
+<!-- 5. Storage & Artifact Retention Rules -->
+<div class="col-span-12 md:col-span-4 bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-space-xs pb-space-xs mb-space-sm bg-surface-container-low px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-primary text-[16px]">folder_special</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Storage &amp; Retention Rules</h3>
+</div>
+<div class="flex flex-col gap-space-sm">
+<div class="p-space-xs bg-surface-container-low rounded">
+<div class="font-label-md text-label-md text-tertiary uppercase mb-0.5">Working Directory Cache</div>
+<div class="font-code-table text-code-table font-medium text-on-surface truncate">/eda/projects/falcon8/cache/</div>
+<div class="mt-2 flex items-center justify-between font-code-table text-code-table text-tertiary mb-1">
+<span>Used: <strong class="text-on-surface">12.4 GB</strong></span>
+<span>Capacity: <strong class="text-primary">450 GB Free</strong></span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-high rounded overflow-hidden">
+<div class="h-full bg-primary" style="width: 2.7%"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1.5 font-body-sm text-body-sm">
+<div class="flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-tertiary mt-0.5">auto_delete</span>
+<div>
+<span class="font-semibold text-on-surface">Wave Dumps (.vcd / .fsdb):</span>
+<span class="text-tertiary">Purged automatically after 7 days idle.</span>
+</div>
+</div>
+<div class="flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-primary mt-0.5">verified_user</span>
+<div>
+<span class="font-semibold text-on-surface">Provenance Manifests (.json / .sv):</span>
+<span class="text-primary font-medium">NEVER automatically deleted.</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between">
+<button class="flex items-center gap-space-xs px-space-sm py-1 rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md">
+<span class="material-symbols-outlined text-[15px] text-outline">visibility</span>
+<span>Preview Deletion Consequences</span>
+</button>
+<button class="font-code-table text-code-table text-tertiary hover:text-on-surface">
+          Inspect Policy JSON
+        </button>
+</div>
+</div>
+<!-- 6. Privacy & Network Policy -->
+<div class="col-span-12 md:col-span-4 bg-surface-container-lowest p-space-md rounded shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-space-xs pb-space-xs mb-space-sm bg-surface-container-low px-space-sm py-1 rounded">
+<span class="material-symbols-outlined text-primary text-[16px]">shield_person</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Privacy &amp; Network Policy</h3>
+</div>
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low rounded">
+<div>
+<div class="font-label-md text-label-md text-tertiary uppercase">Enforced Network Mode</div>
+<div class="font-semibold text-on-surface font-code-sm text-code-sm">Air-Gapped / Manual Offline</div>
+</div>
+<span class="px-2 py-0.5 rounded bg-primary text-on-primary font-code-table text-code-table font-semibold">
+              STRICT
+            </span>
+</div>
+<div class="p-space-xs bg-surface-container rounded flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Remote AI / Cloud Copilot</span>
+<span class="font-code-table text-code-table font-bold text-error uppercase">BLOCKED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              All LLM outbound telemetry and external inference sockets are severed at the Linux cgroups net_cls layer.
+            </p>
+</div>
+<div class="p-space-xs bg-surface-container-low rounded flex flex-col gap-1">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[15px]">ink_eraser</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">Secret &amp; Token Scrubbing</span>
+</div>
+<p class="font-code-table text-code-table text-tertiary text-[10px]">
+              API keys, FlexLM port addresses, and host credentials are masked automatically (SHA-256 HMAC) before writing diagnostic exports.
+            </p>
+</div>
+</div>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between bg-surface-container px-space-sm py-1 rounded font-code-table text-code-table">
+<span class="text-tertiary">FIREWALL: IPTABLES STRICT</span>
+<span class="text-primary font-bold">0 BYTES EGRESS</span>
+</div>
+</div>
+</div>
+<!-- Persistent Engineering Status Bar (Docked bottom indicator) -->
+<div class="w-full bg-surface-container-lowest px-space-md py-space-xs rounded shadow-sm flex items-center justify-between font-code-table text-code-table text-on-surface-variant">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-semibold text-on-surface">DAEMON: veritx-d (PID: 38102)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="text-tertiary">JOBS:</span>
+<span class="text-primary font-bold">SIM-403: 42% (Flit Convergence)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="text-tertiary">MEMORY RSS:</span>
+<span class="font-semibold text-on-surface">6.4 GB / 64.0 GB</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[14px]">lock</span>
+<span class="font-semibold text-primary">OFFLINE ENFORCED</span>
+</div>
+</div>
+</div>
+<script>
+    document.getElementById('btn-health-check')?.addEventListener('click', function() {
+      const btn = this;
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin text-primary">sync</span><span>Probing EDA Nodes...</span>';
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+      }, 900);
+    });
+  </script>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-10 bg-surface-container-lowest z-50 flex items-center justify-between px-space-md shadow-[0_-1px_6px_rgba(0,0,0,0.03)]"><div class="flex items-center gap-space-lg font-code-sm text-code-sm"><div class="flex items-center gap-space-xs"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="font-label-md text-label-md text-on-surface-variant uppercase">DAEMONS:</span><span class="text-on-surface font-medium">srota-d (PID: 18492) [ONLINE]</span></div><div class="flex items-center gap-space-xs"><span class="font-label-md text-label-md text-on-surface-variant uppercase">JOB STATUS:</span><span class="text-primary font-semibold">SIM-403 Converged (3.2k cycles)</span></div></div><div class="flex items-center gap-space-md font-code-sm text-code-sm"><div class="flex items-center gap-space-xs text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-primary">memory</span><span>HOST RAM: 18.2 / 64 GB</span></div><div class="flex items-center gap-space-xs text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-primary">bolt</span><span>EDA LINK: SYNOPSYS VCS @ 12ms</span></div></div></footer></body></html>

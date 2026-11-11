@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"secondary":"#4e616a","secondary-fixed":"#d2e6f1","background":"#f7f9ff","on-secondary":"#ffffff","on-error":"#ffffff","on-tertiary-fixed-variant":"#3d4853","outline":"#707880","surface-container":"#e8eef9","on-secondary-fixed":"#0a1e26","surface-container-highest":"#dce3ee","surface-bright":"#f7f9ff","primary":"#00537c","on-error-container":"#93000a","primary-fixed":"#cbe6ff","surface-container-low":"#eef4ff","primary-container":"#0f6c9e","on-secondary-fixed-variant":"#374952","error-container":"#ffdad6","surface-container-high":"#e2e9f4","on-background":"#151c24","on-primary-fixed":"#001e30","surface":"#f7f9ff","tertiary-fixed-dim":"#bcc8d5","on-surface":"#151c24","tertiary-container":"#5c6773","tertiary":"#444f5a","surface-dim":"#d4dae5","secondary-container":"#d2e6f1","error":"#ba1a1a","primary-fixed-dim":"#8fcdff","on-primary":"#ffffff","surface-container-lowest":"#ffffff","on-primary-fixed-variant":"#004b71","inverse-on-surface":"#eaf1fc","on-tertiary":"#ffffff","surface-tint":"#006494","tertiary-fixed":"#d8e4f2","on-primary-container":"#d0e8ff","on-secondary-container":"#546770","inverse-primary":"#8fcdff","on-tertiary-fixed":"#121d27","on-surface-variant":"#40484f","inverse-surface":"#2a3139","surface-variant":"#dce3ee","outline-variant":"#c0c7d0","secondary-fixed-dim":"#b6c9d4","on-tertiary-container":"#dae6f4"},borderRadius:{DEFAULT:"0.125rem",lg:"0.25rem",xl:"0.5rem",full:"0.75rem"},spacing:{gutter:"0.5rem","space-xl":"1.5rem","space-md":"0.75rem",margin:"0.5rem","space-xs":"0.25rem","space-sm":"0.5rem","space-lg":"1rem"},fontFamily:{"body-md":["Inter"],"headline-lg":["Inter"],"code-md":["JetBrains Mono"],"label-md":["Inter"],"headline-sm":["Inter"],"code-sm":["JetBrains Mono"],"code-table":["JetBrains Mono"],"body-sm":["Inter"],"headline-md":["Inter"]},fontSize:{"body-md":["13px",{lineHeight:"18px",fontWeight:"400"}],"headline-lg":["20px",{lineHeight:"28px",letterSpacing:"-0.015em",fontWeight:"600"}],"code-md":["12px",{lineHeight:"16px",fontWeight:"400"}],"label-md":["11px",{lineHeight:"14px",letterSpacing:"0.02em",fontWeight:"600"}],"headline-sm":["14px",{lineHeight:"20px",letterSpacing:"-0.005em",fontWeight:"600"}],"code-sm":["11px",{lineHeight:"14px",fontWeight:"400"}],"code-table":["11px",{lineHeight:"14px",letterSpacing:"-0.02em",fontWeight:"500"}],"body-sm":["12px",{lineHeight:"16px",fontWeight:"400"}],"headline-md":["16px",{lineHeight:"24px",letterSpacing:"-0.01em",fontWeight:"600"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 z-40 bg-surface-container-lowest border-b border-surface-dim"><div class="h-9 px-space-md flex items-center justify-between border-b border-surface-container"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">memory</span><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface font-bold uppercase">Srota Studio</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container rounded border border-outline-variant"><span class="material-symbols-outlined text-secondary text-[14px]">folder_open</span><span class="font-code-sm text-code-sm text-on-surface font-medium">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-secondary">(d7a4e9b)</span><span class="material-symbols-outlined text-secondary text-[14px]">arrow_drop_down</span></div><div class="h-4 w-px bg-outline-variant"></div><nav class="flex items-center gap-0.5" data-active-classes="bg-surface-container-high text-primary font-semibold"><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="design" href="#">Design</a><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="explore" href="#">Explore</a><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="verify" href="#">Verify</a><a class="px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="deliver" href="#">Deliver</a></nav></div><div class="flex items-center gap-space-sm"><div class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant text-secondary font-code-sm text-code-sm"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>HW-QUAL: PENDING</span></div><div class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant text-secondary font-code-sm text-code-sm"><span class="material-symbols-outlined text-[12px]">cloud_off</span><span>OFFLINE</span></div><div class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-code-sm text-code-sm"><span class="material-symbols-outlined text-[13px] text-tertiary">edit_document</span><span>Draft: d7a4e9b* [Uncommitted changes]</span></div><div class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary-container border border-secondary text-on-secondary-fixed-variant font-code-sm text-code-sm animate-pulse"><span class="material-symbols-outlined text-[13px] text-primary">sync</span><span>SIM-403 Running</span></div><button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded"><span class="material-symbols-outlined text-[16px]">help_outline</span></button><div class="w-6 h-6 rounded bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">person</span></div></div></div><div class="h-7 px-space-md flex items-center justify-between bg-surface-container-low"><nav class="flex items-center gap-1 h-full" data-active-classes="bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary"><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="system-diagram" href="#">System Diagram</a><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="fabric-topology" href="#">Fabric Topology</a><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="ip-catalog" href="#">IP Catalog</a><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="hardware-endpoints" href="#">Hardware Endpoints</a><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="initiator-target-mapping" href="#">Initiator–Target Mapping</a><a aria-current="page" class="h-full px-space-sm flex items-center transition-colors bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary" data-path="address-map" href="#">Address Map</a><a class="h-full px-space-sm flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="routing-and-quality-of-service" href="#">Routing &amp; Quality of Service</a></nav><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">tune</span><span>Active Profile: High-Radix Mesh v2.4</span></div></div></header><aside class="fixed left-0 top-16 bottom-6 w-72 bg-surface-container-lowest border-r border-surface-dim z-30 flex flex-col"><div class="h-7 px-space-md bg-surface-container-low border-b border-surface-dim flex items-center justify-between"><span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider font-semibold">Project Hierarchy &amp; Spaces</span><div class="flex items-center gap-0.5"><button class="p-0.5 hover:bg-surface-container rounded text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">add</span></button><button class="p-0.5 hover:bg-surface-container rounded text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">unfold_more</span></button></div></div><div class="flex-1 overflow-y-auto p-space-xs flex flex-col gap-0.5"><div class="px-space-xs py-1 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1.5 truncate"><span class="material-symbols-outlined text-[14px] text-tertiary">expand_more</span><span class="material-symbols-outlined text-[14px] text-primary">account_tree</span><span class="font-body-sm text-body-sm font-medium truncate">System Physical Space</span></div><span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded">48-bit</span></div><div class="ml-4 border-l border-surface-dim pl-2 flex flex-col gap-0.5"><div class="px-space-xs py-0.5 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-[12px] text-outline">subdirectory_arrow_right</span><span class="font-code-sm text-code-sm truncate">DDR5_CH0_BASE</span></div><span class="font-code-table text-code-table text-on-surface-variant">0x0000_0000</span></div><div class="px-space-xs py-0.5 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-[12px] text-outline">subdirectory_arrow_right</span><span class="font-code-sm text-code-sm truncate">DDR5_CH1_BASE</span></div><span class="font-code-table text-code-table text-on-surface-variant">0x4000_0000</span></div></div><div class="px-space-xs py-1 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1.5 truncate"><span class="material-symbols-outlined text-[14px] text-tertiary">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">domain</span><span class="font-body-sm text-body-sm font-medium truncate">CPU Virtual/Phys Window</span></div><span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded">39-bit</span></div><div class="px-space-xs py-1 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1.5 truncate"><span class="material-symbols-outlined text-[14px] text-tertiary">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">swap_horiz</span><span class="font-body-sm text-body-sm font-medium truncate">PCIe Inbound Translation</span></div><span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded">64-bit</span></div><div class="px-space-xs py-1 flex items-center justify-between text-on-surface rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1.5 truncate"><span class="material-symbols-outlined text-[14px] text-tertiary">chevron_right</span><span class="material-symbols-outlined text-[14px] text-secondary">memory</span><span class="font-body-sm text-body-sm font-medium truncate">Accelerator TCM Local Space</span></div><span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded">32-bit</span></div><div class="px-space-xs py-1 flex items-center justify-between text-on-surface-variant rounded hover:bg-surface-container-low cursor-pointer"><div class="flex items-center gap-1.5 truncate"><span class="material-symbols-outlined text-[14px] text-outline">horizontal_rule</span><span class="material-symbols-outlined text-[14px] text-outline">lock</span><span class="font-body-sm text-body-sm italic truncate">Unmapped / Reserved</span></div><span class="font-code-sm text-code-sm text-outline">--</span></div></div><div class="p-space-sm bg-surface-container-low border-t border-surface-dim flex flex-col gap-1.5"><div class="flex items-center justify-between"><span class="font-label-md text-label-md text-on-surface-variant uppercase font-semibold">Health Findings</span><span class="font-code-sm text-code-sm text-primary font-bold">2 NOTICES</span></div><div class="grid grid-cols-2 gap-1 text-center"><div class="p-1 bg-surface-container rounded border border-outline-variant"><div class="font-headline-sm text-headline-sm text-secondary font-bold">1</div><div class="font-label-md text-label-md text-on-surface-variant uppercase">Overlap Warn</div></div><div class="p-1 bg-surface-container rounded border border-outline-variant"><div class="font-headline-sm text-headline-sm text-secondary font-bold">1</div><div class="font-label-md text-label-md text-on-surface-variant uppercase">Align Note</div></div></div></div></aside><div class="pl-72"><main class="w-full pt-16 pb-6 min-h-screen bg-surface"><div class="flex flex-col w-full">
+<!-- Top Address Space Context & Action Bar -->
+<div class="bg-surface-container-low px-space-md py-space-xs flex flex-col gap-space-xs">
+<div class="flex items-center justify-between gap-space-md flex-wrap">
+<!-- Active Space Selector -->
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-1.5 px-space-sm py-1 bg-surface-container-lowest rounded shadow-sm">
+<span class="material-symbols-outlined text-primary text-[16px]">domain_verification</span>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Active Address Space</span>
+<div class="flex items-center gap-1">
+<select class="font-code-sm text-code-sm font-semibold text-on-surface bg-transparent outline-none cursor-pointer pr-2" id="space-selector">
+<option selected="" value="SYS_PAS_48">SYS_PAS_48 (Primary NoC Physical • 48-bit • 256 TiB decode)</option>
+<option value="ACCEL_TCM_32">ACCEL_TCM_32 (Accelerator Local TCM • 32-bit • 4 GiB decode)</option>
+<option value="PCIE_INBOUND_TRANS">PCIE_INBOUND_TRANS (PCIe RC Inbound Window • 64-bit)</option>
+<option value="CLUSTER_SHARED_L3">CLUSTER_SHARED_L3 (Cluster 0/1 Inter-core Shared Cache Map)</option>
+</select>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1 px-space-xs py-1 bg-surface-container rounded text-secondary font-code-sm text-code-sm">
+<span class="font-semibold text-on-surface">Base Radix:</span>
+<span>Hex (48b canonical)</span>
+</div>
+</div>
+<!-- Toolbar Actions -->
+<div class="flex items-center gap-space-xs flex-wrap">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined text-outline absolute left-2 text-[14px]">search</span>
+<input class="h-7 pl-6 pr-2 bg-surface-container-lowest rounded font-code-sm text-code-sm text-on-surface w-56 placeholder-outline focus:outline-none focus:bg-surface-container-lowest" placeholder="Filter Region / Target / Base..." type="text"/>
+</div>
+<div class="flex items-center gap-1 px-1 bg-surface-container rounded h-7">
+<button class="px-1.5 py-0.5 rounded text-on-surface font-label-md text-label-md bg-surface-container-lowest shadow-sm" title="Filter attributes">Attributes: ALL</button>
+<button class="px-1.5 py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md" title="Filter by RW">RW</button>
+<button class="px-1.5 py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md" title="Filter MMIO">MMIO</button>
+</div>
+<button class="h-7 px-2.5 rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 hover:bg-primary-container shadow-sm transition-colors">
+<span class="material-symbols-outlined text-[14px]">add</span>
+<span>Add Region</span>
+</button>
+<button class="h-7 px-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md flex items-center gap-1 hover:bg-surface-container-highest transition-colors" title="Trigger Rule DRC">
+<span class="material-symbols-outlined text-[14px] text-primary">rule</span>
+<span>Validate Space</span>
+</button>
+<!-- Export Dropdown -->
+<div class="relative group">
+<button class="h-7 px-2 rounded bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-1 hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[14px]">file_download</span>
+<span>Export Map</span>
+<span class="material-symbols-outlined text-[12px]">arrow_drop_down</span>
+</button>
+</div>
+<div class="h-4 w-px bg-outline-variant mx-0.5"></div>
+<!-- View Segment Toggles -->
+<div class="flex items-center bg-surface-container-high rounded p-0.5">
+<button class="px-2 py-0.5 rounded bg-surface-container-lowest text-primary font-label-md text-label-md flex items-center gap-1 shadow-sm" id="view-toggle-split" title="Visualizer + Table">
+<span class="material-symbols-outlined text-[13px]">splitscreen</span>
+<span>Visual+Table</span>
+</button>
+<button class="px-2 py-0.5 rounded text-on-surface-variant font-label-md text-label-md flex items-center gap-1 hover:text-on-surface" id="view-toggle-table" title="Table Only">
+<span class="material-symbols-outlined text-[13px]">table_rows</span>
+<span>Table</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Live Validation & Quality Banner (Notice: Non-verified state, explicit findings) -->
+<div class="flex items-center justify-between px-space-sm py-1 bg-surface-container rounded text-on-surface font-body-sm text-body-sm">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-error text-on-error font-code-sm text-code-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">report_problem</span>
+<span>1 ADDRESS OVERLAP VIOLATION</span>
+</div>
+<div class="flex items-center gap-1 text-secondary font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-tertiary">priority_high</span>
+<span>1 Sub-optimal Alignment Advisory (MMIO 64KB on 2MB Router Page)</span>
+</div>
+<div class="h-3 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-1 text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px]">pie_chart</span>
+<span>Decode Density: <strong class="text-on-surface">68.4% mapped</strong> (31.6% unmapped/reserved hole)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container-high px-1.5 py-0.5 rounded">
+          Srota RTL Gen: <span class="text-error font-semibold">Unqualified (Window Multi-Hit Risk)</span>
+</span>
+<button class="font-code-sm text-code-sm text-primary hover:underline font-semibold flex items-center gap-0.5" id="quick-diff-btn">
+<span>Resolve Overlap...</span>
+<span class="material-symbols-outlined text-[12px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Visual Address Space Segment Range Bar (Compact Hardware Visualizer) -->
+<div class="p-space-md bg-surface flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[16px]">linear_scale</span>
+<span class="font-label-md text-label-md text-on-surface uppercase tracking-wider font-semibold">Decoded Memory Range Visualizer</span>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-1 rounded">[Logarithmic / Discrete Hardware Windows]</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant">
+<div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-primary-container"></span><span>Mapped ROM/SRAM</span></div>
+<div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-secondary"></span><span>Peripheral MMIO</span></div>
+<div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-error"></span><span>Overlapping Conflict (0xB000_0000)</span></div>
+<div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-primary"></span><span>High-Bandwidth HBM</span></div>
+<div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-surface-container-highest"></span><span>Unmapped Hole</span></div>
+</div>
+</div>
+<!-- Linear Segment Representation -->
+<div class="bg-surface-container-low p-2 rounded flex flex-col gap-1.5 shadow-sm">
+<div class="relative w-full h-11 bg-surface-container-highest rounded flex overflow-hidden">
+<!-- BOOT ROM -->
+<div class="h-full bg-primary-container text-on-primary-container px-1.5 py-1 flex flex-col justify-center border-r border-surface-container-lowest group relative cursor-pointer" style="width: 7%;" title="BOOT_ROM: 0x0000_0000 - 0x001F_FFFF (2 MiB)">
+<span class="font-code-sm text-code-sm font-semibold truncate leading-none">BOOT_ROM</span>
+<span class="font-code-sm text-[10px] opacity-80 truncate">2 MiB</span>
+</div>
+<!-- SYS SRAM -->
+<div class="h-full bg-primary-container/85 text-on-primary-container px-1.5 py-1 flex flex-col justify-center border-r border-surface-container-lowest group relative cursor-pointer" style="width: 8%;" title="SYS_SRAM: 0x0020_0000 - 0x011F_FFFF (16 MiB)">
+<span class="font-code-sm text-code-sm font-semibold truncate leading-none">SYS_SRAM</span>
+<span class="font-code-sm text-[10px] opacity-80 truncate">16 MiB</span>
+</div>
+<!-- PERIPH MMIO -->
+<div class="h-full bg-secondary text-on-secondary px-2 py-1 flex flex-col justify-center border-r border-surface-container-lowest cursor-pointer" style="width: 14%;" title="PERIPH_MMIO: 0x0200_0000 - 0x0FFF_FFFF (224 MiB)">
+<span class="font-code-sm text-code-sm font-semibold truncate leading-none">PERIPH_MMIO</span>
+<span class="font-code-sm text-[10px] opacity-80 truncate">224 MiB</span>
+</div>
+<!-- CONFLICT / OVERLAP ZONE: REG_NPU_WEIGHTS vs REG_PCIE_BAR0_WIN -->
+<div class="h-full relative flex cursor-pointer bg-surface-container-high" style="width: 28%;" title="Conflict zone between 0x8000_0000 and 0xCFFF_FFFF">
+<!-- Non-overlapping NPU prefix: 0x8000_0000 - 0xAFFF_FFFF (768 MiB) -->
+<div class="h-full bg-primary-fixed-dim text-on-primary-fixed-variant px-1.5 py-1 flex flex-col justify-center" style="width: 45%;">
+<span class="font-code-sm text-code-sm font-bold truncate leading-none">NPU_WEIGHTS</span>
+<span class="font-code-sm text-[10px] truncate">768M [Clean]</span>
+</div>
+<!-- COLLISION SLICE: 0xB000_0000 - 0xBFFF_FFFF (256 MiB multi-hit) -->
+<div class="h-full bg-error text-on-error px-1 py-0.5 flex flex-col justify-center items-center relative overflow-hidden" style="width: 30%; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.15), rgba(0,0,0,0.15) 6px, transparent 6px, transparent 12px);">
+<div class="flex items-center gap-0.5 text-on-error">
+<span class="material-symbols-outlined text-[13px] animate-pulse">crisis_alert</span>
+<span class="font-code-sm text-[10px] font-bold">OVERLAP 256M</span>
+</div>
+<span class="font-code-sm text-[9px] text-error-container truncate">NPU ∩ PCIE</span>
+</div>
+<!-- Non-overlapping PCIe suffix: 0xC000_0000 - 0xCFFF_FFFF (256 MiB) -->
+<div class="h-full bg-secondary-fixed text-on-secondary-fixed px-1.5 py-1 flex flex-col justify-center" style="width: 25%;">
+<span class="font-code-sm text-code-sm font-semibold truncate leading-none">PCIE_BAR0</span>
+<span class="font-code-sm text-[10px] truncate">256M rem.</span>
+</div>
+</div>
+<!-- DRAM HBM CH0 -->
+<div class="h-full bg-primary text-on-primary px-2 py-1 flex flex-col justify-center border-r border-surface-container-lowest cursor-pointer" style="width: 17%;" title="REG_HBM_CH0: 0x1000_0000_0000 - 0x1003_FFFF_FFFF (16 GiB)">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-bold truncate">HBM_CH0</span>
+<span class="font-code-sm text-[10px] px-1 bg-primary-container rounded">16 GiB</span>
+</div>
+<span class="font-code-sm text-[10px] opacity-80 truncate">Base: 0x1000_0000_0000</span>
+</div>
+<!-- DRAM HBM CH1 -->
+<div class="h-full bg-primary/90 text-on-primary px-2 py-1 flex flex-col justify-center border-r border-surface-container-lowest cursor-pointer" style="width: 17%;" title="REG_HBM_CH1: 0x1004_0000_0000 - 0x1007_FFFF_FFFF (16 GiB)">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-bold truncate">HBM_CH1</span>
+<span class="font-code-sm text-[10px] px-1 bg-primary-container rounded">16 GiB</span>
+</div>
+<span class="font-code-sm text-[10px] opacity-80 truncate">Base: 0x1004_0000_0000</span>
+</div>
+<!-- UNMAPPED RESERVED HOLE -->
+<div class="h-full bg-surface-container-highest text-secondary px-2 py-1 flex flex-col justify-center cursor-not-allowed" style="width: 9%;" title="Unmapped Reserved Hole: 0x1008_0000_0000 - 0xFFFF_FFFF_FFFF">
+<span class="font-code-sm text-code-sm italic truncate">RESERVED</span>
+<span class="font-code-sm text-[10px] text-outline truncate">Hole (Trap)</span>
+</div>
+</div>
+<!-- Linear Coordinate Ticks -->
+<div class="flex items-center justify-between font-code-sm text-[10px] text-secondary px-0.5">
+<span>0x0000_0000_0000</span>
+<span>0x0000_0200_0000</span>
+<span class="text-error font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">arrow_drop_up</span>
+          0x0000_8000_0000 - 0x0000_CFFF_FFFF (Collision Zone)
+        </span>
+<span>0x0000_1000_0000_0000</span>
+<span>0x0000_FFFF_FFFF_FFFF</span>
+</div>
+</div>
+</div>
+<!-- Main Multi-Pane Workspace: Region Table (Left/Center) + Region Inspector (Right Dock) -->
+<div class="px-space-md pb-space-lg flex gap-space-md items-start">
+<!-- Left / Center: Region Data Table -->
+<div class="flex-1 min-w-0 bg-surface-container-lowest rounded shadow-sm flex flex-col">
+<!-- Table Header & Controls Bar -->
+<div class="px-space-md py-space-xs bg-surface-container-low flex items-center justify-between border-b border-surface-container">
+<div class="flex items-center gap-space-sm">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-semibold">Address Regions (7 entries)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-secondary">SYS_PAS_48</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<!-- Inclusive / Exclusive toggle -->
+<div class="flex items-center gap-1 text-on-surface-variant font-code-sm text-code-sm">
+<span>Range End Format:</span>
+<div class="flex items-center bg-surface-container rounded p-0.5">
+<button class="px-1.5 py-0.5 rounded bg-surface-container-lowest font-code-sm text-code-sm text-primary font-semibold shadow-sm">Inclusive [Inc]</button>
+<button class="px-1.5 py-0.5 rounded font-code-sm text-code-sm text-secondary hover:text-on-surface">Exclusive [Exc]</button>
+</div>
+</div>
+<button class="p-1 hover:bg-surface-container rounded text-secondary" title="Customize Columns">
+<span class="material-symbols-outlined text-[15px]">view_column</span>
+</button>
+</div>
+</div>
+<!-- Dense Industrial Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left font-code-table text-code-table border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">
+<th class="py-1.5 px-2 w-8 text-center">St</th>
+<th class="py-1.5 px-2">Region ID</th>
+<th class="py-1.5 px-2">Target Endpoint</th>
+<th class="py-1.5 px-2">Base Address (Hex)</th>
+<th class="py-1.5 px-2 text-right">Size</th>
+<th class="py-1.5 px-2">End Address [Inc]</th>
+<th class="py-1.5 px-2">Attributes</th>
+<th class="py-1.5 px-2 text-right">Align</th>
+<th class="py-1.5 px-2">Decoder Impl</th>
+<th class="py-1.5 px-2 text-center">Rev</th>
+<th class="py-1.5 px-2 text-center w-12">Act</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container text-on-surface">
+<!-- Row 1: BOOT_ROM -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-primary text-[14px]" title="Validated mapping">check_circle</span>
+</td>
+<td class="py-1.5 px-2 font-semibold text-primary">REG_BOOT_ROM</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">memory</span>
+<span>SYS_ROM_0</span>
+<span class="text-secondary text-[10px]">(P0)</span>
+</td>
+<td class="py-1.5 px-2 font-semibold">
+<div class="flex items-center gap-1">
+<span>0x0000_0000_0000</span>
+<button class="opacity-0 group-hover:opacity-100 text-secondary hover:text-primary" title="Copy base"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary font-medium">2 MiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_0000_001F_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RO</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Priv</span>
+<span class="px-1 py-0.2 rounded bg-primary-container/20 text-primary font-code-sm text-[10px]">Sec</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">64B</td>
+<td class="py-1.5 px-2 text-on-surface truncate">Fully Qualified</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v2.1</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 2: SYS_SRAM -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-primary text-[14px]" title="Validated mapping">check_circle</span>
+</td>
+<td class="py-1.5 px-2 font-semibold text-primary">REG_SYS_SRAM</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">memory</span>
+<span>ONCHIP_SRAM</span>
+<span class="text-secondary text-[10px]">(P1)</span>
+</td>
+<td class="py-1.5 px-2 font-semibold">
+<div class="flex items-center gap-1">
+<span>0x0000_0000_0020_0000</span>
+<button class="opacity-0 group-hover:opacity-100 text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary font-medium">16 MiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_0000_011F_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Priv</span>
+<span class="px-1 py-0.2 rounded bg-primary-container/20 text-primary font-code-sm text-[10px]">Sec</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">4KB</td>
+<td class="py-1.5 px-2 text-on-surface truncate">Fully Qualified</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v1.0</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 3: PERIPH_MMIO -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-secondary text-[14px]" title="Advisory: 64KB page inside 2MB sub-decoder slot">info</span>
+</td>
+<td class="py-1.5 px-2 font-semibold text-primary">REG_PERIPH_MMIO</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">hub</span>
+<span>APB_BRIDGE_0</span>
+<span class="text-secondary text-[10px]">(P4)</span>
+</td>
+<td class="py-1.5 px-2 font-semibold">
+<div class="flex items-center gap-1">
+<span>0x0000_0000_0200_0000</span>
+<button class="opacity-0 group-hover:opacity-100 text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary font-medium">224 MiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_0000_0FFF_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-secondary-fixed text-on-secondary-fixed font-code-sm text-[10px]">nGnRnE</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">64KB</td>
+<td class="py-1.5 px-2 text-on-surface truncate">Qualified</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v1.4</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 4: REG_NPU_WEIGHTS (SELECTED ROW, OVERLAP CONFLICT) -->
+<tr class="bg-primary-fixed/25 hover:bg-primary-fixed/35 border-l-4 border-l-primary transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-error text-[15px] animate-pulse" title="CONFLICT: Multi-hit decode overlap with REG_PCIE_BAR0_WIN!">error</span>
+</td>
+<td class="py-1.5 px-2 font-bold text-primary flex items-center gap-1">
+<span>REG_NPU_WEIGHTS</span>
+<span class="px-1 py-0.2 bg-primary-container text-on-primary-container text-[9px] rounded font-mono">SELECTED</span>
+</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[13px]">developer_board</span>
+<span class="font-semibold text-on-surface">NPU_TCM_TILE0</span>
+<span class="text-secondary text-[10px]">(P6)</span>
+</div>
+</td>
+<td class="py-1.5 px-2 font-bold text-on-surface">
+<div class="flex items-center gap-1">
+<span>0x0000_0000_8000_0000</span>
+<button class="text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right font-bold text-on-surface">1 GiB</td>
+<td class="py-1.5 px-2 font-semibold text-error">0x0000_0000_BFFF_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Cached</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Non-Sec</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">2MB</td>
+<td class="py-1.5 px-2 text-error font-medium truncate">Srota_NoC_Gen (Blocked)</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-primary font-bold">draft*</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-primary"><span class="material-symbols-outlined text-[14px]">edit</span></button>
+</td>
+</tr>
+<!-- Row 5: REG_PCIE_BAR0_WIN (COLLIDING PARTNER) -->
+<tr class="bg-error-container/30 hover:bg-error-container/45 transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-error text-[15px]" title="CONFLICT: Multi-hit decode overlap with REG_NPU_WEIGHTS!">warning</span>
+</td>
+<td class="py-1.5 px-2 font-bold text-error flex items-center gap-1">
+<span>REG_PCIE_BAR0_WIN</span>
+<span class="material-symbols-outlined text-error text-[12px]" title="Collides at 0xB000_0000">link_off</span>
+</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">input</span>
+<span>PCIE_RC_BAR0</span>
+<span class="text-secondary text-[10px]">(P7)</span>
+</td>
+<td class="py-1.5 px-2 font-bold text-error">
+<div class="flex items-center gap-1">
+<span>0x0000_0000_B000_0000</span>
+<button class="text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right font-semibold text-secondary">512 MiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_0000_CFFF_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Non-Cache</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">1MB</td>
+<td class="py-1.5 px-2 text-on-surface truncate">External IP</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v1.2</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 6: REG_HBM_CH0 -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-primary text-[14px]" title="Validated mapping">check_circle</span>
+</td>
+<td class="py-1.5 px-2 font-semibold text-primary">REG_HBM_CH0</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">grid_view</span>
+<span>HBM_CTRL_CH0</span>
+<span class="text-secondary text-[10px]">(P12)</span>
+</td>
+<td class="py-1.5 px-2 font-semibold">
+<div class="flex items-center gap-1">
+<span>0x0000_1000_0000_0000</span>
+<button class="opacity-0 group-hover:opacity-100 text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary font-medium">16 GiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_1003_FFFF_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Cached</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">1GB</td>
+<td class="py-1.5 px-2 text-on-surface truncate">Interleaved-2way</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v3.0</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 7: REG_HBM_CH1 -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group">
+<td class="py-1.5 px-2 text-center">
+<span class="material-symbols-outlined text-primary text-[14px]" title="Validated mapping">check_circle</span>
+</td>
+<td class="py-1.5 px-2 font-semibold text-primary">REG_HBM_CH1</td>
+<td class="py-1.5 px-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[13px]">grid_view</span>
+<span>HBM_CTRL_CH1</span>
+<span class="text-secondary text-[10px]">(P13)</span>
+</td>
+<td class="py-1.5 px-2 font-semibold">
+<div class="flex items-center gap-1">
+<span>0x0000_1004_0000_0000</span>
+<button class="opacity-0 group-hover:opacity-100 text-secondary hover:text-primary"><span class="material-symbols-outlined text-[12px]">content_copy</span></button>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary font-medium">16 GiB</td>
+<td class="py-1.5 px-2 text-secondary">0x0000_1007_FFFF_FFFF</td>
+<td class="py-1.5 px-2">
+<div class="flex items-center gap-1">
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-on-surface">RW</span>
+<span class="px-1 py-0.2 rounded bg-surface-container font-code-sm text-[10px] text-secondary">Cached</span>
+</div>
+</td>
+<td class="py-1.5 px-2 text-right text-secondary">1GB</td>
+<td class="py-1.5 px-2 text-on-surface truncate">Interleaved-2way</td>
+<td class="py-1.5 px-2 text-center font-code-sm text-secondary">v3.0</td>
+<td class="py-1.5 px-2 text-center">
+<button class="p-0.5 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[14px]">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Quick Status Strip under table -->
+<div class="px-space-md py-1 bg-surface-container-low border-t border-surface-container flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<div class="flex items-center gap-space-sm">
+<span>Total Mapped Span: <strong class="text-on-surface">33.24 GiB</strong></span>
+<span class="text-outline">|</span>
+<span>Hole Decoders: Default SLVERR Response (Non-posted)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span>Sample Data (Studio Draft Mode)</span>
+</div>
+</div>
+</div>
+<!-- Right Collapsible Inspector: Selected Region Details & Conflict Diagnosis -->
+<div class="w-96 shrink-0 bg-surface-container-lowest rounded shadow-sm flex flex-col">
+<!-- Inspector Header -->
+<div class="px-space-md py-space-xs bg-surface-container-low flex items-center justify-between border-b border-surface-container">
+<div class="flex items-center gap-1.5 truncate">
+<span class="material-symbols-outlined text-primary text-[16px]">tune</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-semibold truncate">Region Inspector</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="px-1.5 py-0.5 rounded bg-error text-on-error font-code-sm text-code-sm font-bold">Active Conflict</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-primary font-code-sm text-code-sm font-semibold">draft*</span>
+</div>
+</div>
+<div class="p-space-md flex flex-col gap-space-md max-h-[calc(100vh-280px)] overflow-y-auto">
+<!-- Object Title & Target -->
+<div class="flex flex-col gap-0.5 pb-space-xs border-b border-surface-container">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">REG_NPU_WEIGHTS</span>
+<span class="font-code-sm text-code-sm text-secondary">ID: #04</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant font-body-sm text-body-sm">
+<span>Target Endpoint:</span>
+<strong class="text-primary font-code-sm text-code-sm">NPU_TCM_TILE0 (Port P6)</strong>
+</div>
+</div>
+<!-- Overlap Diagnostics (Critical Notice Block) -->
+<div class="p-space-sm bg-error-container/40 rounded flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-error-container font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-error">crisis_alert</span>
+              Conflict Analysis
+            </span>
+<span class="font-code-sm text-code-sm text-error font-bold">Multi-Hit Fault</span>
+</div>
+<div class="flex flex-col gap-1 text-on-surface font-body-sm text-body-sm">
+<div class="text-[12px] leading-tight text-on-error-container">
+              Overlaps with <strong class="font-code-sm text-code-sm text-on-surface">REG_PCIE_BAR0_WIN</strong> in address range:
+            </div>
+<div class="p-1 bg-surface-container-lowest rounded font-code-sm text-code-sm text-error font-bold text-center">
+              0x0000_B000_0000 — 0x0000_BFFF_FFFF
+            </div>
+<div class="text-[11px] text-secondary leading-tight mt-0.5">
+              Decoded span: <strong>256 MiB collision</strong>. AXI requests from Master cores targeting this range trigger unroutable dual-grant arbitration in Router <code class="font-code-sm text-primary">R_1_2</code>.
+            </div>
+</div>
+<!-- Suggested Resolution Action -->
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col gap-1.5 shadow-sm">
+<span class="font-label-md text-label-md text-on-surface font-semibold uppercase">Engine Proposed Fix:</span>
+<p class="font-body-sm text-[11px] text-secondary">
+              Relocate REG_PCIE_BAR0_WIN base by +256 MiB to <span class="font-code-sm text-on-surface font-semibold">0x0000_C000_0000</span>.
+            </p>
+<button class="w-full py-1 bg-primary text-on-primary rounded font-label-md text-label-md font-semibold flex items-center justify-center gap-1 hover:bg-primary-container transition-colors shadow-sm" id="show-diff-btn">
+<span class="material-symbols-outlined text-[14px]">compare_arrows</span>
+<span>Review Correction Diff</span>
+</button>
+</div>
+</div>
+<!-- Section 1: Address Arithmetic & Geometry -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Address Arithmetic &amp; Geometry</span>
+<div class="bg-surface-container-low p-2 rounded flex flex-col gap-1 text-on-surface font-code-sm text-code-sm">
+<div class="flex items-center justify-between">
+<span class="text-secondary">Base (48b Hex):</span>
+<span class="font-bold text-on-surface select-all">0x0000_0000_8000_0000</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Span / Size:</span>
+<span>0x4000_0000 (1 GiB)</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">End Address [Inc]:</span>
+<span class="select-all">0x0000_0000_BFFF_FFFF</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">End Address [Exc]:</span>
+<span class="text-secondary select-all">0x0000_0000_C000_0000</span>
+</div>
+<div class="h-px bg-outline-variant my-0.5"></div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Alignment:</span>
+<span class="text-primary font-bold">2 MiB [Valid]</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Decoded Bit Field:</span>
+<span>Bits [31:21] on Crossbar Subdec #2</span>
+</div>
+</div>
+</div>
+<!-- Section 2: Associated Initiators & Workload Links -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Access Permissions &amp; Topology</span>
+<div class="bg-surface-container-low p-2 rounded flex flex-col gap-1.5 text-body-sm text-body-sm">
+<div class="flex flex-col gap-0.5">
+<span class="font-code-sm text-code-sm text-secondary font-medium">Mapped Initiators:</span>
+<div class="flex flex-wrap gap-1 font-code-sm text-[11px]">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">HOST_CPU_CLUSTER (RW)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">DSP_CLUSTER (RO)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">DMA_ENGINE_0 (RW)</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-surface-container">
+<span class="text-secondary">Workload Bound:</span>
+<span class="font-code-sm text-code-sm font-semibold text-primary">ResNet50_Burst [w12]</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Associated Req:</span>
+<span class="font-code-sm text-code-sm text-secondary">REQ-LAT-04 (Evaluated SIM-402)</span>
+</div>
+</div>
+</div>
+<!-- Section 3: Generator Qualification Status -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Toolflow Qualification</span>
+<div class="bg-surface-container-low p-2 rounded flex flex-col gap-1 font-code-sm text-code-sm">
+<div class="flex items-center justify-between">
+<span class="text-secondary">Behavioral C++ Sim:</span>
+<span class="text-primary font-semibold">Qualified</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">BookSim Lowering:</span>
+<span class="text-primary font-semibold">Router R_1_2 [P6]</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Srota RTL Generator:</span>
+<span class="text-error font-bold">Blocked by DRC Overlap</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-secondary">Physical Synthesis:</span>
+<span class="text-outline">Not Evaluated</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Reviewable Correction Diff Drawer (Embedded Engineering Preview Modal) -->
+<div class="hidden fixed inset-0 z-50 bg-inverse-surface/40 flex items-center justify-center p-4" id="diff-drawer">
+<div class="bg-surface-container-lowest w-full max-w-2xl rounded shadow-xl flex flex-col overflow-hidden">
+<!-- Modal Header -->
+<div class="px-space-md py-space-sm bg-surface-container-low flex items-center justify-between border-b border-surface-container">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">difference</span>
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface">Review Proposed Memory Map Resolution</span>
+</div>
+<button class="p-1 hover:bg-surface-container rounded text-secondary" id="close-diff-btn">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+<!-- Diff Content -->
+<div class="p-space-md flex flex-col gap-space-md">
+<div class="p-space-sm bg-surface-container rounded text-body-sm text-body-sm text-on-surface">
+<p class="leading-relaxed">
+            The proposed patch shifts colliding region <strong class="font-code-sm text-code-sm text-primary">REG_PCIE_BAR0_WIN</strong> higher by <strong>256 MiB</strong>. This restores mutually exclusive address decoding across Router <code class="font-code-sm text-code-sm">R_1_2</code> without altering existing NPU TCM burst geometries.
+          </p>
+</div>
+<!-- Unified Diff View -->
+<div class="bg-surface-container-lowest rounded overflow-hidden font-code-sm text-code-sm shadow-sm">
+<div class="px-3 py-1 bg-surface-container-high text-on-surface-variant font-label-md text-label-md uppercase tracking-wider flex items-center justify-between">
+<span>Diff Preview: falcon8_noc_addr_map.dts</span>
+<span>Target: REG_PCIE_BAR0_WIN</span>
+</div>
+<div class="p-2 bg-surface-container-low flex flex-col font-mono text-[11px] leading-5">
+<div class="text-secondary">// Region REG_PCIE_BAR0_WIN definition</div>
+<div class="text-error bg-error-container/30 px-1 rounded flex items-center justify-between">
+<span>- base_address = &lt;0x0000_0000_B000_0000&gt;; // Collides with NPU</span>
+<span class="text-[10px] text-error font-semibold">OLD</span>
+</div>
+<div class="text-primary bg-primary-fixed/40 px-1 rounded flex items-center justify-between font-bold">
+<span>+ base_address = &lt;0x0000_0000_C000_0000&gt;; // Shifted +256MB</span>
+<span class="text-[10px] text-primary font-semibold">NEW</span>
+</div>
+<div class="text-error bg-error-container/30 px-1 rounded flex items-center justify-between">
+<span>- end_address_inc = &lt;0x0000_0000_CFFF_FFFF&gt;;</span>
+<span class="text-[10px] text-error">OLD</span>
+</div>
+<div class="text-primary bg-primary-fixed/40 px-1 rounded flex items-center justify-between font-bold">
+<span>+ end_address_inc = &lt;0x0000_0000_DFFF_FFFF&gt;;</span>
+<span class="text-[10px] text-primary">NEW</span>
+</div>
+<div class="text-secondary px-1">  size = &lt;0x0000_0000_2000_0000&gt;; // 512 MiB (Unchanged)</div>
+<div class="text-secondary px-1">  target_port = &lt;PORT_PCIE_RC_BAR0&gt;;</div>
+</div>
+</div>
+<!-- Post-Diff Verification Checklist -->
+<div class="grid grid-cols-2 gap-2 text-body-sm text-[12px]">
+<div class="p-2 bg-surface-container rounded flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Overlap Status: <strong>0 Collisions</strong></span>
+</div>
+<div class="p-2 bg-surface-container rounded flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Alignment Preserved: <strong>1MB Valid</strong></span>
+</div>
+<div class="p-2 bg-surface-container rounded flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[16px]">sync_alt</span>
+<span>Inbound Trans: Entry #3 updated</span>
+</div>
+<div class="p-2 bg-surface-container rounded flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[16px]">edit_note</span>
+<span>Active Draft: <strong>d7a4e9b* will update</strong></span>
+</div>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="px-space-md py-space-sm bg-surface-container-low flex items-center justify-end gap-space-sm border-t border-surface-container">
+<button class="px-3 py-1 bg-surface-container text-on-surface rounded font-label-md text-label-md hover:bg-surface-container-high transition-colors" id="cancel-diff-btn">
+          Cancel
+        </button>
+<button class="px-3 py-1 bg-primary text-on-primary rounded font-label-md text-label-md font-semibold flex items-center gap-1 hover:bg-primary-container shadow-sm transition-colors" id="adopt-correction-btn">
+<span class="material-symbols-outlined text-[15px]">done_all</span>
+<span>Adopt Correction into Active Draft (d7a4e9b*)</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Micro-interactions: Drawer toggle for Reviewable Correction Diff
+  const showDiffBtn = document.getElementById('show-diff-btn');
+  const quickDiffBtn = document.getElementById('quick-diff-btn');
+  const closeDiffBtn = document.getElementById('close-diff-btn');
+  const cancelDiffBtn = document.getElementById('cancel-diff-btn');
+  const diffDrawer = document.getElementById('diff-drawer');
+  const adoptBtn = document.getElementById('adopt-correction-btn');
+
+  function openDiff() {
+    if (diffDrawer) diffDrawer.classList.remove('hidden');
+  }
+
+  function closeDiff() {
+    if (diffDrawer) diffDrawer.classList.add('hidden');
+  }
+
+  if (showDiffBtn) showDiffBtn.addEventListener('click', openDiff);
+  if (quickDiffBtn) quickDiffBtn.addEventListener('click', openDiff);
+  if (closeDiffBtn) closeDiffBtn.addEventListener('click', closeDiff);
+  if (cancelDiffBtn) cancelDiffBtn.addEventListener('click', closeDiff);
+
+  if (adoptBtn) {
+    adoptBtn.addEventListener('click', () => {
+      adoptBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">autorenew</span><span>Applying to Draft...</span>';
+      setTimeout(() => {
+        closeDiff();
+        adoptBtn.innerHTML = '<span class="material-symbols-outlined text-[15px]">done_all</span><span>Adopt Correction into Active Draft (d7a4e9b*)</span>';
+      }, 700);
+    });
+  }
+
+  // View toggle micro-interaction (Visual+Table vs Table Only)
+  const viewToggleSplit = document.getElementById('view-toggle-split');
+  const viewToggleTable = document.getElementById('view-toggle-table');
+  const visualBar = document.querySelector('.bg-surface.flex.flex-col.gap-space-xs');
+
+  if (viewToggleTable && viewToggleSplit && visualBar) {
+    viewToggleTable.addEventListener('click', () => {
+      visualBar.classList.add('hidden');
+      viewToggleTable.classList.add('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+      viewToggleTable.classList.remove('text-on-surface-variant');
+      viewToggleSplit.classList.remove('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+      viewToggleSplit.classList.add('text-on-surface-variant');
+    });
+
+    viewToggleSplit.addEventListener('click', () => {
+      visualBar.classList.remove('hidden');
+      viewToggleSplit.classList.add('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+      viewToggleSplit.classList.remove('text-on-surface-variant');
+      viewToggleTable.classList.remove('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+      viewToggleTable.classList.add('text-on-surface-variant');
+    });
+  }
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-highest border-t border-surface-dim z-50 flex items-center justify-between px-space-md"><div class="flex items-center gap-space-md"><div class="flex items-center gap-1 text-on-surface font-code-sm text-code-sm"><span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span><span>JOB: SIM-403 Running (Cycle: 1,842,000 | Latency 14.2ns)</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-space-sm font-code-sm text-code-sm"><span class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[13px]">warning</span> 1 Overlap Warning</span><span class="flex items-center gap-1 text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">info</span> 1 Alignment Note</span></div></div><div class="flex items-center gap-space-md font-code-sm text-code-sm"><div class="flex items-center gap-1 text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">lan</span><span>Mesh Grid: 4x4 Torus</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-1 text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">wifi_off</span><span>Local Offline Host</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-1 text-tertiary"><span class="material-symbols-outlined text-[13px]">smart_toy</span><span>Copilot: Closed (Offline)</span></div></div></footer></body></html>

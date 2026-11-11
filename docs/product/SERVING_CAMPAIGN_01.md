@@ -38,6 +38,27 @@ serving request metrics do not carry per-request output token counts
   INFEASIBLE/INCOMPLETE with partial completions preserved. Lead
   follow-up, not runner scope.
 
+## Follow-up 2026-10-27: stall paths are typed, doctrine kept
+
+- The exact raise this row hit (``no instance can schedule ... the trace
+  is stuck``) was converted by 0c78f27b into the typed ``_stalled_outcome``
+  path (INFEASIBLE/INCOMPLETE + break with partials). The silent-evidence
+  raise was deliberately KEPT as a raise (pinned by
+  ``test_a_dispatched_instance_without_execution_evidence_refuses`` and
+  ``test_a_real_contract_violation_still_raises_serving_loop_error``):
+  a backend that executes nothing is a broken contract, not a slow run.
+- Live re-run of mixed-64 through ``veritx_campaign.py`` (default profile):
+  REFUSED / NO_FEASIBLE_DESIGN — typed INFEASIBLE naming request 0
+  (27369 tokens > max_num_batched_tokens=1024). No INTERNAL_ERROR.
+- The deeper stall branch the 30k-bound run would take
+  (NO_SCHEDULABLE_EVENT, within-bound but KV-unschedulable) is pinned
+  hermetically by
+  ``test_memory_stall_is_typed_incomplete_not_internal_error``. The 30k-bound
+  live mirror was not re-run (the runner exposes no profile overrides);
+  reachable via a direct ``submit_serving`` with ``profile_overrides``.
+- Open question narrowed: not "typed or raise" (settled) but which stall
+  branch the 30k configuration lands on.
+
 ## Provenance
 
 - Cluster configs: `third_party/llmservingsim/configs/cluster/`

@@ -1,0 +1,644 @@
+[
+  {
+    "view": "design_address_map",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_address_map/code.html",
+    "findings": [
+      {
+        "line": 84,
+        "needle": "68.4%",
+        "snippet": "Decode Density: 68.4% mapped (31.6% unmapped/reserved hole)"
+      },
+      {
+        "line": 258,
+        "needle": "Fully Qualified",
+        "snippet": "Fully Qualified"
+      },
+      {
+        "line": 291,
+        "needle": "Fully Qualified",
+        "snippet": "Fully Qualified"
+      },
+      {
+        "line": 472,
+        "needle": "33.24",
+        "snippet": "Total Mapped Span: 33.24 GiB"
+      },
+      {
+        "line": 524,
+        "needle": "dual-grant",
+        "snippet": ">256 MiB collision . AXI requests from Master cores targeting this range trigger unroutable dual-grant arbitration in Router R_1_2 ."
+      },
+      {
+        "line": 723,
+        "needle": "setTimeout",
+        "snippet": "setTimeout(() => {"
+      }
+    ]
+  },
+  {
+    "view": "design_clock_power_domains",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_clock_power_domains/code.html",
+    "findings": [
+      {
+        "line": 69,
+        "needle": "0% jitter",
+        "snippet": "All clocks nominal, 0% jitter modelled"
+      },
+      {
+        "line": 250,
+        "needle": "Validated",
+        "snippet": "ACCEL] Validated -->"
+      },
+      {
+        "line": 255,
+        "needle": "Validated",
+        "snippet": "an class=\"px-1 py-0.2 bg-secondary-container text-on-secondary-fixed text-[10px] rounded font-mono\">Validated"
+      },
+      {
+        "line": 517,
+        "needle": "dissolved",
+        "snippet": "Crossing CLK_ACCEL_CLUSTER \u2192 CLK_CORE_NOC is dissolved. Ingress to Router 0 becomes synchronous. Obligation CDC-OBL-014 cleared."
+      },
+      {
+        "line": 538,
+        "needle": "0 Violations Added",
+        "snippet": "1 Endpoint | 1 CDC Removed | 0 Violations Added"
+      }
+    ]
+  },
+  {
+    "view": "design_hardware_endpoints",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_hardware_endpoints/code.html",
+    "findings": [
+      {
+        "line": 498,
+        "needle": "Conc_HBM_North",
+        "snippet": "via Conc_HBM_North [Slot 0]"
+      },
+      {
+        "line": 552,
+        "needle": "Conc_HBM_North",
+        "snippet": "via Conc_HBM_North [Slot 1]"
+      },
+      {
+        "line": 701,
+        "needle": "17.92",
+        "snippet": "Bandwidth verified: 17.92 GB/s inject &lt; 22.4 GB/s Link Cap (20% Headroom)"
+      },
+      {
+        "line": 740,
+        "needle": "Conc_HBM_North",
+        "snippet": "der-outline-variant rounded px-2 py-1 font-code-sm text-code-sm text-on-surface\" type=\"text\" value=\"Conc_HBM_North\"/>"
+      },
+      {
+        "line": 851,
+        "needle": "MTBF",
+        "snippet": "MTBF Signoff:"
+      },
+      {
+        "line": 852,
+        "needle": "10^12",
+        "snippet": "&gt; 10^12 Hours (Target: TSMC N5)"
+      },
+      {
+        "line": 863,
+        "needle": "credit returns",
+        "snippet": "ng> for inbound fabric transactions (burst Read/Write), and Initiator for backward credit returns and invalidation snoop reflections."
+      }
+    ]
+  },
+  {
+    "view": "design_initiator_target_mapping",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_initiator_target_mapping/code.html",
+    "findings": [
+      {
+        "line": 271,
+        "needle": "Fully Qualified",
+        "snippet": "\u25cf Fully Qualified"
+      },
+      {
+        "line": 309,
+        "needle": "8\u00d710",
+        "snippet": "py-0.5 rounded bg-surface-container-high text-on-surface-variant font-code-sm text-code-sm\">Radix: 8\u00d710 Active"
+      },
+      {
+        "line": 412,
+        "needle": "Fully Qualified",
+        "snippet": "HBM3_0 (Fully Qualified) -->"
+      },
+      {
+        "line": 1068,
+        "needle": "48 Total Evaluated",
+        "snippet": "48 Total Evaluated Pairs"
+      },
+      {
+        "line": 1070,
+        "needle": "Fully Qualified",
+        "snippet": "32 Fully Qualified"
+      },
+      {
+        "line": 1221,
+        "needle": "Physical Fabric Bridge",
+        "snippet": "Option B: Physical Fabric Bridge"
+      },
+      {
+        "line": 1345,
+        "needle": "alert(",
+        "snippet": "alert('Validated: 8 pairs mapped to d7a4e9b-mod1* successfully.');"
+      }
+    ]
+  },
+  {
+    "view": "design_ip_catalog",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_ip_catalog/code.html",
+    "findings": [
+      {
+        "line": 4,
+        "needle": "DRC/LVS",
+        "snippet": "xt-secondary\"> verified DRC/LVS Clean Sim #403: <span class=\"text-primary font-"
+      },
+      {
+        "line": 4,
+        "needle": "Sign-off Qualified",
+        "snippet": "rface\"> TSMC N5 Sign-off Qualified Simulation Qualified </labe"
+      },
+      {
+        "line": 149,
+        "needle": "Sign-off Qualified",
+        "snippet": "TSMC N5 Sign-off Qualified"
+      },
+      {
+        "line": 195,
+        "needle": "Sign-off Qualified",
+        "snippet": "TSMC N5 Sign-off Qualified"
+      },
+      {
+        "line": 241,
+        "needle": "Sign-off Qualified",
+        "snippet": "TSMC N5 Sign-off Qualified"
+      },
+      {
+        "line": 287,
+        "needle": "Sign-off Qualified",
+        "snippet": "TSMC N5 Sign-off Qualified"
+      },
+      {
+        "line": 521,
+        "needle": "timing-clean",
+        "snippet": "* Wrapper RTL synthesized &amp; timing-clean at 1.4GHz; core systolic logic must attach via customer macro port."
+      },
+      {
+        "line": 617,
+        "needle": "2 flits per 128B",
+        "snippet": "Requires automatic insertion of AXI4_to_NoC_Shim (Flit packetizer: 2 flits per 128B burst, Latency: 1 cycle)."
+      },
+      {
+        "line": 711,
+        "needle": "Staged to",
+        "snippet": "confirmBtn.innerHTML = ' done_all Staged to d7a4e9b-mod1* ';"
+      }
+    ]
+  },
+  {
+    "view": "design_placement_constraints",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_placement_constraints/code.html",
+    "findings": [
+      {
+        "line": 213,
+        "needle": "4.8mm\u00b2",
+        "snippet": "Scale: 1px = 7.5 \u03bcm (Die: 4.8mm\u00b2)"
+      },
+      {
+        "line": 378,
+        "needle": "Enforced by Generator",
+        "snippet": "Enforced by Generator"
+      },
+      {
+        "line": 677,
+        "needle": "18 ps",
+        "snippet": "n class=\"font-code-table font-semibold\">R_1_1 (1150 \u03bcm). Wire delay estimation increases by ~18 ps (pre-synthesis RC estimate)."
+      },
+      {
+        "line": 680,
+        "needle": "STALE",
+        "snippet": "ce simulation evidence (SIM-402 ResNet50) as STALE ."
+      },
+      {
+        "line": 719,
+        "needle": "alert(",
+        "snippet": "alert('Constraint CST-PLC-08 successfully updated. Marked SIM-402 simulation stale.');"
+      }
+    ]
+  },
+  {
+    "view": "design_system_block_diagram",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/design_system_block_diagram/code.html",
+    "findings": [
+      {
+        "line": 97,
+        "needle": "4x4 Torus",
+        "snippet": "nt-code-sm text-code-sm text-outline\"> Radix: 5-Port Mesh | Tile Grid: 4x4 Torus <div class=\"h-6 px"
+      },
+      {
+        "line": 368,
+        "needle": "358.4",
+        "snippet": "Bisection BW: 358.4 GB/s"
+      },
+      {
+        "line": 501,
+        "needle": "4x4 2D",
+        "snippet": "Falcon8 4x4 2D-Mesh Interconnect"
+      },
+      {
+        "line": 579,
+        "needle": "2 VCs",
+        "snippet": "VC Alloc: 2 VCs/port (Credit-Based)"
+      },
+      {
+        "line": 706,
+        "needle": "2 VCs",
+        "snippet": "2 VCs (VC0:Req, VC1:Rsp)"
+      },
+      {
+        "line": 717,
+        "needle": "srota_axi4_shim",
+        "snippet": "SystemVerilog module srota_axi4_shim_128b.sv . Upstream compute pipelines and downstream memory controller logic are not generated."
+      }
+    ]
+  },
+  {
+    "view": "explore_candidate_adoption_branch",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/explore_candidate_adoption_branch/code.html",
+    "findings": [
+      {
+        "line": 97,
+        "needle": "2550, 2550",
+        "snippet": "t-semibold text-on-surface\">d7a4e9b-phys04* modified CST-PLC-08 router macro coordinates to (2550, 2550) \u00b5m. Direct replacement will destroy these floorplan adjustments."
+      },
+      {
+        "line": 127,
+        "needle": "refs/heads/",
+        "snippet": "refs/heads/"
+      },
+      {
+        "line": 139,
+        "needle": "7/8",
+        "snippet": "7/8 clean"
+      },
+      {
+        "line": 163,
+        "needle": "Only",
+        "snippet": ""
+      },
+      {
+        "line": 168,
+        "needle": "Only",
+        "snippet": "Open in Read-Only Isolated View"
+      },
+      {
+        "line": 297,
+        "needle": "Mean Latency",
+        "snippet": "HBM Mean Latency"
+      },
+      {
+        "line": 301,
+        "needle": "28.6",
+        "snippet": "28.6 ns FAIL REQ-04"
+      },
+      {
+        "line": 304,
+        "needle": "19.4",
+        "snippet": "19.4 ns MET REQ-04"
+      },
+      {
+        "line": 352,
+        "needle": "Production Qualified",
+        "snippet": "Production Qualified (v2.3)"
+      },
+      {
+        "line": 354,
+        "needle": "Only",
+        "snippet": "Model-Only (BookSim-Srota)"
+      },
+      {
+        "line": 549,
+        "needle": "Only",
+        "snippet": "ce-container-highest text-tertiary px-space-xs rounded font-label-md text-label-md uppercase\">Model-Only Mode"
+      },
+      {
+        "line": 585,
+        "needle": "1.8GHz",
+        "snippet": "m text-code-sm text-tertiary\"> Mesh Radix: 8x8 Flit Width: 256b Clock: 1.8GHz Nominal DRC: CLEAN"
+      }
+    ]
+  },
+  {
+    "view": "explore_candidate_comparison",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/explore_candidate_comparison/code.html",
+    "findings": [
+      {
+        "line": 96,
+        "needle": "CAND-04",
+        "snippet": "iv class=\"truncate\"> CAND-04 (Dual-VC +4KB) SIM-404 \u2022 +11.2% TP push_pin <div class=\"p-1"
+      },
+      {
+        "line": 96,
+        "needle": "SIM-404",
+        "snippet": "uncate\">CAND-04 (Dual-VC +4KB) SIM-404 \u2022 +11.2% TP push_pin <div class=\"p-1.5 rounded bg-surface-container-lowest border border-outline-variant flex items-center justi"
+      },
+      {
+        "line": 96,
+        "needle": "4x",
+        "snippet": "STU-084: 4x4 Mesh Buffer &amp; VC [brief_rev_2] \u2022 Budget 1.25 pJ/bit <div class=\"fl"
+      },
+      {
+        "line": 151,
+        "needle": "CAND-04",
+        "snippet": "hysical floorplan or target clock constraints, whereas Baseline (d7a4e9b) , CAND-04 , and CAND-09 were verified against Srota-CycleAccurate RTL at 1.4 GHz. Latency and area columns marked with <strong class=\"font-code-sm text-code-sm bg-surface-container-lowest px-1 rounded text-o"
+      },
+      {
+        "line": 174,
+        "needle": "P99",
+        "snippet": "span class=\"font-code-sm text-code-sm text-primary font-semibold\">Strict Lexicographical (Reqs &gt; P99 &gt; Area)"
+      },
+      {
+        "line": 204,
+        "needle": "CAND-04",
+        "snippet": ""
+      },
+      {
+        "line": 208,
+        "needle": "CAND-04",
+        "snippet": "CAND-04"
+      },
+      {
+        "line": 211,
+        "needle": "4x",
+        "snippet": "Mesh 4x4 (Dual-VC +4KB)"
+      },
+      {
+        "line": 213,
+        "needle": "SIM-405",
+        "snippet": "Run SIM-405"
+      },
+      {
+        "line": 224,
+        "needle": "4x",
+        "snippet": "Mesh 4x4 (Buf=32)"
+      },
+      {
+        "line": 258,
+        "needle": "4x",
+        "snippet": "2D Mesh (4x4)"
+      },
+      {
+        "line": 259,
+        "needle": "4x",
+        "snippet": "2 px-space-md font-code-sm text-code-sm text-on-surface font-semibold bg-primary-fixed/10\">2D Mesh (4x4)"
+      },
+      {
+        "line": 260,
+        "needle": "4x",
+        "snippet": "2D Mesh (4x4)"
+      },
+      {
+        "line": 289,
+        "needle": "64 flits/port",
+        "snippet": "16 flits (64 flits/port)"
+      },
+      {
+        "line": 290,
+        "needle": "[2x]",
+        "snippet": "[2x]"
+      },
+      {
+        "line": 293,
+        "needle": "64 flits/port",
+        "snippet": "32 flits (64 flits/port)"
+      },
+      {
+        "line": 294,
+        "needle": "4x",
+        "snippet": "[4x depth]"
+      },
+      {
+        "line": 380,
+        "needle": "P99",
+        "snippet": "REQ-LAT-04: Tail Latency (P99)"
+      },
+      {
+        "line": 487,
+        "needle": "P99",
+        "snippet": ""
+      },
+      {
+        "line": 489,
+        "needle": "P99",
+        "snippet": "P99 Packet Tail Latency"
+      },
+      {
+        "line": 584,
+        "needle": "CAND-04",
+        "snippet": "s violating hard SLA boundaries (e.g., REQ-LAT-04) are eliminated prior to Pareto rank aggregation. CAND-04 is non-dominated across all verified silicon constraints."
+      },
+      {
+        "line": 584,
+        "needle": "verified silicon",
+        "snippet": "., REQ-LAT-04) are eliminated prior to Pareto rank aggregation. CAND-04 is non-dominated across all verified silicon constraints."
+      },
+      {
+        "line": 589,
+        "needle": "CAND-04",
+        "snippet": "0 (Only CAND-04)"
+      },
+      {
+        "line": 592,
+        "needle": "P99",
+        "snippet": "P99 Reduction:"
+      },
+      {
+        "line": 608,
+        "needle": "SIM-405",
+        "snippet": "\"font-code-sm text-code-sm bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded\">SIM-405 Trace"
+      },
+      {
+        "line": 611,
+        "needle": "CAND-04",
+        "snippet": "-sm text-code-sm text-on-surface font-semibold\">R_1_2 due to East-West conv flit contention. CAND-04's VC separation isolates short response tokens from heavy burst payloads."
+      },
+      {
+        "line": 625,
+        "needle": "CAND-04",
+        "snippet": "CAND-04 Stall Rate:"
+      },
+      {
+        "line": 645,
+        "needle": "CAND-04",
+        "snippet": "Adopting CAND-04 spawns an isolated workspace revision [rev: d7a4e9b_cand04_draft] . Your active golden baseline is untouched until final sign-off commit."
+      },
+      {
+        "line": 680,
+        "needle": "+0.038",
+        "snippet": "\">Flit Queue Depth: 64B Timing Slack: +0.038ns AI Assistant: Idle (Collapsed) Mem: 4.8 GB / 32 GB </h"
+      }
+    ]
+  },
+  {
+    "view": "explore_candidate_results_trade_offs",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/explore_candidate_results_trade_offs/code.html",
+    "findings": [
+      {
+        "line": 242,
+        "needle": "0.320",
+        "snippet": "\u2264 0.320 mm\u00b2"
+      },
+      {
+        "line": 314,
+        "needle": "0.320",
+        "snippet": ""
+      },
+      {
+        "line": 319,
+        "needle": "0.345",
+        "snippet": "px approx (600, 42) -->"
+      },
+      {
+        "line": 327,
+        "needle": "34.0",
+        "snippet": "34.0"
+      },
+      {
+        "line": 390,
+        "needle": "0.345",
+        "snippet": ""
+      },
+      {
+        "line": 391,
+        "needle": "0.345",
+        "snippet": ""
+      },
+      {
+        "line": 453,
+        "needle": "32 comparable",
+        "snippet": "Pareto Frontier: Nondominated among 32 comparable evaluated candidates. Missing objectives never default to favorable zero."
+      },
+      {
+        "line": 572,
+        "needle": "0.320",
+        "snippet": "Target: \u2264 0.320 mm\u00b2"
+      },
+      {
+        "line": 701,
+        "needle": "Inj. Throughput",
+        "snippet": "Inj. Throughput"
+      },
+      {
+        "line": 832,
+        "needle": "0.345",
+        "snippet": "0.345 mm\u00b2"
+      },
+      {
+        "line": 988,
+        "needle": "Trace Extraction Only",
+        "snippet": "Re-run Trace Extraction Only"
+      }
+    ]
+  },
+  {
+    "view": "explore_study_execution_budgets",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/explore_study_execution_budgets/code.html",
+    "findings": [
+      {
+        "line": 94,
+        "needle": "4 Cores @ 1.4",
+        "snippet": "4 Cores @ 1.4 GHz"
+      },
+      {
+        "line": 122,
+        "needle": "DRC Safe",
+        "snippet": "DRC Safe"
+      },
+      {
+        "line": 204,
+        "needle": "SIM-402",
+        "snippet": "SIM-402"
+      },
+      {
+        "line": 205,
+        "needle": "22.4 ns",
+        "snippet": "22.4 ns (MET)"
+      },
+      {
+        "line": 471,
+        "needle": "22.4 ns",
+        "snippet": "P99: 22.4 ns (Target \u226425 ns)"
+      },
+      {
+        "line": 471,
+        "needle": "P99",
+        "snippet": "P99: 22.4 ns (Target \u226425 ns)"
+      },
+      {
+        "line": 482,
+        "needle": "P99",
+        "snippet": "REQ-LAT-04 (P99 Latency \u2264 25ns)"
+      },
+      {
+        "line": 483,
+        "needle": "22.4 ns",
+        "snippet": "22.4 ns [MET]"
+      },
+      {
+        "line": 486,
+        "needle": "Ingress",
+        "snippet": "REQ-THR-02 (Ingress \u2265 18.0 GB/s)"
+      }
+    ]
+  },
+  {
+    "view": "explore_versioned_exploration_brief_stu_088",
+    "path": "docs/design/stitch_veritx_studio_eda_frontend/explore_versioned_exploration_brief_stu_088/code.html",
+    "findings": [
+      {
+        "line": 94,
+        "needle": "RTL Frozen",
+        "snippet": "Commit: d7a4e9b (RTL Frozen)"
+      },
+      {
+        "line": 327,
+        "needle": "P99 Flit Latency",
+        "snippet": "P99 Flit Latency (Burst Window)"
+      },
+      {
+        "line": 392,
+        "needle": "512 total",
+        "snippet": "Norm: 512 total flits"
+      },
+      {
+        "line": 416,
+        "needle": "P99 Flit Latency",
+        "snippet": "\"Candidates are ranked strictly by non-dominated Pareto front over {P99 Flit Latency, Total Router Buffer Area}. Candidates violating REQ-LAT-04 (P99 &gt; 25.0 ns) are disqualified regardless of area savings. Deterministic tie-breaker: Lowest Total Router Buffer Area.\""
+      },
+      {
+        "line": 416,
+        "needle": "Total Router Buffer Area",
+        "snippet": "\"Candidates are ranked strictly by non-dominated Pareto front over {P99 Flit Latency, Total Router Buffer Area}. Candidates violating REQ-LAT-04 (P99 &gt; 25.0 ns) are disqualified regardless of area savings. Deterministic tie-breaker: Lowest Total Router Buffer Area.\""
+      },
+      {
+        "line": 420,
+        "needle": "ISO/EDA",
+        "snippet": "Policy certified compliant with ISO/EDA Deterministic Signoff Std 2024"
+      },
+      {
+        "line": 518,
+        "needle": "16 of 24",
+        "snippet": "RTL Generator Eligibility: 16 of 24 candidates eligible for production Verilog"
+      },
+      {
+        "line": 569,
+        "needle": "7nm-FinFET",
+        "snippet": "Target: 7nm-FinFET | cloud_off Host: Offline (Local Strict) </footer"
+      }
+    ]
+  }
+]

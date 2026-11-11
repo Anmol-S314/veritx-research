@@ -1,0 +1,261 @@
+{
+  "purpose": "Bounded live canonical workload-study smoke test, not model profiling or hardware calibration",
+  "request": {
+    "schema_version": 4,
+    "compiler_semantics_version": 4,
+    "workload": {
+      "model_family": "mixture_of_experts",
+      "model_name": "",
+      "tp": 2,
+      "pp": 1,
+      "ep": 4,
+      "dp": 1,
+      "serving_mode": "mixed",
+      "collectives": [
+        {
+          "kind": "allreduce",
+          "dimension": "TP",
+          "payload_bytes": 64,
+          "traffic_class": "tp_collective",
+          "source_rank": null
+        },
+        {
+          "kind": "alltoall",
+          "dimension": "EP",
+          "payload_bytes": 64,
+          "traffic_class": "tp_collective",
+          "source_rank": null
+        }
+      ],
+      "workload_source_ref": null
+    },
+    "requirements": [
+      {
+        "traffic_class": "tp_collective",
+        "qos_class": "latency_critical",
+        "latency_ceiling_cycles": 1000000000,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute_tile",
+        "count": 16,
+        "data_width": 256,
+        "addr_width": 64,
+        "protocol": "AXI",
+        "clock_domain": null,
+        "power_domain": null
+      },
+      {
+        "kind": "hbm_controller",
+        "count": 1,
+        "data_width": 256,
+        "addr_width": 64,
+        "protocol": "AXI",
+        "clock_domain": null,
+        "power_domain": null
+      }
+    ],
+    "dependencies": [],
+    "topology": {
+      "kind": "mesh",
+      "side_length": 5,
+      "concentration": 1
+    },
+    "noc_controls": {
+      "arbitration": null,
+      "rcu_enabled": null,
+      "link_width": null,
+      "mcast_groups": null,
+      "mcast_setup_cycles": null,
+      "output_formats": [
+        "systemverilog"
+      ],
+      "obfuscation_level": 0
+    },
+    "address_map": {
+      "ranges": []
+    },
+    "physical": {
+      "clock_freq_mhz": 1000,
+      "data_width": 256,
+      "num_power_domains": 1,
+      "process_node_nm": 7
+    },
+    "compute": {
+      "stages": [
+        {
+          "stage_id": "authored",
+          "duration_ns": 100,
+          "input_bytes": 64,
+          "weight_bytes": 128,
+          "output_bytes": 32,
+          "owner": 0,
+          "input_loc": "LOCAL",
+          "weight_loc": "LOCAL",
+          "output_loc": "LOCAL"
+        }
+      ]
+    },
+    "migration_provenance": {
+      "migrated_from": "CompileRequestV3",
+      "source_design_hash": "0ba9c33a4b4d5cb929cca0c9ae341ce120bb356d287c6db70190484b1283e90e",
+      "radix_resolution": "frozen_v3_autosize(endpoints=4,concentration=1)->side_length=2",
+      "read": {
+        "source": "noc_config.topology_family",
+        "topology_family": "mesh",
+        "radix": null,
+        "concentration": 1
+      },
+      "intent_kind": "mesh",
+      "intent_id": "sha256:6e7ead9335a867d99ff83bd4515fe0f873598c231ed1c2714acd4ed49dc9d201"
+    },
+    "design_hash": "bd1accdd7b8d1965bb1db55601d9ba1f01dfd69884af6ef1e6b4192860f5f440",
+    "guardrail_hash": "bd1accdd7b8d1965bb1db55601d9ba1f01dfd69884af6ef1e6b4192860f5f440"
+  },
+  "results": [
+    {
+      "patch": {
+        "tp": 2,
+        "ep": 4
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "metrics": {
+        "completion_cycles": 91,
+        "completion_ns": 91,
+        "completion_time": 91,
+        "critical_path": 9.1e-8,
+        "makespan": 9.1e-8,
+        "resource_utilization_max": 0,
+        "system_makespan_cycles": 352,
+        "average_read_latency_cycles": 117
+      },
+      "analyses": [
+        {
+          "question": "NETWORK_COMPLETION",
+          "status": "EVALUATED",
+          "reason": null
+        },
+        {
+          "question": "SYSTEM_MAKESPAN",
+          "status": "EVALUATED",
+          "reason": null
+        },
+        {
+          "question": "DRAM_TIMING",
+          "status": "EVALUATED",
+          "reason": null
+        }
+      ],
+      "provenance": {
+        "completion_cycles": {
+          "metric_key": "completion_cycles",
+          "question": "NETWORK_COMPLETION",
+          "backend_id": "BOOKSIM_STANDALONE",
+          "model_fidelity": "NETWORK_PACKET_SIMULATION",
+          "qualification": "QUALIFIED",
+          "native_evidence_id": "sha256:118900f0b77ac7ed706902ec460ac1a05143ad5ab63df7a23efc17c101ac5e26",
+          "unit": null,
+          "value": 91
+        },
+        "system_makespan_cycles": {
+          "metric_key": "system_makespan_cycles",
+          "question": "SYSTEM_MAKESPAN",
+          "backend_id": "ASTRA2_EMBEDDED_BOOKSIM",
+          "model_fidelity": "SYSTEM_SIMULATION",
+          "qualification": "ASTRA_OWNED_COLLECTIVE_EXECUTION",
+          "native_evidence_id": "sha256:5d14e858699d481abef00d5b569847fe4334dfbddeaafa443f7a966b3546b7c2",
+          "unit": "cycles",
+          "value": 352
+        },
+        "average_read_latency_cycles": {
+          "metric_key": "average_read_latency_cycles",
+          "question": "DRAM_TIMING",
+          "backend_id": "RAMULATOR2_HBM3_V1",
+          "model_fidelity": "MEMORY_CYCLE_SIMULATION",
+          "qualification": "PASS",
+          "native_evidence_id": "sha256:174b3c0d406da06d8c5f3803135c979ee29aff5450eab84ea160a2f504d8cd94",
+          "unit": "cycles",
+          "value": 117
+        }
+      }
+    },
+    {
+      "patch": {
+        "tp": 4,
+        "ep": 2
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "metrics": {
+        "completion_cycles": 109,
+        "completion_ns": 109,
+        "completion_time": 109,
+        "critical_path": 1.09e-7,
+        "makespan": 1.09e-7,
+        "resource_utilization_max": 0,
+        "system_makespan_cycles": 612,
+        "average_read_latency_cycles": 117
+      },
+      "analyses": [
+        {
+          "question": "NETWORK_COMPLETION",
+          "status": "EVALUATED",
+          "reason": null
+        },
+        {
+          "question": "SYSTEM_MAKESPAN",
+          "status": "EVALUATED",
+          "reason": null
+        },
+        {
+          "question": "DRAM_TIMING",
+          "status": "EVALUATED",
+          "reason": null
+        }
+      ],
+      "provenance": {
+        "completion_cycles": {
+          "metric_key": "completion_cycles",
+          "question": "NETWORK_COMPLETION",
+          "backend_id": "BOOKSIM_STANDALONE",
+          "model_fidelity": "NETWORK_PACKET_SIMULATION",
+          "qualification": "QUALIFIED",
+          "native_evidence_id": "sha256:3d431238e76c2edc20dbb8452af9ed4a5a29b4cde84d9e7943056f6fd06bfbbc",
+          "unit": null,
+          "value": 109
+        },
+        "system_makespan_cycles": {
+          "metric_key": "system_makespan_cycles",
+          "question": "SYSTEM_MAKESPAN",
+          "backend_id": "ASTRA2_EMBEDDED_BOOKSIM",
+          "model_fidelity": "SYSTEM_SIMULATION",
+          "qualification": "ASTRA_OWNED_COLLECTIVE_EXECUTION",
+          "native_evidence_id": "sha256:6be778666116002f764c07bcb1bc734aaba01efb02975bc737c5ab25361c44f7",
+          "unit": "cycles",
+          "value": 612
+        },
+        "average_read_latency_cycles": {
+          "metric_key": "average_read_latency_cycles",
+          "question": "DRAM_TIMING",
+          "backend_id": "RAMULATOR2_HBM3_V1",
+          "model_fidelity": "MEMORY_CYCLE_SIMULATION",
+          "qualification": "PASS",
+          "native_evidence_id": "sha256:eb7f1ae758c25c6233db03a8d6fb877a50c5db344e4a2e8528ac355f2c2ee973",
+          "unit": "cycles",
+          "value": 117
+        }
+      }
+    }
+  ],
+  "local_evidence_directory": "/tmp/srota-compute-memory-proof-y75cfno1",
+  "limitations": [
+    "Synthetic authored 100 ns compute stage owned by rank 0; 64 input, 128 weight and 32 output bytes. Not measured model demand.",
+    "TP2/EP4 and TP4/EP2 each use eight ranks on a declared 16-compute-endpoint fabric with one HBM controller.",
+    "Compute and memory demand are deliberately unchanged across decompositions, not automatically resharded.",
+    "BookSim network cycles, ASTRA system cycles and Ramulator DRAM cycles are independent model results, not summable or hardware-calibrated."
+  ]
+}

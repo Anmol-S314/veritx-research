@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "error": "#ba1a1a",
+        "on-primary-fixed": "#001e30",
+        "surface-container-lowest": "#ffffff",
+        "on-error-container": "#93000a",
+        "on-secondary": "#ffffff",
+        "on-surface-variant": "#40484f",
+        "outline": "#707880",
+        "surface-bright": "#f7f9ff",
+        "surface-variant": "#dce3ee",
+        "tertiary-fixed-dim": "#bcc8d5",
+        "primary-fixed": "#cbe6ff",
+        "surface": "#f7f9ff",
+        "secondary": "#4e616a",
+        "on-error": "#ffffff",
+        "inverse-surface": "#2a3139",
+        "surface-container-low": "#eef4ff",
+        "primary-fixed-dim": "#8fcdff",
+        "on-primary": "#ffffff",
+        "background": "#f7f9ff",
+        "primary": "#00537c",
+        "on-secondary-container": "#546770",
+        "on-secondary-fixed-variant": "#374952",
+        "surface-dim": "#d4dae5",
+        "outline-variant": "#c0c7d0",
+        "tertiary": "#444f5a",
+        "tertiary-fixed": "#d8e4f2",
+        "inverse-on-surface": "#eaf1fc",
+        "secondary-fixed-dim": "#b6c9d4",
+        "on-secondary-fixed": "#0a1e26",
+        "on-primary-container": "#d0e8ff",
+        "error-container": "#ffdad6",
+        "surface-tint": "#006494",
+        "surface-container-high": "#e2e9f4",
+        "surface-container": "#e8eef9",
+        "on-tertiary-fixed-variant": "#3d4853",
+        "secondary-fixed": "#d2e6f1",
+        "secondary-container": "#d2e6f1",
+        "on-tertiary-container": "#dae6f4",
+        "surface-container-highest": "#dce3ee",
+        "on-tertiary": "#ffffff",
+        "on-primary-fixed-variant": "#004b71",
+        "tertiary-container": "#5c6773",
+        "on-surface": "#151c24",
+        "inverse-primary": "#8fcdff",
+        "primary-container": "#0f6c9e",
+        "on-tertiary-fixed": "#121d27",
+        "on-background": "#151c24"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.125rem",
+        "lg": "0.25rem",
+        "xl": "0.5rem",
+        "full": "0.75rem"
+      },
+      "spacing": {
+        "space-md": "0.75rem",
+        "gutter": "0.5rem",
+        "space-lg": "1rem",
+        "space-xl": "1.5rem",
+        "space-xs": "0.25rem",
+        "space-sm": "0.5rem",
+        "margin": "0.5rem"
+      },
+      "fontFamily": {
+        "code-md": ["JetBrains Mono"],
+        "headline-md": ["Inter"],
+        "label-md": ["Inter"],
+        "headline-sm": ["Inter"],
+        "headline-lg": ["Inter"],
+        "code-sm": ["JetBrains Mono"],
+        "body-sm": ["Inter"],
+        "body-md": ["Inter"],
+        "code-table": ["JetBrains Mono"]
+      },
+      "fontSize": {
+        "code-md": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "headline-md": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+        "label-md": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+        "headline-sm": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600"}],
+        "headline-lg": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+        "code-sm": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "body-md": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+        "code-table": ["11px", {"lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500"}]
+      }
+    }
+  }
+}</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant select-none"><div class="h-12 w-full px-space-md flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">memory</span><span class="font-headline-sm text-headline-sm text-on-surface tracking-tight font-bold">VERITX <span class="text-outline font-normal text-body-sm">/</span> SROTA STUDIO</span></div><span class="text-outline-variant font-code-sm text-code-sm">|</span><div class="flex items-center gap-space-xs bg-surface-container px-space-xs py-[2px] rounded-DEFAULT border border-outline-variant"><span class="material-symbols-outlined text-on-surface-variant text-[14px]">folder_open</span><span class="font-code-sm text-code-sm text-on-surface font-medium">Falcon8_NoC_Gen2</span></div><div class="flex items-center gap-space-xs px-space-xs py-[2px] rounded-DEFAULT bg-secondary-fixed text-on-secondary-fixed border border-outline-variant"><span class="font-code-sm text-code-sm">Snapshot: d7a4e9b (SIM-402 Evaluated)</span></div><div class="flex items-center gap-space-xs px-space-xs py-[2px] rounded-DEFAULT bg-tertiary-fixed text-on-tertiary-fixed font-code-sm text-code-sm"><span class="w-1.5 h-1.5 rounded-full bg-error"></span><span>Draft modified: d7a4e9b-mod1*</span></div><div class="hidden xl:flex items-center gap-space-xs px-space-xs py-[2px] rounded-DEFAULT bg-surface-container-high text-on-surface-variant font-label-md text-label-md uppercase tracking-wider"><span>Illustrative Sample Data</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-[2px] bg-primary-fixed text-on-primary-fixed border border-primary-fixed-dim rounded-DEFAULT font-code-sm text-code-sm"><span class="material-symbols-outlined text-[14px] animate-spin text-primary">sync</span><span>SIM-403: Running (42%)</span></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="flex items-center text-error font-medium"><span class="material-symbols-outlined text-[14px] mr-[2px]">error</span>0</span><span class="flex items-center text-primary font-medium"><span class="material-symbols-outlined text-[14px] mr-[2px]">warning</span>1 Warning</span></div><div class="flex items-center gap-space-xs px-space-xs py-[2px] bg-surface-container text-on-surface-variant rounded-DEFAULT border border-outline-variant font-label-md text-label-md"><span class="material-symbols-outlined text-[14px]">bolt</span><span>Offline AI: Closed</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="h-8 w-full px-space-md bg-surface-container-low border-t border-outline-variant flex items-center gap-space-xs" data-active-classes="border-b-2 border-primary text-primary font-semibold bg-surface-container-low"><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="design" href="#">Design</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="explore" href="#">Explore</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="verify" href="#">Verify</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-colors" data-path="deliver" href="#">Deliver</a></nav></header><aside class="fixed left-0 top-20 bottom-6 w-64 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col"><div class="h-8 px-space-md bg-surface-container flex items-center justify-between border-b border-outline-variant"><span class="font-label-md text-label-md uppercase text-on-surface-variant tracking-wider font-semibold">Run &amp; Eval Browser</span><span class="material-symbols-outlined text-[16px] text-on-surface-variant cursor-pointer">filter_alt</span></div><div class="p-space-xs bg-surface-container-low border-b border-outline-variant flex items-center justify-between"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px] text-primary">task_alt</span><span class="font-code-sm text-code-sm font-semibold text-on-surface">Run SIM-402</span></div><span class="font-code-sm text-code-sm text-on-surface-variant bg-surface px-space-xs py-[1px] border border-outline-variant rounded-DEFAULT">4x4 Mesh</span></div><nav class="flex-1 py-space-xs px-space-xs flex flex-col gap-[2px]" data-active-classes="bg-primary text-on-primary font-medium"><a class="flex items-center gap-space-xs px-space-sm py-[4px] rounded-DEFAULT font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="summary" href="#"><span class="material-symbols-outlined text-[16px]">summarize</span><span>Summary</span></a><a class="flex items-center gap-space-xs px-space-sm py-[4px] rounded-DEFAULT font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="traffic-matrix" href="#"><span class="material-symbols-outlined text-[16px]">grid_on</span><span>Traffic Matrix</span></a><a aria-current="page" class="flex items-center gap-space-xs px-space-sm py-[4px] rounded-DEFAULT transition-colors bg-primary text-on-primary font-medium" data-path="topology-overlay" href="#"><span class="material-symbols-outlined text-[16px]">hub</span><span>Topology Overlay</span></a><a class="flex items-center gap-space-xs px-space-sm py-[4px] rounded-DEFAULT font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="trace-inspector" href="#"><span class="material-symbols-outlined text-[16px]">reorder</span><span>Trace Inspector</span></a><a class="flex items-center gap-space-xs px-space-sm py-[4px] rounded-DEFAULT font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="configuration" href="#"><span class="material-symbols-outlined text-[16px]">tune</span><span>Configuration</span></a></nav><div class="p-space-xs border-t border-outline-variant bg-surface-container-low"><div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm"><span>Flits: 14.8M</span><span>Latency: 4.2 cyc</span></div></div></aside><div class="pl-64"><main class="relative pt-20 pb-6 w-full min-h-screen bg-surface"><div class="flex flex-col w-full text-on-surface">
+<!-- Historical Run Mismatch Banner -->
+<section class="w-full bg-secondary-fixed text-on-secondary-fixed px-space-md py-space-xs flex items-center justify-between shadow-sm select-none">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0">history</span>
+<p class="font-body-sm text-body-sm truncate">
+<span class="font-semibold">Viewing historical run SIM-402</span> (snapshot <span class="font-code-sm text-code-sm font-semibold">d7a4e9b</span>). Active workspace contains subsequent uncommitted draft changes (<span class="font-code-sm text-code-sm font-semibold">d7a4e9b-mod1*</span>). Historical results remain bound to immutable snapshot d7a4e9b.
+      </p>
+</div>
+<div class="flex items-center gap-space-md shrink-0">
+<button class="px-space-sm py-[2px] bg-surface-container-lowest text-primary font-label-md text-label-md uppercase tracking-wider rounded-DEFAULT shadow-sm hover:bg-surface transition-colors flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">compare_arrows</span>
+<span>Compare with Current Draft</span>
+</button>
+<span class="font-code-sm text-code-sm text-on-secondary-fixed-variant">Workload: ResNet50_Burst [w12] • Requirements: rev r5</span>
+</div>
+</section>
+<!-- Canvas Header & Config Toolbar -->
+<header class="w-full bg-surface-container-lowest px-space-md py-space-xs shadow-sm flex flex-col gap-space-xs">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm">
+<h1 class="font-headline-md text-headline-md tracking-tight font-bold text-on-surface">Topology Overlay — Falcon8_NoC_Gen2 <span class="font-code-md text-code-md text-outline font-normal">(d7a4e9b)</span></h1>
+<span class="px-space-xs py-[2px] bg-surface-container text-on-surface-variant font-code-sm text-code-sm rounded-DEFAULT">Logical Topology (No physical P&amp;R coordinates captured)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<div class="flex items-center bg-surface-container-low rounded-DEFAULT px-space-xs py-[2px]">
+<span class="font-label-md text-label-md uppercase text-on-surface-variant mr-space-xs">Metric:</span>
+<select class="bg-surface-container-lowest text-on-surface font-code-sm text-code-sm rounded-DEFAULT px-space-xs py-[2px] outline-none cursor-pointer" id="metric-select">
+<option selected="" value="dir_util">Directed Link Utilization (% Capacity)</option>
+<option value="flit_vol">Aggregate Flit Volume (Flits)</option>
+<option value="buf_occ">Mean Buffer Occupancy (Flits/VC)</option>
+<option disabled="" value="pkt_trace">Missing: Hop-by-Hop Packet Trace (Not captured in SIM-402)</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Secondary Meta & Graph Controls -->
+<div class="flex flex-wrap items-center justify-between gap-space-md pt-[2px]">
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-primary">info</span>
+<span>Window: 850,000 cycles (~607.1 µs @ 1.4 GHz)</span>
+<span class="text-outline-variant">•</span>
+<span>Denominator: 22.4 GB/s per directed 128-bit link (1 flit/cycle)</span>
+</div>
+<!-- Canvas Toggles & Zoom -->
+<div class="flex items-center gap-space-xs">
+<div class="flex items-center bg-surface-container-low rounded-DEFAULT px-space-xs py-[1px] gap-space-xs">
+<label class="flex items-center gap-[2px] cursor-pointer font-label-md text-label-md text-on-surface-variant select-none">
+<input checked="" class="accent-primary rounded-DEFAULT w-3 h-3" type="checkbox"/>
+<span>Clock (1.4 GHz)</span>
+</label>
+<span class="text-outline-variant text-[10px]">|</span>
+<label class="flex items-center gap-[2px] cursor-pointer font-label-md text-label-md text-on-surface-variant select-none">
+<input checked="" class="accent-primary rounded-DEFAULT w-3 h-3" type="checkbox"/>
+<span>Router IDs</span>
+</label>
+<span class="text-outline-variant text-[10px]">|</span>
+<label class="flex items-center gap-[2px] cursor-pointer font-label-md text-label-md text-on-surface-variant select-none">
+<input checked="" class="accent-primary rounded-DEFAULT w-3 h-3" type="checkbox"/>
+<span>Endpoints</span>
+</label>
+<span class="text-outline-variant text-[10px]">|</span>
+<label class="flex items-center gap-[2px] cursor-pointer font-label-md text-label-md text-on-surface-variant select-none">
+<input checked="" class="accent-primary rounded-DEFAULT w-3 h-3" type="checkbox"/>
+<span>Arrows</span>
+</label>
+<span class="text-outline-variant text-[10px]">|</span>
+<label class="flex items-center gap-[2px] cursor-pointer font-label-md text-label-md text-error font-semibold select-none">
+<input checked="" class="accent-error rounded-DEFAULT w-3 h-3" type="checkbox"/>
+<span>&gt;80% Highlight</span>
+</label>
+</div>
+<div class="flex items-center bg-surface-container rounded-DEFAULT">
+<button class="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high rounded-DEFAULT text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">remove</span>
+</button>
+<span class="font-code-sm text-code-sm px-space-xs text-on-surface font-medium select-none">100%</span>
+<button class="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high rounded-DEFAULT text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">add</span>
+</button>
+<button class="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high rounded-DEFAULT text-on-surface-variant" title="Fit to Window">
+<span class="material-symbols-outlined text-[14px]">fit_screen</span>
+</button>
+</div>
+</div>
+</div>
+</header>
+<!-- Workspace Splitting: Topology Canvas (Left) + Inspector Drawer (Right) -->
+<div class="w-full flex flex-col xl:flex-row items-stretch gap-space-xs p-space-xs">
+<!-- Dominant Interactive 4x4 Topology Graph Viewport -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest rounded-DEFAULT shadow-sm relative min-w-0">
+<!-- Viewport Meta Badge Bar -->
+<div class="h-7 bg-surface-container-low px-space-sm flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm select-none">
+<div class="flex items-center gap-space-sm">
+<span class="font-label-md text-label-md uppercase font-semibold text-primary">Canvas: 4x4 2D Mesh Topology</span>
+<span class="text-outline-variant">|</span>
+<span>Mesh Radix: k=4, n=2 (16 Routers, 48 Directed Inter-Router Channels)</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="w-2 h-2 rounded-full bg-primary inline-block"></span>
+<span>Routing: Deterministic XY DOR</span>
+<span class="text-outline-variant">|</span>
+<span>VC Alloc: 4 VCs/port</span>
+</div>
+</div>
+<!-- Graph Stage -->
+<div class="w-full relative overflow-auto p-space-md flex flex-col items-center justify-center min-h-[580px]">
+<!-- SVG Topology Visualization Layer -->
+<svg class="w-full max-w-[800px] h-auto select-none font-code-sm" id="noc-mesh-svg" style="shape-rendering: geometricPrecision;" viewbox="0 0 760 520">
+<!-- Defs: Pattern for missing data & marker arrows -->
+<defs>
+<pattern height="8" id="missing-hatch" patterntransform="rotate(45 0 0)" patternunits="userSpaceOnUse" width="8">
+<line opacity="0.4" stroke="#707880" stroke-width="1.5" x1="0" x2="0" y1="0" y2="8"></line>
+</pattern>
+<marker id="arrow-cool" markerheight="4" markerwidth="4" orient="auto-start-reverse" refx="5" refy="3" viewbox="0 0 6 6">
+<path d="M 0 0 L 6 3 L 0 6 z" fill="#4e616a"></path>
+</marker>
+<marker id="arrow-amber" markerheight="4" markerwidth="4" orient="auto-start-reverse" refx="5" refy="3" viewbox="0 0 6 6">
+<path d="M 0 0 L 6 3 L 0 6 z" fill="#0f6c9e"></path>
+</marker>
+<marker id="arrow-hot" markerheight="4" markerwidth="4" orient="auto-start-reverse" refx="5" refy="3" viewbox="0 0 6 6">
+<path d="M 0 0 L 6 3 L 0 6 z" fill="#ba1a1a"></path>
+</marker>
+</defs>
+<!-- 4x4 Mesh Grid Routers & Interconnects -->
+<!-- Coordinates: X steps: 90, 270, 450, 630. Y steps: 60, 180, 300, 420 -->
+<!-- DIRECTED INTER-ROUTER LINKS (DUAL CHANNELS) -->
+<!-- ROW 0 HORIZONTALS -->
+<!-- R00 <-> R01 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="130" x2="230" y1="56" y2="56"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="230" x2="130" y1="64" y2="64"></line>
+<!-- R01 <-> R02 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="310" x2="410" y1="56" y2="56"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="410" x2="310" y1="64" y2="64"></line>
+<!-- R02 <-> R03 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="490" x2="590" y1="56" y2="56"></line>
+<text fill="#4e616a" font-size="9" text-anchor="middle" x="540" y="51">38.2%</text>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="590" x2="490" y1="64" y2="64"></line>
+<!-- ROW 1 HORIZONTALS -->
+<!-- R10 <-> R11 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="130" x2="230" y1="176" y2="176"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="230" x2="130" y1="184" y2="184"></line>
+<!-- R11 <-> R12 (Heavy 78.1%) -->
+<line marker-end="url(#arrow-amber)" stroke="#0f6c9e" stroke-width="3" x1="310" x2="410" y1="176" y2="176"></line>
+<text fill="#00537c" font-size="9" font-weight="600" text-anchor="middle" x="360" y="171">78.1% (E)</text>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="410" x2="310" y1="184" y2="184"></line>
+<!-- R12 <-> R13 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="490" x2="590" y1="176" y2="176"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="590" x2="490" y1="184" y2="184"></line>
+<!-- ROW 2 HORIZONTALS -->
+<!-- R20 <-> R21 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="130" x2="230" y1="296" y2="296"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="230" x2="130" y1="304" y2="304"></line>
+<!-- R21 <-> R22 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="310" x2="410" y1="296" y2="296"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="410" x2="310" y1="304" y2="304"></line>
+<!-- R22 <-> R23 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="490" x2="590" y1="296" y2="296"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="590" x2="490" y1="304" y2="304"></line>
+<!-- ROW 3 HORIZONTALS -->
+<!-- R30 <-> R31 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="130" x2="230" y1="416" y2="416"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="230" x2="130" y1="424" y2="424"></line>
+<!-- R31 <-> R32 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="310" x2="410" y1="416" y2="416"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="410" x2="310" y1="424" y2="424"></line>
+<!-- R32 <-> R33 -->
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="490" x2="590" y1="416" y2="416"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2.5" x1="590" x2="490" y1="424" y2="424"></line>
+<!-- VERTICAL LINKS -->
+<!-- COL 0 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="86" x2="86" y1="80" y2="160"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="94" x2="94" y1="160" y2="80"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="86" x2="86" y1="200" y2="280"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="94" x2="94" y1="280" y2="200"></line>
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="86" x2="86" y1="320" y2="400"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="94" x2="94" y1="400" y2="320"></line>
+<!-- COL 1 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="266" x2="266" y1="80" y2="160"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="274" x2="274" y1="160" y2="80"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="266" x2="266" y1="200" y2="280"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="274" x2="274" y1="280" y2="200"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="266" x2="266" y1="320" y2="400"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="274" x2="274" y1="400" y2="320"></line>
+<!-- COL 2: HIGH TRAFFIC SPINE -->
+<!-- R12 -> R02 (NORTHBOUND 92.4% UTILIZATION - SELECTED) -->
+<!-- Southbound normal -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="446" x2="446" y1="80" y2="160"></line>
+<!-- Northbound BOTTLENECK with Selection Halo -->
+<g class="cursor-pointer" id="selected-link-group">
+<!-- Reticle highlight background -->
+<line stroke="#cbe6ff" stroke-linecap="round" stroke-width="9" x1="454" x2="454" y1="160" y2="80"></line>
+<!-- Hot line -->
+<line marker-end="url(#arrow-hot)" stroke="#ba1a1a" stroke-width="4" x1="454" x2="454" y1="160" y2="80"></line>
+<!-- Value chip on graph -->
+<rect fill="#ffdad6" height="18" rx="2" width="76" x="462" y="110"></rect>
+<text fill="#93000a" font-size="10" font-weight="700" text-anchor="middle" x="500" y="123">92.4% (20.7G)</text>
+<!-- Selection box dashed -->
+<rect fill="none" height="90" stroke="#00537c" stroke-dasharray="3,3" stroke-width="1.5" width="30" x="440" y="76"></rect>
+</g>
+<!-- R22 -> R12 (64.5% Northbound) -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="446" x2="446" y1="200" y2="280"></line>
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="3" x1="454" x2="454" y1="280" y2="200"></line>
+<text fill="#4e616a" font-size="9" text-anchor="middle" x="475" y="244">64.5%</text>
+<!-- R32 -> R22 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="446" x2="446" y1="320" y2="400"></line>
+<line marker-end="url(#arrow-cool)" stroke="#4e616a" stroke-width="2.5" x1="454" x2="454" y1="400" y2="320"></line>
+<!-- COL 3 -->
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="626" x2="626" y1="80" y2="160"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="634" x2="634" y1="160" y2="80"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="626" x2="626" y1="200" y2="280"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="634" x2="634" y1="280" y2="200"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="626" x2="626" y1="320" y2="400"></line>
+<line marker-end="url(#arrow-cool)" stroke="#c0c7d0" stroke-width="2" x1="634" x2="634" y1="400" y2="320"></line>
+<!-- 16 ROUTER NODES (R_x_y) + ATTACHED ENDPOINT INSETS -->
+<!-- ROW 0: R_0_0, R_0_1, R_0_2, R_0_3 -->
+<!-- R_0_0 (Initiator CPU_0) -->
+<g transform="translate(70, 40)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_0_0</text>
+<!-- Endpoint Attachment -->
+<rect fill="#d2e6f1" height="20" rx="2" stroke="#4e616a" stroke-width="1" width="42" x="-48" y="10"></rect>
+<text fill="#0a1e26" font-size="9" font-weight="600" text-anchor="middle" x="-27" y="24">CPU_0</text>
+<line stroke="#4e616a" stroke-width="1.5" x1="-6" x2="0" y1="20" y2="20"></line>
+</g>
+<!-- R_0_1 (Initiator CPU_1) -->
+<g transform="translate(250, 40)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_0_1</text>
+<rect fill="#d2e6f1" height="18" rx="2" stroke="#4e616a" stroke-width="1" width="40" x="0" y="-24"></rect>
+<text fill="#0a1e26" font-size="9" font-weight="600" text-anchor="middle" x="20" y="-12">CPU_1</text>
+<line stroke="#4e616a" stroke-width="1.5" x1="20" x2="20" y1="-6" y2="0"></line>
+</g>
+<!-- R_0_2 (Target / Co-processor GPU_0) -->
+<g transform="translate(430, 40)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#00537c" stroke-width="2" width="40" x="0" y="0"></rect>
+<text fill="#00537c" font-size="10" font-weight="700" text-anchor="middle" x="20" y="24">R_0_2</text>
+<rect fill="#cbe6ff" height="18" rx="2" stroke="#00537c" stroke-width="1" width="40" x="0" y="-24"></rect>
+<text fill="#001e30" font-size="9" font-weight="700" text-anchor="middle" x="20" y="-12">GPU_0</text>
+<line stroke="#00537c" stroke-width="2" x1="20" x2="20" y1="-6" y2="0"></line>
+<circle cx="20" cy="40" fill="#ba1a1a" r="3"></circle> <!-- Port South Ingress Hot -->
+</g>
+<!-- R_0_3 (GPU_1) -->
+<g transform="translate(610, 40)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_0_3</text>
+<rect fill="#cbe6ff" height="20" rx="2" stroke="#4e616a" stroke-width="1" width="42" x="46" y="10"></rect>
+<text fill="#001e30" font-size="9" font-weight="600" text-anchor="middle" x="67" y="24">GPU_1</text>
+<line stroke="#4e616a" stroke-width="1.5" x1="40" x2="46" y1="20" y2="20"></line>
+</g>
+<!-- ROW 1: R_1_0, R_1_1, R_1_2, R_1_3 -->
+<!-- R_1_0 (CPU_2) -->
+<g transform="translate(70, 160)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_1_0</text>
+<rect fill="#d2e6f1" height="20" rx="2" stroke="#4e616a" stroke-width="1" width="42" x="-48" y="10"></rect>
+<text fill="#0a1e26" font-size="9" font-weight="600" text-anchor="middle" x="-27" y="24">CPU_2</text>
+<line stroke="#4e616a" stroke-width="1.5" x1="-6" x2="0" y1="20" y2="20"></line>
+</g>
+<!-- R_1_1 (CPU_3) -->
+<g transform="translate(250, 160)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_1_1</text>
+<rect fill="#d2e6f1" height="20" rx="2" stroke="#4e616a" stroke-width="1" width="38" x="-44" y="10"></rect>
+<text fill="#0a1e26" font-size="9" font-weight="600" text-anchor="middle" x="-25" y="24">CPU_3</text>
+<line stroke="#4e616a" stroke-width="1.5" x1="-6" x2="0" y1="20" y2="20"></line>
+</g>
+<!-- R_1_2 (Selected source router) -->
+<g transform="translate(430, 160)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#00537c" stroke-width="2" width="40" x="0" y="0"></rect>
+<text fill="#00537c" font-size="10" font-weight="700" text-anchor="middle" x="20" y="24">R_1_2</text>
+<circle cx="20" cy="0" fill="#ba1a1a" r="3"></circle> <!-- Port North Egress Hot -->
+</g>
+<!-- R_1_3 -->
+<g transform="translate(610, 160)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_1_3</text>
+</g>
+<!-- ROW 2: R_2_0, R_2_1, R_2_2, R_2_3 -->
+<g transform="translate(70, 280)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_2_0</text>
+<rect fill="#d8e4f2" height="20" rx="2" stroke="#707880" stroke-width="1" width="42" x="-48" y="10"></rect>
+<text fill="#151c24" font-size="9" font-weight="500" text-anchor="middle" x="-27" y="24">SYS_IO</text>
+<line stroke="#707880" stroke-width="1" x1="-6" x2="0" y1="20" y2="20"></line>
+</g>
+<g transform="translate(250, 280)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_2_1</text>
+</g>
+<g transform="translate(430, 280)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_2_2</text>
+</g>
+<g transform="translate(610, 280)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_2_3</text>
+</g>
+<!-- ROW 3: R_3_0, R_3_1, R_3_2, R_3_3 -->
+<!-- R_3_0 (Target HBM_0 Controller) -->
+<g transform="translate(70, 400)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_3_0</text>
+<rect fill="#cbe6ff" height="20" rx="2" stroke="#00537c" stroke-width="1.2" width="42" x="-48" y="10"></rect>
+<text fill="#001e30" font-size="9" font-weight="700" text-anchor="middle" x="-27" y="24">HBM_0</text>
+<line stroke="#00537c" stroke-width="1.5" x1="-6" x2="0" y1="20" y2="20"></line>
+</g>
+<g transform="translate(250, 400)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_3_1</text>
+</g>
+<g transform="translate(430, 400)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_3_2</text>
+</g>
+<!-- R_3_3 (Target HBM_1 Controller) -->
+<g transform="translate(610, 400)">
+<rect fill="#e8eef9" height="40" rx="3" stroke="#707880" stroke-width="1.2" width="40" x="0" y="0"></rect>
+<text fill="#151c24" font-size="10" font-weight="600" text-anchor="middle" x="20" y="24">R_3_3</text>
+<rect fill="#cbe6ff" height="20" rx="2" stroke="#00537c" stroke-width="1.2" width="42" x="46" y="10"></rect>
+<text fill="#001e30" font-size="9" font-weight="700" text-anchor="middle" x="67" y="24">HBM_1</text>
+<line stroke="#00537c" stroke-width="1.5" x1="40" x2="46" y1="20" y2="20"></line>
+</g>
+</svg>
+</div>
+<!-- Graph Legend Bar -->
+<footer class="h-9 bg-surface-container px-space-md flex flex-wrap items-center justify-between border-t border-outline-variant text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-md">
+<span class="font-label-md text-label-md uppercase font-semibold text-on-surface">Heatmap Scale:</span>
+<div class="flex items-center gap-space-xs">
+<span class="w-3 h-3 rounded-DEFAULT bg-[#c0c7d0] inline-block"></span>
+<span>0%</span>
+<span class="w-8 h-2.5 rounded-DEFAULT bg-gradient-to-r from-[#c0c7d0] via-[#4e616a] to-[#0f6c9e]"></span>
+<span>50%</span>
+<span class="w-8 h-2.5 rounded-DEFAULT bg-gradient-to-r from-[#0f6c9e] via-[#00537c] to-[#ba1a1a]"></span>
+<span>100% (22.4 GB/s)</span>
+</div>
+<div class="flex items-center gap-space-xs ml-space-sm">
+<svg class="rounded-DEFAULT border border-outline-variant" height="14" width="14">
+<rect fill="url(#missing-hatch)" height="14" width="14"></rect>
+</svg>
+<span class="text-outline">Missing data / Not recorded</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm text-on-surface-variant">
+<span>Active Filter: All VCs Aggregated</span>
+<span class="text-outline-variant">•</span>
+<span>Click link to select</span>
+</div>
+</footer>
+</div>
+<!-- Right Side Inspector Panel (~340px) -->
+<aside class="w-full xl:w-[360px] shrink-0 bg-surface-container-lowest rounded-DEFAULT shadow-sm flex flex-col divide-y divide-outline-variant">
+<!-- Inspector Panel Header -->
+<div class="h-10 px-space-md bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">timeline</span>
+<h2 class="font-headline-sm text-headline-sm tracking-tight text-on-surface">Directed Link Inspector</h2>
+</div>
+<span class="px-space-xs py-[1px] bg-primary text-on-primary font-code-sm text-code-sm rounded-DEFAULT font-medium">
+          R_1_2 → R_0_2 [North]
+        </span>
+</div>
+<!-- Evaluated Object Specification -->
+<div class="p-space-md flex flex-col gap-space-xs">
+<span class="font-label-md text-label-md uppercase text-on-surface-variant font-semibold tracking-wider">Topology Path Specification</span>
+<div class="bg-surface-container-low p-space-xs rounded-DEFAULT font-code-table text-code-table flex flex-col gap-1">
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Source Node:</span>
+<span class="text-on-surface font-semibold">Router R_1_2 [x=1, y=2]</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Source Port:</span>
+<span class="text-on-surface font-semibold">Port North (Egress)</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Target Node:</span>
+<span class="text-on-surface font-semibold">Router R_0_2 [x=0, y=2]</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Target Port:</span>
+<span class="text-on-surface font-semibold">Port South (Ingress)</span>
+</div>
+<div class="flex justify-between pt-1 border-t border-outline-variant">
+<span class="text-on-surface-variant">Physical Spec:</span>
+<span class="text-on-surface">128-bit flit @ 1.4 GHz</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Raw Link Bandwidth:</span>
+<span class="text-on-surface font-semibold">22.4 GB/s per dir</span>
+</div>
+</div>
+</div>
+<!-- Simulation Observation (SIM-402) -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-on-surface-variant font-semibold tracking-wider">Observed Performance (SIM-402)</span>
+<span class="font-code-sm text-code-sm text-error font-bold flex items-center gap-[2px]">
+<span class="material-symbols-outlined text-[14px]">warning</span> High Load
+          </span>
+</div>
+<div class="grid grid-cols-2 gap-space-xs">
+<div class="bg-surface-container-low p-space-xs rounded-DEFAULT">
+<span class="font-label-md text-label-md text-on-surface-variant">Peak Utilization</span>
+<p class="font-headline-lg text-headline-lg text-error font-bold mt-1">92.4%</p>
+<span class="font-code-sm text-code-sm text-on-surface-variant">20.70 GB/s</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded-DEFAULT">
+<span class="font-label-md text-label-md text-on-surface-variant">Flits Delivered</span>
+<p class="font-headline-lg text-headline-lg text-on-surface font-bold mt-1">785,400</p>
+<span class="font-code-sm text-code-sm text-on-surface-variant">in 850k cycles</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded-DEFAULT flex flex-col gap-1">
+<div class="flex justify-between items-center font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Channel Rate:</span>
+<span class="font-semibold text-on-surface">0.924 flits / cycle</span>
+</div>
+<div class="flex justify-between items-center font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Downstream Ingress Buffer:</span>
+<span class="font-semibold text-error">3.4 / 4 VC slots (85%)</span>
+</div>
+<!-- Progress bar buffer depth -->
+<div class="w-full bg-surface-container-highest h-2 rounded-DEFAULT overflow-hidden mt-1">
+<div class="bg-error h-full" style="width: 85%;"></div>
+</div>
+</div>
+</div>
+<!-- Engineering & Evidence Disclaimers (Shared Contract Adherence) -->
+<div class="p-space-md flex flex-col gap-space-xs">
+<span class="font-label-md text-label-md uppercase text-on-surface-variant font-semibold tracking-wider">Evidence &amp; Analysis Boundaries</span>
+<div class="p-space-xs bg-surface-container-high rounded-DEFAULT flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-outline text-[16px] shrink-0 mt-0.5">policy</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+<strong class="text-on-surface">Assessment Note:</strong> High link utilization indicates channel demand under workload <span class="font-code-sm text-code-sm">w12</span>, but does not prove head-of-line blocking, buffer exhaustion, or structural deadlock. Packet-level trace was not recorded in SIM-402.
+          </p>
+</div>
+<!-- Associated Requirements Compliance -->
+<div class="mt-space-xs flex flex-col gap-1 font-code-sm text-code-sm">
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low rounded-DEFAULT">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-primary">verified</span>
+<span class="font-semibold text-on-surface">REQ-THR-02</span>
+</div>
+<span class="text-primary font-medium">Met (&gt;18 GB/s delivered)</span>
+</div>
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low rounded-DEFAULT">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-outline">help_outline</span>
+<span class="font-semibold text-on-surface">REQ-LAT-04</span>
+</div>
+<span class="text-on-surface-variant text-[10px]">Unverified at Txn Level</span>
+</div>
+<p class="text-[10px] text-on-surface-variant px-1">
+            *28.6 ns packet transit observed; transaction-level latency requires target completion handshake.
+          </p>
+</div>
+</div>
+<!-- Quick Engineering Actions -->
+<div class="p-space-md mt-auto flex flex-col gap-space-xs">
+<button class="w-full h-7 bg-primary text-on-primary font-headline-sm text-headline-sm rounded-DEFAULT shadow-sm hover:bg-surface-tint transition-colors flex items-center justify-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">edit_note</span>
+<span>Propose Parameter Change in Design</span>
+</button>
+<button class="w-full h-7 bg-surface-container-low text-on-surface font-body-sm text-body-sm rounded-DEFAULT border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center justify-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">play_circle</span>
+<span>Configure Evaluation with Event Trace</span>
+</button>
+<button class="w-full h-7 bg-surface-container-low text-on-surface font-body-sm text-body-sm rounded-DEFAULT border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center justify-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">memory</span>
+<span>Inspect R_1_2 Router Microarchitecture</span>
+</button>
+</div>
+</aside>
+</div>
+<!-- Dockable Bottom Log / Jobs / Problems Console Strip -->
+<section class="w-full bg-surface-container-high px-space-md py-[3px] border-t border-outline-variant flex flex-wrap items-center justify-between text-on-surface font-code-sm text-code-sm select-none">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-primary animate-spin">refresh</span>
+<span class="font-medium">Jobs:</span>
+<span class="bg-surface-container px-space-xs rounded-DEFAULT">1 running (SIM-403)</span>
+</div>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-primary">warning</span>
+<span class="font-medium">Problems:</span>
+<span class="text-on-surface">0 Errors</span>
+<span>,</span>
+<span class="text-error font-semibold underline decoration-dotted cursor-pointer" title="Sustained link load exceeds 90% threshold for &gt;400k continuous cycles">
+          1 Warning (W-NOC-4021: Link R_1_2→R_0_2 sustained &gt;90% load)
+        </span>
+</div>
+</div>
+<div class="flex items-center gap-space-md text-on-surface-variant">
+<span>Active Backend: BookSim-v2.1</span>
+<span class="text-outline-variant">|</span>
+<span>Seed: 0x4A1F89</span>
+<span class="text-outline-variant">|</span>
+<button class="text-primary hover:underline flex items-center gap-[2px]">
+<span>Expand Console</span>
+<span class="material-symbols-outlined text-[12px]">keyboard_arrow_up</span>
+</button>
+</div>
+</section>
+</div>
+<script>
+  // Simple reactive selection micro-interaction on graph
+  document.addEventListener('DOMContentLoaded', () => {
+    const linkGroup = document.getElementById('selected-link-group');
+    if (linkGroup) {
+      linkGroup.addEventListener('click', () => {
+        linkGroup.classList.toggle('opacity-80');
+      });
+    }
+
+    const metricSelect = document.getElementById('metric-select');
+    if (metricSelect) {
+      metricSelect.addEventListener('change', (e) => {
+        // Deterministic UI response placeholder for metric switching
+        console.info('Switching overlay metric visualization to:', e.target.value);
+      });
+    }
+  });
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-high border-t border-outline-variant z-50 px-space-md flex items-center justify-between select-none"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs text-on-surface font-code-sm text-code-sm"><span class="w-2 h-2 rounded-full bg-primary"></span><span>Engine: BookSim-v2.1</span></div><span class="text-outline-variant font-code-sm text-code-sm">|</span><div class="text-on-surface-variant font-code-sm text-code-sm"><span>Cycles: [1,200,000 : 1,450,000] (Window: 250k)</span></div></div><div class="flex items-center gap-space-md"><div class="text-on-surface-variant font-code-sm text-code-sm"><span>Coord: X: 02, Y: 03 (Router R[2][3])</span></div><span class="text-outline-variant font-code-sm text-code-sm">|</span><div class="text-on-surface-variant font-code-sm text-code-sm"><span>Clock: 1.25 GHz | Vdd: 0.75V</span></div><span class="text-outline-variant font-code-sm text-code-sm">|</span><div class="text-on-surface-variant font-label-md text-label-md uppercase font-semibold"><span>DRC: CLEAN</span></div></div></footer></body></html>

@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-primary-fixed": "#001e30", "outline-variant": "#c0c7d0", "on-secondary-fixed": "#0a1e26", "primary": "#00537c", "error-container": "#ffdad6", "on-tertiary": "#ffffff", "on-primary-container": "#d0e8ff", "tertiary-container": "#5c6773", "on-primary-fixed-variant": "#004b71", "surface-dim": "#d4dae5", "on-error": "#ffffff", "surface-container-low": "#eef4ff", "surface-bright": "#f7f9ff", "surface-container-lowest": "#ffffff", "secondary": "#4e616a", "tertiary": "#444f5a", "inverse-primary": "#8fcdff", "on-secondary-fixed-variant": "#374952", "secondary-fixed": "#d2e6f1", "surface": "#f7f9ff", "surface-container": "#e8eef9", "on-tertiary-fixed": "#121d27", "inverse-surface": "#2a3139", "secondary-fixed-dim": "#b6c9d4", "on-tertiary-fixed-variant": "#3d4853", "tertiary-fixed-dim": "#bcc8d5", "surface-container-highest": "#dce3ee", "surface-tint": "#006494", "error": "#ba1a1a", "outline": "#707880", "on-secondary": "#ffffff", "surface-container-high": "#e2e9f4", "primary-fixed-dim": "#8fcdff", "on-primary": "#ffffff", "on-surface": "#151c24", "inverse-on-surface": "#eaf1fc", "primary-fixed": "#cbe6ff", "surface-variant": "#dce3ee", "secondary-container": "#d2e6f1", "tertiary-fixed": "#d8e4f2", "background": "#f7f9ff", "primary-container": "#0f6c9e", "on-secondary-container": "#546770", "on-background": "#151c24", "on-surface-variant": "#40484f", "on-error-container": "#93000a", "on-tertiary-container": "#dae6f4" }, "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, "spacing": { "gutter": "0.5rem", "space-sm": "0.5rem", "space-lg": "1rem", "space-xs": "0.25rem", "space-xl": "1.5rem", "space-md": "0.75rem", "margin": "0.5rem" }, "fontFamily": { "body-sm": [ "Inter" ], "code-md": [ "JetBrains Mono" ], "body-md": [ "Inter" ], "code-sm": [ "JetBrains Mono" ], "headline-sm": [ "Inter" ], "headline-md": [ "Inter" ], "code-table": [ "JetBrains Mono" ], "headline-lg": [ "Inter" ], "label-md": [ "Inter" ] }, "fontSize": { "body-sm": [ "12px", { "lineHeight": "16px", "fontWeight": "400" } ], "code-md": [ "12px", { "lineHeight": "16px", "fontWeight": "400" } ], "body-md": [ "13px", { "lineHeight": "18px", "fontWeight": "400" } ], "code-sm": [ "11px", { "lineHeight": "14px", "fontWeight": "400" } ], "headline-sm": [ "14px", { "lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600" } ], "headline-md": [ "16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" } ], "code-table": [ "11px", { "lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500" } ], "headline-lg": [ "20px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600" } ], "label-md": [ "11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" } ] } } } };</script></head><body class="bg-surface font-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-9 px-space-md flex items-center justify-between border-b border-surface-container"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-code-table text-code-table text-primary font-bold tracking-tight">VERITX</span><span class="text-outline font-body-sm text-body-sm">/</span><span class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-wider">SROTA STUDIO</span></div><div class="h-4 w-px bg-outline-variant"></div><button class="flex items-center gap-space-xs px-space-xs py-0.5 rounded bg-surface-container-low hover:bg-surface-container text-on-surface hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[15px] text-primary">folder_open</span><span class="font-code-table text-code-table font-semibold text-on-surface">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-on-surface-variant">[rev: d7a4e9b-mod1*]</span><span class="font-body-sm text-body-sm text-outline">•</span><span class="font-code-sm text-code-sm text-secondary">TSMC N5 • 1.4 GHz</span><span class="material-symbols-outlined text-[14px] text-outline">expand_more</span></button></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-0.5 rounded bg-surface-container-low"><span class="material-symbols-outlined text-[13px] text-outline">search</span><span class="font-code-sm text-code-sm text-on-surface-variant">Quick Search</span><kbd class="font-code-sm text-code-sm px-1 rounded bg-surface-container-lowest text-on-surface-variant border border-outline-variant">⌘K</kbd></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>Daemon v2.4.1 (Online)</span></div><div class="h-3.5 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">verified</span><span>DRC/LVS Clean</span></div><div class="h-3.5 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm"><span class="text-on-surface-variant">Sim #403:</span><span class="text-primary font-semibold">18%</span></div><div class="h-3.5 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-outline">tune</span><span>Transformer_LLM_Q1</span></div><div class="flex items-center gap-space-xs"><button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded"><span class="material-symbols-outlined text-[16px]">smart_toy</span></button><button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded"><span class="material-symbols-outlined text-[16px]">settings</span></button><div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">person</span></div></div></div></div><div class="h-7 px-space-md flex items-center justify-between bg-surface-container-low border-b border-outline-variant"><nav class="flex items-center gap-0" data-active-classes="bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary"><a aria-current="page" class="px-space-md py-1 transition-colors uppercase tracking-wider bg-surface-container-lowest text-primary font-semibold border-b-2 border-primary" data-path="ip-catalog" href="#">Design</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors uppercase tracking-wider" data-path="workloads-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors uppercase tracking-wider" data-path="analysis-inspector" href="#">Analysis</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors uppercase tracking-wider" data-path="topology-explorer" href="#">Explore</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors uppercase tracking-wider" data-path="verification-workbench" href="#">Verify</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors uppercase tracking-wider" data-path="package-deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant"><span class="text-outline">Active Core:</span><span>Mesh-8x8-Torus-N5</span></div></div><div class="h-6 px-space-md flex items-center bg-surface-container-lowest"><nav class="flex items-center gap-space-lg" data-active-classes="text-primary font-semibold border-b border-primary"><a class="font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface py-0.5 transition-colors" data-path="system-diagram" href="#">System Diagram</a><a class="font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface py-0.5 transition-colors" data-path="fabric-topology" href="#">Fabric Topology</a><a class="font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface py-0.5 transition-colors" data-path="router-inspector" href="#">Router Inspector</a><a aria-current="page" class="py-0.5 transition-colors text-primary font-semibold border-b border-primary" data-path="ip-catalog" href="#">IP Catalog</a></nav></div></header><aside class="fixed left-0 top-[88px] bottom-6 w-72 bg-surface-container-lowest border-r border-outline-variant flex flex-col z-40"><div class="h-7 px-space-md flex items-center justify-between border-b border-outline-variant bg-surface-container-low"><span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Workspace Explorer</span><span class="material-symbols-outlined text-[15px] text-outline cursor-pointer">filter_list</span></div><div class="flex-1 overflow-y-auto"><div class="p-space-xs"><div class="px-space-sm py-1 font-label-md text-label-md uppercase tracking-wider text-outline">Catalog Categories</div><nav class="space-y-0.5" data-active-classes="bg-secondary-container text-on-surface font-semibold"><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">All IP Blocks</span><span class="font-code-sm text-code-sm text-outline">24</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">Compute &amp; Accelerators</span><span class="font-code-sm text-code-sm text-outline">6</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">Memory Subsystems &amp; Controllers</span><span class="font-code-sm text-code-sm text-outline">5</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">Interconnect &amp; Adapters</span><span class="font-code-sm text-code-sm text-outline">7</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">Host &amp; Peripheral Bridges</span><span class="font-code-sm text-code-sm text-outline">4</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1 rounded bg-secondary-container text-on-surface font-semibold" data-path="ip-catalog" href="#"><span class="truncate">Model-Only Stubs</span><span class="font-code-sm text-code-sm text-outline">2</span></a></nav></div><div class="border-t border-surface-container p-space-xs"><div class="px-space-sm py-1 font-label-md text-label-md uppercase tracking-wider text-outline">Implementation Class</div><div class="space-y-0.5 text-body-sm font-body-sm text-on-surface-variant px-space-sm"><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input checked="" class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Generator-Eligible RTL</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Supplied IP (Encrypted)</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Model-Only Behavioral Stub</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Unresolved Specification</span></label></div></div><div class="border-t border-surface-container p-space-xs"><div class="px-space-sm py-1 font-label-md text-label-md uppercase tracking-wider text-outline">Interface Standard</div><div class="space-y-0.5 text-body-sm font-body-sm text-on-surface-variant px-space-sm"><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input checked="" class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>AXI4-Full</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>AXI-Stream</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>TileLink-UL</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>CHI Issue-E</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Native Flit</span></label></div></div><div class="border-t border-surface-container p-space-xs"><div class="px-space-sm py-1 font-label-md text-label-md uppercase tracking-wider text-outline">Qualification Status</div><div class="space-y-0.5 text-body-sm font-body-sm text-on-surface-variant px-space-sm"><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input checked="" class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>TSMC N5 Sign-off Qualified</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Simulation Qualified</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Analytical Only</span></label><label class="flex items-center gap-space-xs py-0.5 cursor-pointer hover:text-on-surface"><input class="accent-primary rounded-none h-3 w-3" type="checkbox"/><span>Missing Dependency</span></label></div></div></div><div class="p-space-sm border-t border-outline-variant bg-surface-container-low font-code-sm text-code-sm space-y-0.5"><div class="flex justify-between text-on-surface-variant"><span>Target Node:</span><span class="text-on-surface font-medium">TSMC N5</span></div><div class="flex justify-between text-on-surface-variant"><span>Clk Frequency:</span><span class="text-on-surface font-medium">1.4 GHz</span></div><div class="flex justify-between text-on-surface-variant"><span>Link Capacity:</span><span class="text-on-surface font-medium">22.4 GB/s/dir</span></div></div></aside><div class="pl-72"><main class="w-full min-h-[calc(100vh-112px)] pt-[88px] pb-6 bg-surface"><div class="flex flex-col w-full">
+<!-- Top Catalog Engineering Ribbon -->
+<div class="w-full bg-surface-container-lowest border-b border-outline-variant px-space-md py-space-sm flex flex-col gap-space-xs">
+<!-- Scope & Actions Row -->
+<div class="flex items-center justify-between gap-space-md flex-wrap">
+<div class="flex items-center gap-space-sm">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[13px] text-primary">lan</span>
+<span>Catalog Scope: Falcon8_NoC_Gen2 (Active Draft: d7a4e9b-mod1*)</span>
+</span>
+<span class="text-outline-variant font-code-sm text-code-sm">/</span>
+<span class="font-code-sm text-code-sm text-secondary truncate max-w-md" title="/eda/libs/n5_stdcell_v2.4">
+          Local Repository: <code class="text-on-surface font-code-table font-semibold">/eda/libs/n5_stdcell_v2.4</code>
+</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="h-6 px-space-sm rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant flex items-center gap-1 font-body-sm text-body-sm text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[13px] text-secondary">sync</span>
+<span>Scan Local Libs</span>
+</button>
+<button class="h-6 px-space-sm rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant flex items-center gap-1 font-body-sm text-body-sm text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[13px] text-secondary">file_download</span>
+<span>Import IPXACT (.xml)</span>
+</button>
+<button class="h-6 px-space-sm rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant flex items-center gap-1 font-body-sm text-body-sm text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[13px] text-secondary">source_notes</span>
+<span>Configure Repository Sources</span>
+</button>
+</div>
+</div>
+<!-- Metrics Ticker Bar -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-space-xs pt-1">
+<div class="px-space-sm py-1 bg-surface-container-low border border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-outline">Blocks Available</span>
+<span class="font-code-table text-code-table font-bold text-on-surface">24</span>
+</div>
+<div class="px-space-sm py-1 bg-surface-container-low border border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-outline">Simulation Ready</span>
+<span class="font-code-table text-code-table font-bold text-primary">18</span>
+</div>
+<div class="px-space-sm py-1 bg-surface-container-low border border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-outline">RTL Generator Qualified</span>
+<span class="font-code-table text-code-table font-bold text-secondary">9</span>
+</div>
+<div class="px-space-sm py-1 bg-surface-container-low border border-outline-variant flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-outline">Missing Dependencies</span>
+<span class="font-code-table text-code-table font-bold text-error">2</span>
+</div>
+</div>
+<!-- Search & Filter Controls -->
+<div class="flex items-center justify-between gap-space-md pt-1">
+<div class="flex-1 relative">
+<span class="material-symbols-outlined absolute left-2 top-1.5 text-[15px] text-outline">search</span>
+<input class="w-full h-7 pl-7 pr-space-md bg-surface border border-outline-variant focus:border-primary focus:outline-none font-code-sm text-code-sm text-on-surface placeholder:text-outline" id="ip-catalog-search" placeholder="Filter IP catalog by name, protocol, interface, supplier, capability..." type="text" value=""/>
+</div>
+<div class="flex items-center gap-space-xs">
+<div class="flex rounded border border-outline-variant overflow-hidden">
+<button class="px-2 py-0.5 bg-primary-container text-on-primary-container flex items-center gap-1 font-body-sm text-body-sm font-semibold" id="view-toggle-table">
+<span class="material-symbols-outlined text-[14px]">table_rows</span>
+<span>Detailed Table</span>
+</button>
+<button class="px-2 py-0.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant flex items-center gap-1 font-body-sm text-body-sm" id="view-toggle-matrix">
+<span class="material-symbols-outlined text-[14px]">grid_view</span>
+<span>Grouped Matrix</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Main Catalog Workspace (Split Layout) -->
+<div class="flex flex-1 w-full relative overflow-hidden min-h-[calc(100vh-216px)]">
+<!-- Left/Center Main Table Pane -->
+<div class="flex-1 flex flex-col min-w-0 bg-surface border-r border-outline-variant">
+<!-- Fast Filter Quick Tags -->
+<div class="h-8 px-space-md bg-surface-container-low border-b border-outline-variant flex items-center gap-space-xs overflow-x-auto select-none">
+<span class="font-label-md text-label-md uppercase text-outline mr-1">Filter Class:</span>
+<button class="px-2 py-0.5 rounded bg-surface-container-lowest border border-primary text-primary font-code-sm text-code-sm font-semibold">
+          Show All (24)
+        </button>
+<button class="px-2 py-0.5 rounded bg-surface-container border border-outline-variant hover:bg-surface-container-lowest text-on-surface-variant font-code-sm text-code-sm">
+          Generator RTL Eligible (9)
+        </button>
+<button class="px-2 py-0.5 rounded bg-surface-container border border-outline-variant hover:bg-surface-container-lowest text-on-surface-variant font-code-sm text-code-sm">
+          Supplied IP (8)
+        </button>
+<button class="px-2 py-0.5 rounded bg-surface-container border border-outline-variant hover:bg-surface-container-lowest text-on-surface-variant font-code-sm text-code-sm">
+          Model-Only / Analytical (5)
+        </button>
+<button class="px-2 py-0.5 rounded bg-surface-container border border-error text-error hover:bg-error-container font-code-sm text-code-sm">
+          Missing License/Prereq (2)
+        </button>
+</div>
+<!-- High-Density Engineering Data Table -->
+<div class="flex-1 overflow-x-auto overflow-y-auto">
+<table class="w-full text-left border-collapse font-body-sm text-body-sm">
+<thead class="bg-surface-container-high border-b border-outline-variant sticky top-0 z-10 font-label-md text-label-md uppercase text-secondary">
+<tr>
+<th class="py-1 px-space-sm font-semibold tracking-wider w-56">Block Identifier</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider w-64">Class &amp; Origin</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider w-56">Interface Profile</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider text-center w-24">TLM</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider text-center w-24">SIM</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider text-center w-28">RTL SYNTH</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider w-36">Target Sign-Off</th>
+<th class="py-1 px-space-sm font-semibold tracking-wider w-48">License / Prereq</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant bg-surface-container-lowest">
+<!-- Selected Row: npu_conv2d_tile_v2 -->
+<tr class="bg-secondary-container/50 border-l-4 border-l-primary cursor-pointer hover:bg-secondary-container">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">memory</span>
+<div>
+<div class="font-code-table text-code-table font-bold text-on-surface">npu_conv2d_tile_v2</div>
+<div class="font-code-sm text-code-sm text-secondary">rev: v2.4-rel</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Srota Generator RTL Wrapper</div>
+<div class="font-code-sm text-code-sm text-outline">Veritx In-House / Compute IP</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  1x AXI4-M (128b @ 1.4GHz)
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">4 Virtual Channels • 16-beat Burst</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary" title="Behavioral &amp; Analytical TLM Available">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary" title="BookSim flit injection &amp; Srota Cycle-Accurate Co-sim">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-primary font-code-sm text-code-sm font-semibold border border-outline-variant">
+                  SV WRAPPER
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-on-surface font-code-sm text-code-sm font-medium">TSMC N5 Sign-off Qualified</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Active Node-Locked (84d)</span>
+</span>
+</td>
+</tr>
+<!-- Row: hbm3_controller_subsys -->
+<tr class="hover:bg-surface-container-low cursor-pointer">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">storage</span>
+<div>
+<div class="font-code-table text-code-table font-semibold text-on-surface">hbm3_controller_subsys</div>
+<div class="font-code-sm text-code-sm text-outline">rev: r1p2-01ea</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Supplied Hard IP (Synopsys DW_hbm3)</div>
+<div class="font-code-sm text-code-sm text-outline">Synopsys CoreStore DW-IP</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  2x AXI4-S (256b @ 800MHz)
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">16-ch Pseudo Channel Pseudo-Burst</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm border border-outline-variant">
+                  HARD MACRO
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-on-surface font-code-sm text-code-sm">TSMC N5 Sign-off Qualified</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-error">
+<span class="material-symbols-outlined text-[13px]">lock</span>
+<span>Missing (Requires DW_HBM_EXT)</span>
+</span>
+</td>
+</tr>
+<!-- Row: axi4_async_cdc_shim -->
+<tr class="hover:bg-surface-container-low cursor-pointer">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">cable</span>
+<div>
+<div class="font-code-table text-code-table font-semibold text-on-surface">axi4_async_cdc_shim</div>
+<div class="font-code-sm text-code-sm text-outline">rev: v1.1.0</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Srota Interconnect Utility</div>
+<div class="font-code-sm text-code-sm text-outline">In-Tree RTL Generator</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  AXI4 Async Dual-Clk (128b/256b)
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">Gray-code pointer FIFO • 4-deep</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-primary font-code-sm text-code-sm font-semibold border border-outline-variant">
+                  SYNTH SV
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-on-surface font-code-sm text-code-sm">TSMC N5 Sign-off Qualified</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-secondary">
+<span class="material-symbols-outlined text-[13px] text-primary">verified_user</span>
+<span>Open In-Tree</span>
+</span>
+</td>
+</tr>
+<!-- Row: pcie_gen5_host_bridge -->
+<tr class="hover:bg-surface-container-low cursor-pointer">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">terminal</span>
+<div>
+<div class="font-code-table text-code-table font-semibold text-on-surface">pcie_gen5_host_bridge</div>
+<div class="font-code-sm text-code-sm text-outline">rev: v3.0-rc2</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Vendor Macro (TSMC N5 Library)</div>
+<div class="font-code-sm text-code-sm text-outline">Cadence PCIe PHY/Controller</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  PCIe x16 Gen5 / AXI-Bridge
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">32 GT/s • 512-bit Data Path</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm border border-outline-variant">
+                  HARD MACRO
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-on-surface font-code-sm text-code-sm">TSMC N5 Sign-off Qualified</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Active FlexLM Seat (Site)</span>
+</span>
+</td>
+</tr>
+<!-- Row: tlm_flit_telemetry_sink -->
+<tr class="hover:bg-surface-container-low cursor-pointer">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">analytics</span>
+<div>
+<div class="font-code-table text-code-table font-semibold text-on-surface">tlm_flit_telemetry_sink</div>
+<div class="font-code-sm text-code-sm text-outline">rev: v0.9-exp</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Model-Only Behavioral Stub</div>
+<div class="font-code-sm text-code-sm text-outline">Srota Architectural Instruments</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  Native 128b Flit Tap
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">Non-intrusive Snooper / Metric Sink</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-outline font-code-sm text-code-sm border border-outline-variant">
+                  NOT SYNTH
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-secondary font-code-sm text-code-sm">Analytical Model Only</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-secondary">
+<span class="material-symbols-outlined text-[13px] text-primary">verified_user</span>
+<span>Open In-Tree</span>
+</span>
+</td>
+</tr>
+<!-- Row: aux_matrix_coproc_hard -->
+<tr class="hover:bg-surface-container-low cursor-pointer">
+<td class="py-1.5 px-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">developer_board</span>
+<div>
+<div class="font-code-table text-code-table font-semibold text-on-surface">aux_matrix_coproc_hard</div>
+<div class="font-code-sm text-code-sm text-outline">rev: v1.0.4</div>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<div class="font-body-sm text-body-sm font-medium text-on-surface">Unresolved Stub / Blackbox</div>
+<div class="font-code-sm text-code-sm text-outline">Customer Custom Macro</div>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-block px-1 py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface border border-outline-variant">
+                  TileLink-UL (64b @ 1.2GHz)
+                </span>
+<div class="font-code-sm text-code-sm text-outline mt-0.5">Uncached lightweight operand port</div>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-surface-container text-outline">
+<span class="material-symbols-outlined text-[13px]">remove</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[13px]">check</span>
+</span>
+</td>
+<td class="py-1.5 px-space-sm text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm border border-outline-variant">
+                  BLACKBOX
+                </span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="text-error font-code-sm text-code-sm">Missing Timing (.lib)</span>
+</td>
+<td class="py-1.5 px-space-sm">
+<span class="inline-flex items-center gap-1 font-code-sm text-code-sm text-error">
+<span class="material-symbols-outlined text-[13px]">warning</span>
+<span>Missing Dependency</span>
+</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Bottom Helper Pagination / Selection Banner -->
+<div class="h-7 px-space-md bg-surface-container-low border-t border-outline-variant flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
+<div>Showing 6 of 24 blocks • 1 block selected for architectural staging</div>
+<div class="flex items-center gap-2">
+<span>Sort: Name (Asc)</span>
+<span class="text-outline">|</span>
+<span>Filter: TSMC N5 Compatible</span>
+</div>
+</div>
+</div>
+<!-- Right Technical Inspector Panel (~380px) -->
+<div class="w-[380px] bg-surface-container-lowest flex flex-col flex-shrink-0 overflow-y-auto">
+<!-- Inspector Header -->
+<div class="p-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">tune</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">IP Technical Inspector</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold">
+          Active Entry
+        </span>
+</div>
+<div class="p-space-md space-y-space-md">
+<!-- Selected Header & Revision Tag -->
+<div>
+<div class="flex items-center justify-between">
+<h2 class="font-code-table text-headline-sm font-bold text-on-surface">npu_conv2d_tile_v2</h2>
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container rounded border border-outline-variant text-secondary">
+              rev: v2.4-rel
+            </span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Provider: <span class="font-semibold text-on-surface">Veritx In-House / Compute IP Group</span>
+</div>
+</div>
+<!-- Disciplinary Boundary Engineering Disclaimer -->
+<div class="p-space-sm bg-surface-container-low border-l-2 border-primary text-body-sm font-body-sm text-on-surface-variant space-y-1">
+<div class="flex items-center gap-1 font-label-md text-label-md uppercase tracking-wider text-primary font-bold">
+<span class="material-symbols-outlined text-[14px]">info</span>
+<span>Disciplinary Boundary Notice</span>
+</div>
+<p class="text-[11px] leading-4 text-on-surface">
+            Complete accelerator generation is <strong>NOT</strong> an established capability. This IP block provides an AXI4 slave port wrapper and behavioral compute roofline simulation hooks. Instantiation provides port binding and NoC flit injection, <strong>NOT</strong> a synthesized deep-learning systolic datapath.
+          </p>
+</div>
+<!-- Hardware & Interface Specifications -->
+<div class="space-y-1.5">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">
+            Hardware &amp; Interface Specifications
+          </div>
+<div class="bg-surface-container-low p-space-xs rounded border border-outline-variant space-y-1 font-code-sm text-code-sm">
+<div class="flex justify-between py-0.5 border-b border-surface-container">
+<span class="text-on-surface-variant">Primary Interface:</span>
+<span class="font-medium text-on-surface">AXI4-Full Master (128b)</span>
+</div>
+<div class="flex justify-between py-0.5 border-b border-surface-container">
+<span class="text-on-surface-variant">Address Bus:</span>
+<span class="font-medium text-on-surface">40-bit Physical</span>
+</div>
+<div class="flex justify-between py-0.5 border-b border-surface-container">
+<span class="text-on-surface-variant">Clock Domain:</span>
+<span class="font-medium text-primary">clk_noc @ 1.4 GHz</span>
+</div>
+<div class="flex justify-between py-0.5 border-b border-surface-container">
+<span class="text-on-surface-variant">Throughput Ceiling:</span>
+<span class="font-medium text-on-surface">22.4 GB/s Flit Rate</span>
+</div>
+<div class="flex justify-between py-0.5 border-b border-surface-container">
+<span class="text-on-surface-variant">Burst Capability:</span>
+<span class="font-medium text-on-surface">Up to 16 beats (Flit bursting)</span>
+</div>
+<div class="flex justify-between py-0.5">
+<span class="text-on-surface-variant">Flow Control:</span>
+<span class="font-medium text-on-surface">Credit-based, 4 Virtual Ch</span>
+</div>
+</div>
+</div>
+<!-- Configuration Envelope & Parameters -->
+<div class="space-y-1.5">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">
+            Configuration Envelope &amp; Generics
+          </div>
+<div class="space-y-1.5 font-code-sm text-code-sm">
+<div class="flex items-center justify-between bg-surface-container-low px-2 py-1 rounded border border-outline-variant">
+<div>
+<span class="font-semibold text-on-surface">NUM_PES</span>
+<span class="text-outline text-[10px] ml-1">[4, 8, 16]</span>
+</div>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-lowest border border-outline-variant font-bold text-primary">8 (Default)</span>
+</div>
+<div class="flex items-center justify-between bg-surface-container-low px-2 py-1 rounded border border-outline-variant">
+<div>
+<span class="font-semibold text-on-surface">WEIGHT_BUFFER_KB</span>
+<span class="text-outline text-[10px] ml-1">[64, 128, 256]</span>
+</div>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-lowest border border-outline-variant font-bold text-primary">128 KB</span>
+</div>
+<div class="flex items-center justify-between bg-surface-container-low px-2 py-1 rounded border border-outline-variant">
+<div>
+<span class="font-semibold text-on-surface">BURST_LEN_MAX</span>
+<span class="text-outline text-[10px] ml-1">Fixed</span>
+</div>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-lowest border border-outline-variant font-bold text-on-surface">16 Beats</span>
+</div>
+</div>
+</div>
+<!-- Target Qualification & Sim Readiness -->
+<div class="space-y-1.5">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">
+            Target Qualification &amp; Verification
+          </div>
+<div class="space-y-1 text-body-sm font-body-sm">
+<div class="flex items-center justify-between p-1 bg-surface-container-low rounded border border-outline-variant">
+<span class="text-on-surface font-code-sm text-code-sm">BookSim-v2.1 Flit Injection:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> VALIDATED
+              </span>
+</div>
+<div class="flex items-center justify-between p-1 bg-surface-container-low rounded border border-outline-variant">
+<span class="text-on-surface font-code-sm text-code-sm">Srota Cycle-Accurate Co-sim:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> AVAILABLE
+              </span>
+</div>
+<div class="p-1 bg-surface-container-low rounded border border-outline-variant">
+<div class="flex items-center justify-between">
+<span class="text-on-surface font-code-sm text-code-sm">TSMC N5 Sign-Off:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">GENERATOR-ELIGIBLE</span>
+</div>
+<p class="font-code-sm text-code-sm text-outline mt-0.5 text-[10px]">
+                * Wrapper RTL synthesized &amp; timing-clean at 1.4GHz; core systolic logic must attach via customer macro port.
+              </p>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="pt-2 space-y-1.5">
+<button class="w-full h-8 rounded bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm" id="trigger-stage-add-btn">
+<span class="material-symbols-outlined text-[15px]">add_circle</span>
+<span>Configure &amp; Add Instance to Design...</span>
+</button>
+<div class="grid grid-cols-2 gap-space-xs">
+<button class="h-6 px-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant font-code-sm text-code-sm text-on-surface transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-secondary">code</span>
+<span>Inspect Header (.sv)</span>
+</button>
+<button class="h-6 px-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant font-code-sm text-code-sm text-on-surface transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-secondary">verified</span>
+<span>View Artifacts</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Review Before Add Staged Drawer (Dockable In-Context Engineering Drawer) -->
+<div class="absolute inset-y-0 right-0 w-[520px] bg-surface-container-lowest border-l-2 border-primary shadow-xl z-30 flex flex-col transition-transform duration-200 ease-in-out" id="review-stage-drawer">
+<!-- Staged Drawer Header -->
+<div class="p-space-sm bg-surface-container-high border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]">difference</span>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">Stage IP Instance: npu_conv2d_tile_v2</h3>
+<p class="font-code-sm text-code-sm text-secondary">Staging into active draft <code class="font-bold text-on-surface">d7a4e9b-mod1*</code></p>
+</div>
+</div>
+<button class="p-1 rounded hover:bg-surface-container text-outline hover:text-on-surface" id="close-drawer-btn">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<!-- Drawer Form Body -->
+<div class="flex-1 overflow-y-auto p-space-md space-y-space-md">
+<!-- Disciplinary Notice -->
+<div class="p-2 bg-surface-container-low border border-outline-variant text-body-sm font-body-sm text-secondary">
+<div class="flex items-center gap-1 font-semibold text-on-surface mb-0.5">
+<span class="material-symbols-outlined text-[14px] text-primary">rule</span>
+<span>Explicit Assignment Policy</span>
+</div>
+          No silent port bridging or automatic address allocation. Review parameters, verify clock/mesh attachments, and inspect auto-generated shims below before staging.
+        </div>
+<!-- Instance Configuration Form -->
+<div class="space-y-space-sm">
+<div class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">
+            Instance Placement &amp; Interconnect Binding
+          </div>
+<!-- Instance ID -->
+<div class="space-y-1">
+<label class="block font-code-sm text-code-sm text-on-surface-variant font-medium">Instance Identifier (Unique Handle)</label>
+<div class="flex items-center">
+<span class="px-2 py-1 bg-surface-container border border-r-0 border-outline-variant font-code-sm text-code-sm text-outline">INST_</span>
+<input class="flex-1 h-7 px-2 bg-surface-container-lowest border border-outline-variant focus:border-primary font-code-table text-code-table font-semibold text-on-surface focus:outline-none" type="text" value="NPU_TILE_E2"/>
+</div>
+<span class="font-code-sm text-code-sm text-outline">Auto-suggested based on tile coordinate E2.</span>
+</div>
+<!-- Clock Domain -->
+<div class="space-y-1">
+<label class="block font-code-sm text-code-sm text-on-surface-variant font-medium">Assigned Clock Domain</label>
+<select class="w-full h-7 px-2 bg-surface-container-lowest border border-outline-variant focus:border-primary font-code-sm text-code-sm text-on-surface focus:outline-none">
+<option selected="">clk_noc (1.4 GHz, Synchronous Fabric Mesh)</option>
+<option>clk_accel_core (800 MHz, Async Sub-Domain)</option>
+<option>clk_system_axi (1.0 GHz, Synchronous System Bus)</option>
+</select>
+</div>
+<!-- Target Mesh Attachment -->
+<div class="space-y-1">
+<label class="block font-code-sm text-code-sm text-on-surface-variant font-medium">Target Mesh Attachment Point</label>
+<div class="grid grid-cols-2 gap-space-xs">
+<select class="h-7 px-2 bg-surface-container-lowest border border-outline-variant focus:border-primary font-code-sm text-code-sm text-on-surface focus:outline-none">
+<option selected="">Router Node_R3 (Coordinate [0, 3])</option>
+<option>Router Node_R2 (Coordinate [0, 2])</option>
+<option>Router Node_R7 (Coordinate [1, 3])</option>
+</select>
+<select class="h-7 px-2 bg-surface-container-lowest border border-outline-variant focus:border-primary font-code-sm text-code-sm text-on-surface focus:outline-none">
+<option selected="">Port 1: Local Ingress (EP_AXI_0)</option>
+<option>Port 2: Local Egress Auxiliary</option>
+</select>
+</div>
+</div>
+<!-- Interface Mode & Adapter Insertion -->
+<div class="space-y-1">
+<label class="block font-code-sm text-code-sm text-on-surface-variant font-medium">Interface Protocol Mode &amp; Shim Bridge</label>
+<div class="p-space-xs bg-surface-container-low border border-outline-variant space-y-1">
+<div class="flex items-center justify-between font-code-sm text-code-sm">
+<span class="text-on-surface font-semibold">Mode: AXI4-Master 128-bit</span>
+<span class="px-1.5 py-0.2 bg-primary-fixed text-primary font-medium">Synchronous Direct</span>
+</div>
+<p class="font-code-sm text-code-sm text-secondary text-[11px]">
+                Requires automatic insertion of <code>AXI4_to_NoC_Shim</code> (Flit packetizer: 2 flits per 128B burst, Latency: 1 cycle).
+              </p>
+</div>
+</div>
+<!-- Address Space Allocation -->
+<div class="space-y-1">
+<label class="block font-code-sm text-code-sm text-on-surface-variant font-medium">Address Space Allocation</label>
+<div class="flex items-center justify-between p-2 bg-surface-container-low border border-outline-variant font-code-sm text-code-sm">
+<span class="text-outline italic">Status: Unmapped</span>
+<span class="text-on-surface font-medium">Manual allocation required in Address Map Editor</span>
+</div>
+</div>
+</div>
+<!-- Staged Objects Structural Diff -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary font-semibold">Architectural Diff Summary</span>
+<span class="font-code-sm text-code-sm text-primary font-medium">+3 Objects to add</span>
+</div>
+<div class="bg-surface-container p-2 rounded border border-outline-variant font-code-table text-code-table space-y-1">
+<div class="text-primary flex items-center gap-1.5">
+<span class="font-bold">+</span>
+<span>Block Instance: NPU_TILE_E2 (Type: npu_conv2d_tile_v2)</span>
+</div>
+<div class="text-primary flex items-center gap-1.5">
+<span class="font-bold">+</span>
+<span>Endpoint: EP_NPU_E2_AXI4 (Attached to R_0_3:P1)</span>
+</div>
+<div class="text-primary flex items-center gap-1.5">
+<span class="font-bold">+</span>
+<span>Protocol Shim: AXI4_Shim_Sync (Latency: 1 cycle)</span>
+</div>
+<div class="text-secondary flex items-center gap-1.5">
+<span class="font-bold text-outline">•</span>
+<span class="text-outline">Unbound Workload Ops: None (Assign in Endpoint Bindings)</span>
+</div>
+</div>
+</div>
+<!-- Strict Staging Disclaimer -->
+<div class="p-2 bg-surface-container-low rounded border border-outline-variant text-[11px] leading-4 text-outline font-body-sm">
+<strong>Staging Guarantee:</strong> Adding this block stages editable architectural intent into active draft <code>d7a4e9b-mod1*</code>. It does not synthesize hardware, lock licenses prematurely, or alter frozen baseline runs.
+        </div>
+</div>
+<!-- Drawer Action Footer -->
+<div class="p-space-sm bg-surface-container-high border-t border-outline-variant flex items-center justify-between">
+<button class="h-7 px-space-md rounded bg-surface-container hover:bg-surface-container-highest border border-outline-variant text-on-surface font-body-sm text-body-sm transition-colors" id="cancel-stage-btn">
+          Cancel / Discard
+        </button>
+<button class="h-7 px-space-md rounded bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-1 transition-colors" id="confirm-stage-btn">
+<span class="material-symbols-outlined text-[15px]">check</span>
+<span>Confirm &amp; Stage into Draft</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Simple micro-interactions for the staging drawer toggle
+  (function() {
+    const triggerBtn = document.getElementById('trigger-stage-add-btn');
+    const drawer = document.getElementById('review-stage-drawer');
+    const closeBtn = document.getElementById('close-drawer-btn');
+    const cancelBtn = document.getElementById('cancel-stage-btn');
+    const confirmBtn = document.getElementById('confirm-stage-btn');
+    const searchInput = document.getElementById('ip-catalog-search');
+
+    function openDrawer() {
+      if (drawer) {
+        drawer.style.display = 'flex';
+        drawer.classList.remove('translate-x-full');
+      }
+    }
+
+    function closeDrawer() {
+      if (drawer) {
+        drawer.classList.add('translate-x-full');
+        setTimeout(() => {
+          drawer.style.display = 'none';
+        }, 200);
+      }
+    }
+
+    if (triggerBtn) {
+      triggerBtn.addEventListener('click', openDrawer);
+    }
+
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeDrawer);
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', function() {
+        const originalText = confirmBtn.innerHTML;
+        confirmBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">refresh</span><span>Staging...</span>';
+        setTimeout(() => {
+          confirmBtn.innerHTML = '<span class="material-symbols-outlined text-[15px]">done_all</span><span>Staged to d7a4e9b-mod1*</span>';
+          setTimeout(() => {
+            confirmBtn.innerHTML = originalText;
+            closeDrawer();
+          }, 600);
+        }, 500);
+      });
+    }
+
+    // View toggles
+    const viewTable = document.getElementById('view-toggle-table');
+    const viewMatrix = document.getElementById('view-toggle-matrix');
+
+    if (viewTable && viewMatrix) {
+      viewMatrix.addEventListener('click', () => {
+        viewMatrix.className = 'px-2 py-0.5 bg-primary-container text-on-primary-container flex items-center gap-1 font-body-sm text-body-sm font-semibold';
+        viewTable.className = 'px-2 py-0.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant flex items-center gap-1 font-body-sm text-body-sm';
+      });
+
+      viewTable.addEventListener('click', () => {
+        viewTable.className = 'px-2 py-0.5 bg-primary-container text-on-primary-container flex items-center gap-1 font-body-sm text-body-sm font-semibold';
+        viewMatrix.className = 'px-2 py-0.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant flex items-center gap-1 font-body-sm text-body-sm';
+      });
+    }
+  })();
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-lowest border-t border-outline-variant z-50 flex items-center justify-between px-space-md font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs text-secondary"><span class="material-symbols-outlined text-[13px] text-tertiary">warning</span><span>Problems: 0 Errors, 1 Warning (Dangling Ref EP_ACCEL_00)</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>Jobs: 1 running (Sim #403)</span></div><div class="h-3 w-px bg-outline-variant"></div><button class="flex items-center gap-space-xs hover:text-on-surface"><span class="material-symbols-outlined text-[13px]">terminal</span><span>Console &amp; Logs</span></button></div><div class="flex items-center gap-space-lg"><span class="text-secondary">Workspace: Design / IP Catalog</span><div class="h-3 w-px bg-outline-variant"></div><span>Cycle: 14,289,200</span><div class="h-3 w-px bg-outline-variant"></div><span class="text-primary font-medium">Model State: Synchronized [rev: d7a4e9b-mod1*]</span></div></footer></body></html>

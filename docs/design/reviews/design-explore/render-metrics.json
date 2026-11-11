@@ -1,0 +1,4916 @@
+[
+  {
+    "view": "design_address_map",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1021,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "memory SROTA STUDIO folder_open Falcon8_NoC_Gen2 (d7a4e9b) arrow_drop_down Design Workload",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 65
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "PROJECT HIERARCHY & SPACES add unfold_more expand_more account_tree System Physical Space ",
+        "x": 0,
+        "y": 64,
+        "w": 288,
+        "h": 812
+      }
+    ],
+    "offscreenControls": [
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 402,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 436,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 470,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "edit",
+        "x": 1564,
+        "y": 508,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1517,
+        "y": 555,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 598,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 632,
+        "w": 18,
+        "h": 21
+      }
+    ],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_address_map",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 935,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "memory SROTA STUDIO folder_open Falcon8_NoC_Gen2 (d7a4e9b) arrow_drop_down Design Workload",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 65
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "PROJECT HIERARCHY & SPACES add unfold_more expand_more account_tree System Physical Space ",
+        "x": 0,
+        "y": 64,
+        "w": 288,
+        "h": 712
+      }
+    ],
+    "offscreenControls": [
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 425,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 459,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 493,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "edit",
+        "x": 1564,
+        "y": 531,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1517,
+        "y": 578,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 621,
+        "w": 18,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "text": "more_vert",
+        "x": 1564,
+        "y": 655,
+        "w": 18,
+        "h": 21
+      }
+    ],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_clock_power_domains",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1206,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA / Falcon8_NoC_Gen2 d7a4e9b (draft modified) Design Workloads & Requirements Analysis",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 36
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKSPACE VIEWS schema System / Block Diagram inventory_2 IP Catalog hub Fabric Topology d",
+        "x": 0,
+        "y": 36,
+        "w": 240,
+        "h": 840
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_clock_power_domains",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1402,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA / Falcon8_NoC_Gen2 d7a4e9b (draft modified) Design Workloads & Requirements Analysis",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 36
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKSPACE VIEWS schema System / Block Diagram inventory_2 IP Catalog hub Fabric Topology d",
+        "x": 0,
+        "y": 36,
+        "w": 240,
+        "h": 740
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_hardware_endpoints",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1216,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "hub SROTA::STUDIO / Falcon8_NoC_Gen2 d7a4e9b-mod1* | Eval: d7a4e9b (SIM-402) / memory TSMC",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKBENCH EXPLORER unfold_less filter_alt arrow_drop_down account_tree Falcon8_NoC_Top arr",
+        "x": 0,
+        "y": 96,
+        "w": 256,
+        "h": 780
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_hardware_endpoints",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1308,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "hub SROTA::STUDIO / Falcon8_NoC_Gen2 d7a4e9b-mod1* | Eval: d7a4e9b (SIM-402) / memory TSMC",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKBENCH EXPLORER unfold_less filter_alt arrow_drop_down account_tree Falcon8_NoC_Top arr",
+        "x": 0,
+        "y": 96,
+        "w": 256,
+        "h": 680
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_initiator_target_mapping",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1004,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board VERITX / SROTA STUDIO / hub Falcon8_NoC_Gen2 unfold_more eval: d7a4e9b d7a",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 96
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "CONTEXT NAVIGATOR view_sidebar adjust Endpoints grid_view Regions alt_route Routing Rules ",
+        "x": 0,
+        "y": 96,
+        "w": 224,
+        "h": 780
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_initiator_target_mapping",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1004,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board VERITX / SROTA STUDIO / hub Falcon8_NoC_Gen2 unfold_more eval: d7a4e9b d7a",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 96
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "CONTEXT NAVIGATOR view_sidebar adjust Endpoints grid_view Regions alt_route Routing Rules ",
+        "x": 0,
+        "y": 96,
+        "w": 224,
+        "h": 680
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_ip_catalog",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1009,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "VERITX / SROTA STUDIO folder_open Falcon8_NoC_Gen2 [rev: d7a4e9b-mod1*] \u2022 TSMC N5 \u2022 1.4 GH",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 89
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKSPACE EXPLORER filter_list CATALOG CATEGORIES All IP Blocks 24 Compute & Accelerators ",
+        "x": 0,
+        "y": 88,
+        "w": 288,
+        "h": 788
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_ip_catalog",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1009,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "VERITX / SROTA STUDIO folder_open Falcon8_NoC_Gen2 [rev: d7a4e9b-mod1*] \u2022 TSMC N5 \u2022 1.4 GH",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 89
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "WORKSPACE EXPLORER filter_list CATALOG CATEGORIES All IP Blocks 24 Compute & Accelerators ",
+        "x": 0,
+        "y": 88,
+        "w": 288,
+        "h": 688
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_placement_constraints",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1130,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA STUDIO / VERITX Falcon8_NoC_Gen2 [rev: d7a4e9b \u2022 draft] expand_more [Sample Design: ",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 117
+      }
+    ],
+    "fixedAsides": [],
+    "offscreenControls": [
+      {
+        "tag": "BUTTON",
+        "text": "100%",
+        "x": 1759,
+        "y": 90,
+        "w": 38,
+        "h": 18
+      },
+      {
+        "tag": "BUTTON",
+        "text": "add",
+        "x": 1801,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "remove",
+        "x": 1823,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "restart_alt",
+        "x": 1845,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "filter_list Filter",
+        "x": 1876,
+        "y": 89,
+        "w": 64,
+        "h": 20
+      },
+      {
+        "tag": "BUTTON",
+        "text": "layers Layers",
+        "x": 1949,
+        "y": 89,
+        "w": 73,
+        "h": 20
+      }
+    ],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_placement_constraints",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1144,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA STUDIO / VERITX Falcon8_NoC_Gen2 [rev: d7a4e9b \u2022 draft] expand_more [Sample Design: ",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 117
+      }
+    ],
+    "fixedAsides": [],
+    "offscreenControls": [
+      {
+        "tag": "BUTTON",
+        "text": "100%",
+        "x": 1759,
+        "y": 90,
+        "w": 38,
+        "h": 18
+      },
+      {
+        "tag": "BUTTON",
+        "text": "add",
+        "x": 1801,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "remove",
+        "x": 1823,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "restart_alt",
+        "x": 1845,
+        "y": 88,
+        "w": 18,
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "text": "filter_list Filter",
+        "x": 1876,
+        "y": 89,
+        "w": 64,
+        "h": 20
+      },
+      {
+        "tag": "BUTTON",
+        "text": "layers Layers",
+        "x": 1949,
+        "y": 89,
+        "w": 73,
+        "h": 20
+      }
+    ],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_system_block_diagram",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1226,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "memory VERITX SROTA Falcon8_NoC_Gen2 [rev: d7a4e9b-mod1* \u2022 draft] arrow_drop_down [Sample ",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "tune ARCHITECTURE ELEMENTS add grid_view Routers & Switches (R0-R15) hub Network Interface",
+        "x": 0,
+        "y": 92,
+        "w": 224,
+        "h": 784
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "design_system_block_diagram",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1414,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "memory VERITX SROTA Falcon8_NoC_Gen2 [rev: d7a4e9b-mod1* \u2022 draft] arrow_drop_down [Sample ",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "tune ARCHITECTURE ELEMENTS add grid_view Routers & Switches (R0-R15) hub Network Interface",
+        "x": 0,
+        "y": 92,
+        "w": 224,
+        "h": 684
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_adoption_branch",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1336,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "VERITX Srota Studio Falcon8_NoC_Gen2 d7a4e9b [rev: d7a4e9b-draft*] auto_awesome Copilot ED",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 56
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "EXPLORE WORKSPACE tune description Exploration Briefs play_circle Study Execution & Budget",
+        "x": 0,
+        "y": 56,
+        "w": 256,
+        "h": 812
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_adoption_branch",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1479,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "VERITX Srota Studio Falcon8_NoC_Gen2 d7a4e9b [rev: d7a4e9b-draft*] auto_awesome Copilot ED",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 56
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "EXPLORE WORKSPACE tune description Exploration Briefs play_circle Study Execution & Budget",
+        "x": 0,
+        "y": 56,
+        "w": 256,
+        "h": 712
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_comparison",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1741,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board VERITX SROTA Falcon8_NoC_Gen2 [rev: d7a4e9b draft] Design: Illustrative Da",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDY CONTEXT unfold_more STU-084: 4x4 Mesh Buffer & VC [brief_rev_2] \u2022 Budget 1.25 pJ/bit",
+        "x": 0,
+        "y": 108,
+        "w": 256,
+        "h": 768
+      },
+      {
+        "tag": "ASIDE",
+        "text": "biotech CANDIDATE DEEP-DIVE dock_to_right close CAND-04 Pareto Winner Adaptive virtual-cha",
+        "x": 1120,
+        "y": 108,
+        "w": 320,
+        "h": 768
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_comparison",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1838,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board VERITX SROTA Falcon8_NoC_Gen2 [rev: d7a4e9b draft] Design: Illustrative Da",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 97
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDY CONTEXT unfold_more STU-084: 4x4 Mesh Buffer & VC [brief_rev_2] \u2022 Budget 1.25 pJ/bit",
+        "x": 0,
+        "y": 108,
+        "w": 256,
+        "h": 668
+      },
+      {
+        "tag": "ASIDE",
+        "text": "biotech CANDIDATE DEEP-DIVE dock_to_right close CAND-04 Pareto Winner Adaptive virtual-cha",
+        "x": 960,
+        "y": 108,
+        "w": 320,
+        "h": 668
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_results_trade_offs",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1589,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA STUDIO / VERITX | developer_board Falcon8_NoC_Gen2 [rev: d7a4e9b (evaluated)] SAMPLE",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 56
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDY SCOPE ST-88 ResNet50_Burst w12 Latency vs Area Optimization commit Base: d7a4e9b Sta",
+        "x": 0,
+        "y": 56,
+        "w": 288,
+        "h": 820
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_candidate_results_trade_offs",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1737,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "auto",
+    "fonts": [
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "SROTA STUDIO / VERITX | developer_board Falcon8_NoC_Gen2 [rev: d7a4e9b (evaluated)] SAMPLE",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 56
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDY SCOPE ST-88 ResNet50_Burst w12 Latency vs Area Optimization commit Base: d7a4e9b Sta",
+        "x": 0,
+        "y": 56,
+        "w": 288,
+        "h": 720
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_study_execution_budgets",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 900,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "V SROTA STUDIO / VERITX account_tree Falcon8_NoC_Gen2 arrow_drop_down rev: d7a4e9b draft m",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 40
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "tune EXPLORE / STUDIES & SWEEPS add ACTIVE STUDIES (2) expand_more STD-084: 4x4 Mesh VC & ",
+        "x": 0,
+        "y": 40,
+        "w": 288,
+        "h": 836
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_study_execution_budgets",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 893,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "V SROTA STUDIO / VERITX account_tree Falcon8_NoC_Gen2 arrow_drop_down rev: d7a4e9b draft m",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 40
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "tune EXPLORE / STUDIES & SWEEPS add ACTIVE STUDIES (2) expand_more STD-084: 4x4 Mesh VC & ",
+        "x": 0,
+        "y": 40,
+        "w": 288,
+        "h": 736
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_versioned_exploration_brief_stu_088",
+    "width": 1440,
+    "height": 900,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1440,
+    "documentWidth": 1440,
+    "viewportWidth": 1440,
+    "documentHeight": 1821,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board SROTA STUDIO / VERITX memory Falcon8_NoC_Gen2 (d7a4e9b) Design Workloads &",
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 36
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDIES & CONTEXT tune ACTIVE STUDIES 3 STU-088 Draft Mesh VC & Buffer Tuning STU-084 Done",
+        "x": 0,
+        "y": 36,
+        "w": 256,
+        "h": 840
+      },
+      {
+        "tag": "ASIDE",
+        "text": "troubleshoot INSPECTOR & GATES dock_to_right close FEASIBILITY MATRIX PASS (94%) Routing C",
+        "x": 1120,
+        "y": 36,
+        "w": 320,
+        "h": 840
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  },
+  {
+    "view": "explore_versioned_exploration_brief_stu_088",
+    "width": 1280,
+    "height": 800,
+    "styled": true,
+    "pageErrors": [],
+    "bodyWidth": 1280,
+    "documentWidth": 1280,
+    "viewportWidth": 1280,
+    "documentHeight": 1968,
+    "bodyBackground": "rgb(247, 249, 255)",
+    "bodyUserSelect": "none",
+    "fonts": [
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "unloaded"
+      },
+      {
+        "family": "Inter",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "unloaded"
+      },
+      {
+        "family": "JetBrains Mono",
+        "status": "loaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "unloaded"
+      },
+      {
+        "family": "Material Symbols Outlined",
+        "status": "loaded"
+      }
+    ],
+    "externalScripts": [
+      "https://cdn.tailwindcss.com/"
+    ],
+    "tailwindReady": true,
+    "headers": [
+      {
+        "tag": "HEADER",
+        "text": "developer_board SROTA STUDIO / VERITX memory Falcon8_NoC_Gen2 (d7a4e9b) Design Workloads &",
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 36
+      }
+    ],
+    "fixedAsides": [
+      {
+        "tag": "ASIDE",
+        "text": "STUDIES & CONTEXT tune ACTIVE STUDIES 3 STU-088 Draft Mesh VC & Buffer Tuning STU-084 Done",
+        "x": 0,
+        "y": 36,
+        "w": 256,
+        "h": 740
+      },
+      {
+        "tag": "ASIDE",
+        "text": "troubleshoot INSPECTOR & GATES dock_to_right close FEASIBILITY MATRIX PASS (94%) Routing C",
+        "x": 960,
+        "y": 36,
+        "w": 320,
+        "h": 740
+      }
+    ],
+    "offscreenControls": [],
+    "visibleDialogs": []
+  }
+]

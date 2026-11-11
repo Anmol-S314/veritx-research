@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"on-tertiary-container":"#dae6f4","tertiary":"#444f5a","secondary-fixed":"#d2e6f1","secondary-fixed-dim":"#b6c9d4","surface-container-lowest":"#ffffff","inverse-primary":"#8fcdff","tertiary-container":"#5c6773","on-primary":"#ffffff","primary-container":"#0f6c9e","surface-container":"#e8eef9","error":"#ba1a1a","on-secondary":"#ffffff","surface-container-low":"#eef4ff","tertiary-fixed-dim":"#bcc8d5","secondary-container":"#d2e6f1","on-tertiary":"#ffffff","primary-fixed-dim":"#8fcdff","on-error":"#ffffff","on-primary-container":"#d0e8ff","on-background":"#151c24","error-container":"#ffdad6","surface":"#f7f9ff","surface-bright":"#f7f9ff","tertiary-fixed":"#d8e4f2","secondary":"#4e616a","on-tertiary-fixed":"#121d27","surface-variant":"#dce3ee","outline-variant":"#c0c7d0","on-tertiary-fixed-variant":"#3d4853","outline":"#707880","surface-container-highest":"#dce3ee","inverse-surface":"#2a3139","on-surface":"#151c24","primary-fixed":"#cbe6ff","on-surface-variant":"#40484f","surface-dim":"#d4dae5","primary":"#00537c","background":"#f7f9ff","inverse-on-surface":"#eaf1fc","on-secondary-container":"#546770","surface-tint":"#006494","on-primary-fixed-variant":"#004b71","on-secondary-fixed-variant":"#374952","on-secondary-fixed":"#0a1e26","on-error-container":"#93000a","surface-container-high":"#e2e9f4","on-primary-fixed":"#001e30"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"margin":"0.5rem","space-md":"0.75rem","space-sm":"0.5rem","gutter":"0.5rem","space-lg":"1rem","space-xs":"0.25rem","space-xl":"1.5rem"},"fontFamily":{"body-sm":["Inter"],"headline-lg":["Inter"],"label-md":["Inter"],"code-table":["JetBrains Mono"],"headline-md":["Inter"],"body-md":["Inter"],"code-sm":["JetBrains Mono"],"headline-sm":["Inter"],"code-md":["JetBrains Mono"]},"fontSize":{"body-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"headline-lg":["20px",{"lineHeight":"28px","letterSpacing":"-0.015em","fontWeight":"600"}],"label-md":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"600"}],"code-table":["11px",{"lineHeight":"14px","letterSpacing":"-0.02em","fontWeight":"500"}],"headline-md":["16px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-md":["13px",{"lineHeight":"18px","fontWeight":"400"}],"code-sm":["11px",{"lineHeight":"14px","fontWeight":"400"}],"headline-sm":["14px",{"lineHeight":"20px","letterSpacing":"-0.005em","fontWeight":"600"}],"code-md":["12px",{"lineHeight":"16px","fontWeight":"400"}]}}}}</script></head><body class="bg-surface font-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-9 px-space-md flex items-center justify-between border-b border-surface-container text-on-surface"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-code-table text-code-table font-bold tracking-tight text-primary bg-secondary-container px-space-xs py-0.5 rounded">VERITX</span><span class="font-label-md text-label-md uppercase tracking-wider text-secondary">/ SROTA STUDIO</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><button class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-on-surface font-code-sm text-code-sm" type="button"><span class="material-symbols-outlined text-[14px] text-primary">developer_board</span><span class="font-medium">Falcon8_NoC_Gen2</span><span class="material-symbols-outlined text-[14px] text-secondary">arrow_drop_down</span></button><span class="font-code-sm text-code-sm text-secondary bg-surface-container px-space-xs py-0.5 rounded border border-outline-variant">[rev: d7a4e9b-mod1* • draft]</span><span class="font-label-md text-label-md text-primary bg-primary-fixed px-space-xs py-0.5 rounded border border-primary/20">[Sample Design: Illustrative Data]</span></div></div><div class="hidden xl:flex items-center gap-space-lg text-secondary font-code-sm text-code-sm"><span>Target: <strong class="text-on-surface font-medium">TSMC N5 StdCell Architecture Model</strong></span><span class="text-outline-variant">•</span><span>Configured Clock: <strong class="text-on-surface font-medium">1.4 GHz</strong> (Achieved timing not evaluated)</span></div><div class="flex items-center gap-space-sm"><div class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container-low border border-outline-variant rounded font-code-sm text-code-sm text-secondary"><span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span>1 Active Job (Sim #403: Bert_Large 18%)</span><span class="text-outline-variant">•</span><span>DRC: Not Evaluated</span></div><button class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-secondary hover:text-on-surface font-code-sm text-code-sm" type="button"><span class="material-symbols-outlined text-[13px]">terminal</span><span>Cmd+K</span></button><div class="flex items-center gap-space-xs text-secondary font-code-sm text-code-sm px-space-xs"><span class="inline-block w-1.5 h-1.5 rounded-full bg-primary"></span><span>Local Daemon v2.4.1</span></div><button class="p-1 text-secondary hover:text-on-surface rounded hover:bg-surface-container" type="button"><span class="material-symbols-outlined text-[16px]">settings</span></button><div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">person</span></div></div></div><div class="h-7 px-space-md flex items-center justify-between bg-surface-container-low"><nav class="flex items-center h-full gap-0.5 font-label-md text-label-md" data-active-classes="bg-surface-container-lowest text-primary border-b-2 border-primary font-semibold"><a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="design" href="#">Design</a><a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="workloads-and-requirements" href="#">Workloads & Requirements</a><a aria-current="page" class="h-full px-space-md inline-flex items-center transition-colors bg-surface-container-lowest text-primary border-b-2 border-primary font-semibold" data-path="analysis" href="#">Analysis</a><a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="explore" href="#">Explore</a><a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="verify" href="#">Verify</a><a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-md font-code-sm text-code-sm text-secondary"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px]">history</span><span>Run Context: <span class="text-error font-medium">SIM-402 (Completed, Violated)</span></span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">tune</span><span>Sub-view: Topology Matrix</span></div></div></div></header><aside class="fixed left-0 top-16 bottom-6 w-56 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between"><div class="flex flex-col"><div class="h-6 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between font-label-md text-label-md uppercase text-secondary tracking-wider"><span>Workbench Explorer</span><span class="material-symbols-outlined text-[14px]">unfold_more</span></div><div class="p-space-xs flex flex-col gap-0.5 font-code-sm text-code-sm"><div class="flex items-center justify-between px-space-xs py-1 rounded bg-surface-container font-medium text-on-surface"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px] text-primary">grid_view</span>Mesh Topology</span><span class="text-label-md text-secondary">4x4</span></div><div class="flex items-center justify-between px-space-xs py-1 rounded hover:bg-surface-container-low text-secondary hover:text-on-surface"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px]">table_chart</span>Traffic Matrix</span><span class="text-label-md text-outline">16x16</span></div><div class="flex items-center justify-between px-space-xs py-1 rounded hover:bg-surface-container-low text-secondary hover:text-on-surface"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px]">alt_route</span>Router Latencies</span><span class="text-label-md text-outline">16 RT</span></div><div class="flex items-center justify-between px-space-xs py-1 rounded hover:bg-surface-container-low text-secondary hover:text-on-surface"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px]">speed</span>Link Utilization</span><span class="text-label-md text-error">48 Lnk</span></div><div class="flex items-center justify-between px-space-xs py-1 rounded hover:bg-surface-container-low text-secondary hover:text-on-surface"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px]">memory</span>Buffer Ingress/Egress</span><span class="text-label-md text-outline">VC:4</span></div></div></div><div class="border-t border-outline-variant p-space-xs bg-surface-container-low"><div class="text-label-md uppercase font-semibold text-secondary px-space-xs mb-1">Domain Summary</div><div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col gap-0.5 px-space-xs"><div>Volt Domain: <span class="font-medium text-on-surface">0.75V Nominal</span></div><div>Thermal TDP: <span class="font-medium text-on-surface">14.2 W Est</span></div><div>Total Flits: <span class="font-medium text-on-surface">2.41M</span></div></div></div></aside><div class="pl-56"><main class="relative pt-16 pb-6 w-full min-h-screen bg-surface"><div class="flex flex-col w-full">
+<!-- 1. Contextual Sub-navigation row -->
+<div class="bg-surface-container-lowest border-b border-outline-variant px-space-md py-1 flex flex-wrap items-center justify-between gap-space-sm text-on-surface">
+<!-- Sub-tabs -->
+<div class="flex items-center gap-1 font-label-md text-label-md">
+<button class="px-space-md py-1 text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" type="button">Summary</button>
+<button class="px-space-md py-1 text-primary border-b-2 border-primary font-semibold bg-surface-container-low rounded-t" type="button">Traffic Matrix</button>
+<button class="px-space-md py-1 text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" type="button">Topology Overlay</button>
+<button class="px-space-md py-1 text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" type="button">Metrics</button>
+<button class="px-space-md py-1 text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" type="button">Trace</button>
+<button class="px-space-md py-1 text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" type="button">Logs & Artifacts</button>
+</div>
+<!-- Action Tool Group -->
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<button class="flex items-center gap-space-xs px-space-sm py-1 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded text-on-surface" type="button">
+<span class="material-symbols-outlined text-[15px] text-secondary">compare_arrows</span>
+<span>Compare Runs</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-sm py-1 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded text-on-surface" type="button">
+<span class="material-symbols-outlined text-[15px] text-secondary">download</span>
+<span>Export Artifacts</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">arrow_drop_down</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-1 bg-primary text-on-primary hover:bg-primary-container border border-primary rounded font-medium shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px]">play_arrow</span>
+<span>New Evaluation</span>
+</button>
+</div>
+</div>
+<!-- 2. Selected-Run Context & Revision Provenance Banner -->
+<section class="bg-surface-container-low border-b border-outline-variant px-space-md py-space-sm text-on-surface">
+<!-- Primary Metadata Strip -->
+<div class="flex flex-wrap items-center justify-between gap-y-space-xs gap-x-space-md font-code-sm text-code-sm">
+<div class="flex items-center flex-wrap gap-space-xs">
+<div class="flex items-center gap-1 bg-surface-container-lowest border border-outline-variant px-space-xs py-0.5 rounded font-medium text-on-surface">
+<span class="font-code-table text-code-table text-primary font-bold">SIM-402</span>
+<span class="inline-flex items-center text-[10px] bg-secondary-container text-on-secondary-fixed px-1 py-0.2 rounded font-semibold">
+<span class="material-symbols-outlined text-[11px] mr-0.5 text-primary">check</span> Completed
+          </span>
+</div>
+<span class="inline-flex items-center gap-1 px-space-xs py-0.5 rounded bg-error-container text-on-error-container border border-error/30 font-semibold font-label-md text-label-md">
+<span class="material-symbols-outlined text-[13px] text-error">error</span>
+<span>Requirement Violated (1 of 4 failed)</span>
+</span>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-1">
+<span class="text-secondary">Revision:</span>
+<a class="font-mono text-primary font-medium hover:underline inline-flex items-center gap-0.5" href="#">
+<span>d7a4e9b</span>
+<span class="material-symbols-outlined text-[12px]">open_in_new</span>
+</a>
+</div>
+<span class="text-outline-variant">•</span>
+<div><span class="text-secondary">Workload:</span> <span class="font-medium text-on-surface">ResNet50_Burst [w12]</span></div>
+<span class="text-outline-variant">•</span>
+<div><span class="text-secondary">Reqs:</span> <span class="font-medium text-on-surface">rev: r5</span></div>
+</div>
+<div class="flex items-center flex-wrap gap-space-md text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">tune</span>
+<span>Engine: <strong class="text-on-surface font-mono font-medium">BookSim-v2.1</strong> (Cycle-accurate NoC, non-signoff)</span>
+</div>
+<span class="text-outline-variant">•</span>
+<div>Window: <strong class="text-on-surface font-mono">Phase 2 Burst (400k-850k cyc)</strong></div>
+<span class="text-outline-variant">•</span>
+<div>Duration: <strong class="text-on-surface font-mono">12m 44s</strong></div>
+</div>
+</div>
+<!-- Discrepancy Alert Bar -->
+<div class="mt-space-xs px-space-sm py-1 bg-[#fff8e6] border border-[#f0c36d] rounded flex flex-wrap items-center justify-between gap-space-sm font-body-sm text-body-sm text-[#734b00]">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-[#8a5d0c] shrink-0">warning</span>
+<span>
+<strong class="font-medium">Evaluated Artifact Mismatch:</strong> This run evaluated design revision <code class="font-code-table text-code-table bg-surface-container-lowest px-1 rounded border border-[#e5d4a6] text-on-surface">d7a4e9b</code>. The current workspace draft contains uncommitted modifications <code class="font-code-table text-code-table bg-surface-container-lowest px-1 rounded border border-[#e5d4a6] text-on-surface">[rev: d7a4e9b-mod1*]</code> not reflected in this matrix.
+        </span>
+</div>
+<div class="flex items-center gap-space-xs shrink-0 font-code-sm text-code-sm">
+<button class="px-space-xs py-0.5 bg-surface-container-lowest hover:bg-surface-container border border-[#e5d4a6] text-[#734b00] rounded font-medium" type="button">
+          Compare with Current Draft
+        </button>
+<button class="px-space-xs py-0.5 bg-primary text-on-primary hover:bg-primary-container rounded font-medium" type="button">
+          Configure Evaluation for Draft
+        </button>
+</div>
+</div>
+</section>
+<!-- 3. Three-pane Workbench Grid Layout -->
+<div class="grid grid-cols-12 min-h-[calc(100vh-190px)] w-full bg-surface-container-low">
+<!-- 3A. Left Pane: Run Browser (~260px / 2.5 cols) -->
+<aside class="col-span-12 lg:col-span-3 xl:col-span-2 bg-surface-container-lowest border-r border-outline-variant flex flex-col justify-between">
+<div class="flex flex-col">
+<!-- Panel Header -->
+<div class="h-7 px-space-sm bg-surface-container border-b border-outline-variant flex items-center justify-between font-label-md text-label-md uppercase tracking-wider text-secondary">
+<span class="flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[14px]">view_timeline</span>
+            Historical Runs
+          </span>
+<button class="hover:text-on-surface p-0.5 rounded" title="Collapse Panel" type="button">
+<span class="material-symbols-outlined text-[14px]">first_page</span>
+</button>
+</div>
+<!-- Search & Filter Controls -->
+<div class="p-space-xs border-b border-outline-variant bg-surface-container-lowest space-y-1">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-1.5 text-[14px] text-secondary">search</span>
+<input class="w-full pl-6 pr-2 py-0.5 text-code-sm font-code-sm bg-surface-container-low border border-outline-variant rounded focus:outline-none focus:border-primary text-on-surface" placeholder="Filter by ID, rev, workload..." type="text"/>
+</div>
+<div class="grid grid-cols-2 gap-1 text-code-sm font-code-sm">
+<select class="px-1 py-0.5 bg-surface-container border border-outline-variant rounded text-on-surface font-code-sm">
+<option>Outcome: Violated</option>
+<option>Outcome: Met</option>
+<option>Outcome: All</option>
+</select>
+<select class="px-1 py-0.5 bg-surface-container border border-outline-variant rounded text-on-surface font-code-sm">
+<option>WL: ResNet50</option>
+<option>WL: Bert_Large</option>
+<option>WL: LLM_KV</option>
+</select>
+</div>
+</div>
+<!-- Run List Items -->
+<div class="flex flex-col divide-y divide-outline-variant font-code-sm text-code-sm overflow-y-auto">
+<!-- SIM-402 (Active) -->
+<div class="p-space-xs bg-secondary-fixed/50 border-l-2 border-primary relative cursor-pointer">
+<div class="flex items-center justify-between">
+<span class="font-code-table text-code-table font-bold text-primary">SIM-402</span>
+<span class="text-[10px] font-semibold px-1 py-0.2 rounded bg-error-container text-on-error-container">VIOLATED</span>
+</div>
+<div class="text-[11px] text-on-surface font-medium truncate mt-0.5">ResNet50_Burst [w12]</div>
+<div class="flex items-center justify-between text-[10px] text-secondary mt-1">
+<span>rev: d7a4e9b</span>
+<span class="flex items-center gap-0.5"><span class="material-symbols-outlined text-[11px]">schedule</span>12m 44s</span>
+</div>
+</div>
+<!-- SIM-403 (Queued/Running) -->
+<div class="p-space-xs hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-table text-code-table font-semibold text-on-surface">SIM-403</span>
+<span class="text-[10px] font-medium px-1 py-0.2 rounded bg-primary-fixed text-on-primary-fixed-variant flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px] animate-spin text-primary">sync</span> 18%
+              </span>
+</div>
+<div class="text-[11px] text-on-surface truncate mt-0.5">Bert_Large [w04]</div>
+<div class="flex items-center justify-between text-[10px] text-secondary mt-1">
+<span>rev: d7a4e9b-mod1*</span>
+<span class="text-tertiary">BookSim-v2.1</span>
+</div>
+</div>
+<!-- SIM-401 -->
+<div class="p-space-xs hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-table text-code-table font-semibold text-on-surface">SIM-401</span>
+<span class="text-[10px] font-semibold px-1 py-0.2 rounded bg-surface-container-high text-[#1d7a4c]">MET</span>
+</div>
+<div class="text-[11px] text-on-surface truncate mt-0.5">ResNet50_Uniform [w11]</div>
+<div class="flex items-center justify-between text-[10px] text-secondary mt-1">
+<span>rev: d7a4e9b</span>
+<span class="flex items-center gap-0.5"><span class="material-symbols-outlined text-[11px]">schedule</span>9m 12s</span>
+</div>
+</div>
+<!-- SIM-398 -->
+<div class="p-space-xs hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-table text-code-table font-semibold text-secondary line-through">SIM-398</span>
+<span class="text-[10px] font-medium px-1 py-0.2 rounded bg-error-container text-error">OOM FAIL</span>
+</div>
+<div class="text-[11px] text-secondary truncate mt-0.5">LLM_KV_Scatter [w09]</div>
+<div class="flex items-center justify-between text-[10px] text-secondary mt-1">
+<span>rev: c98f12a</span>
+<span class="text-error text-[10px]">Verilator abort</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Note -->
+<div class="p-space-xs border-t border-outline-variant bg-surface-container-low font-code-sm text-code-sm text-secondary flex items-center justify-between">
+<span>Showing 4 of 28 historical runs</span>
+<button class="text-primary hover:underline" type="button">All runs</button>
+</div>
+</aside>
+<!-- 3B. Center Pane: Main Analytical View (Traffic Matrix) (6.5 cols) -->
+<main class="col-span-12 lg:col-span-6 xl:col-span-7 bg-surface-container-lowest flex flex-col justify-between">
+<div>
+<!-- View Controls Bar -->
+<div class="p-space-xs border-b border-outline-variant bg-surface-container-low flex flex-wrap items-center justify-between gap-space-xs text-on-surface font-code-sm text-code-sm">
+<!-- Segmented controls group 1 -->
+<div class="flex items-center gap-1">
+<span class="font-label-md text-label-md uppercase text-secondary">Data Basis:</span>
+<div class="inline-flex rounded border border-outline-variant bg-surface-container-lowest p-0.5">
+<button class="px-space-xs py-0.5 text-secondary hover:text-on-surface rounded" type="button">Requested Demand</button>
+<button class="px-space-xs py-0.5 text-secondary hover:text-on-surface rounded" type="button">Observed Injection</button>
+<button class="px-space-xs py-0.5 bg-primary text-on-primary font-medium rounded shadow-xs" type="button">Observed Delivery</button>
+</div>
+</div>
+<!-- Metric & Window Selectors -->
+<div class="flex items-center gap-space-xs flex-wrap">
+<div class="flex items-center gap-1">
+<span class="text-secondary font-label-md text-label-md uppercase">Metric:</span>
+<select class="px-1.5 py-0.5 bg-surface-container-lowest border border-outline-variant rounded font-code-sm text-on-surface font-medium focus:border-primary">
+<option>Flit Count (Total)</option>
+<option>Delivered Throughput (GB/s)</option>
+<option>Packet Count</option>
+<option>Byte Count (MB)</option>
+<option>Mean Latency (ns)</option>
+</select>
+</div>
+<div class="flex items-center gap-1">
+<span class="text-secondary font-label-md text-label-md uppercase">Window:</span>
+<select class="px-1.5 py-0.5 bg-surface-container-lowest border border-outline-variant rounded font-code-sm text-on-surface focus:border-primary">
+<option>Phase 2 Burst (400k-850k cyc)</option>
+<option>Phase 1 Warmup (0-400k cyc)</option>
+<option>Phase 3 Drain (850k-1.2M cyc)</option>
+<option>Entire Simulation (Full Run)</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Matrix Sub-Toolbar: Normalization and Scope Filters -->
+<div class="px-space-md py-1 border-b border-outline-variant bg-surface-container-lowest flex flex-wrap items-center justify-between text-code-sm font-code-sm gap-2">
+<div class="flex items-center gap-space-md">
+<span class="text-secondary">Pairs Evaluated: <strong class="text-on-surface font-medium">8 Initiators × 8 Targets (64 pairs)</strong></span>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-1.5">
+<span class="text-secondary">Scale:</span>
+<span class="text-[10px] font-mono text-secondary">0</span>
+<div class="w-24 h-2 rounded bg-gradient-to-r from-[#f0f7fb] via-[#8fcdff] to-[#0f6c9e] border border-outline-variant"></div>
+<span class="text-[10px] font-mono font-medium text-on-surface">4.2M flits</span>
+</div>
+</div>
+<div class="flex items-center gap-1 font-label-md text-label-md">
+<button class="px-space-xs py-0.5 bg-surface-container-high font-semibold text-primary rounded border border-outline-variant" type="button">Heatmap Matrix</button>
+<button class="px-space-xs py-0.5 hover:bg-surface-container text-secondary rounded border border-transparent" type="button">Tabular View</button>
+</div>
+</div>
+<!-- 8x8 Traffic Matrix Canvas -->
+<div class="overflow-x-auto p-space-md">
+<div class="inline-block min-w-full align-middle">
+<table class="border-collapse w-full text-center font-code-table text-code-table">
+<thead>
+<!-- Target Header Top Label -->
+<tr>
+<th class="p-1 border border-outline-variant bg-surface-container text-[10px] font-semibold text-secondary text-left uppercase tracking-wider">
+                    Initiator \ Target
+                  </th>
+<th class="p-1 border border-outline-variant bg-surface-container-high text-on-surface font-semibold text-[10px]">EP_HBM_CH0</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_HBM_CH1</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_HBM_CH2</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_HBM_CH3</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_SRAM_0</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_SRAM_1</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_PCIE_GEN5</th>
+<th class="p-1 border border-outline-variant bg-surface-container text-on-surface-variant font-medium text-[10px]">EP_DMA_ENG</th>
+</tr>
+</thead>
+<tbody>
+<!-- Row 0: EP_NPU_CORE_0 (Active Initiator) -->
+<tr class="bg-surface-container-low/40">
+<td class="p-1.5 border border-outline-variant bg-surface-container font-semibold text-left text-primary flex items-center justify-between">
+<span>EP_NPU_CORE_0</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+</td>
+<!-- Cell Selected: EP_NPU_CORE_0 -> EP_HBM_CH0 -->
+<td class="p-1.5 border-2 border-primary bg-[#d2e6f1] text-[#00344f] font-bold ring-2 ring-primary/20 cursor-pointer shadow-inner">
+                    3.82M
+                  </td>
+<td class="p-1.5 border border-outline-variant bg-[#e2f0f8] text-on-surface cursor-pointer hover:border-primary">1.44M</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">480K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">310K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.12M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">920K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">45K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 1: EP_NPU_CORE_1 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_1</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.14M</td>
+<td class="p-1.5 border border-outline-variant bg-[#cbe6ff] text-on-surface font-bold cursor-pointer hover:border-primary">3.71M</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">520K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">290K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e2f0f8] text-on-surface cursor-pointer hover:border-primary">1.10M</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.45M</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">22K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 2: EP_NPU_CORE_2 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_2</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">420K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">610K</td>
+<td class="p-1.5 border border-outline-variant bg-[#cbe6ff] text-on-surface font-bold cursor-pointer hover:border-primary">3.65M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e2f0f8] text-on-surface cursor-pointer hover:border-primary">1.25M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">890K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">410K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">15K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 3: EP_NPU_CORE_3 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_3</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">290K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">380K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e2f0f8] text-on-surface cursor-pointer hover:border-primary">1.35M</td>
+<td class="p-1.5 border border-outline-variant bg-[#cbe6ff] text-on-surface font-bold cursor-pointer hover:border-primary">3.88M</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">320K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">780K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">18K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 4: EP_NPU_CORE_4 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_4</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.41M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">940K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">330K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">85K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.05M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">740K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">120K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 5: EP_NPU_CORE_5 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_5</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">980K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.38M</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">90K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">410K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">810K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">1.94M</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">95K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 6: EP_NPU_CORE_6 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_6</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">310K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">110K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.29M</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">880K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">670K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">390K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">42K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+<!-- Row 7: EP_NPU_CORE_7 -->
+<tr>
+<td class="p-1.5 border border-outline-variant bg-surface-container-low font-medium text-left text-on-surface">EP_NPU_CORE_7</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">75K</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">360K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">910K</td>
+<td class="p-1.5 border border-outline-variant bg-[#daecf6] text-on-surface font-medium cursor-pointer hover:border-primary">2.54M</td>
+<td class="p-1.5 border border-outline-variant bg-[#edf5fa] text-on-surface cursor-pointer hover:border-primary">280K</td>
+<td class="p-1.5 border border-outline-variant bg-[#e8f3f9] text-on-surface cursor-pointer hover:border-primary">760K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-secondary cursor-pointer hover:border-primary">38K</td>
+<td class="p-1.5 border border-outline-variant bg-surface-container-lowest text-outline cursor-pointer hover:border-primary">0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Footer Note & Provenance Audit line -->
+<div class="px-space-md py-space-xs border-t border-outline-variant bg-surface-container-low flex flex-wrap items-center justify-between text-[11px] font-code-sm text-secondary">
+<div class="flex items-center gap-space-md flex-wrap">
+<span class="flex items-center gap-1"><span class="w-2 h-2 border border-outline-variant bg-surface-container-lowest inline-block"></span> 0 = Zero Recorded</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 bg-[#d2e6f1] border border-primary inline-block"></span> Active Selection</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 bg-surface-variant inline-block"></span> N/A Loopback</span>
+</div>
+<div class="font-mono text-tertiary">
+          Artifact: <span class="text-on-surface font-medium">sim_402_flit_delivery_matrix.csv</span> (SHA: a9f81d)
+        </div>
+</div>
+</main>
+<!-- 3C. Right Pane: Selection Inspector (~320px / 3 cols) -->
+<aside class="col-span-12 lg:col-span-3 xl:col-span-3 bg-surface-container-lowest border-l border-outline-variant flex flex-col justify-between overflow-y-auto">
+<div>
+<!-- Panel Header -->
+<div class="h-7 px-space-sm bg-surface-container border-b border-outline-variant flex items-center justify-between font-label-md text-label-md uppercase tracking-wider text-secondary">
+<span class="flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-primary">data_exploration</span>
+            Selection Inspector
+          </span>
+<button class="hover:text-on-surface p-0.5 rounded" title="Collapse Panel" type="button">
+<span class="material-symbols-outlined text-[14px]">last_page</span>
+</button>
+</div>
+<div class="p-space-md space-y-space-md text-on-surface">
+<!-- Selection Title Block -->
+<div class="border-b border-outline-variant pb-space-sm">
+<div class="font-label-md text-label-md uppercase text-secondary">Active Endpoint Pair</div>
+<div class="font-code-table text-[13px] font-bold text-primary mt-0.5 flex items-center gap-1">
+<span>EP_NPU_CORE_0</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">arrow_forward</span>
+<span>EP_HBM_CH0</span>
+</div>
+<div class="font-body-sm text-body-sm text-secondary mt-1">
+              Initiator: NPU Core 0 (AXI5-128b) • Target: HBM CH0 Ctrl (CHI-256b)
+            </div>
+<div class="mt-2 p-1.5 bg-surface-container-low border border-outline-variant rounded font-code-sm text-code-sm">
+<span class="text-secondary font-medium">Static Route:</span>
+<span class="font-mono text-on-surface"> R_1_2 → R_0_2 → R_0_0</span>
+<span class="text-[10px] text-secondary block mt-0.5">(2 Hops via DOR-XY topology model)</span>
+</div>
+</div>
+<!-- Traffic Metrics Card -->
+<div>
+<div class="font-label-md text-label-md uppercase text-secondary font-semibold mb-1.5 flex items-center justify-between">
+<span>Delivery Metrics (Phase 2)</span>
+<span class="text-[10px] font-normal lowercase text-tertiary">400k-850k cyc</span>
+</div>
+<div class="grid grid-cols-2 gap-1.5 font-code-sm text-code-sm">
+<div class="p-1.5 bg-surface-container-low border border-outline-variant rounded">
+<div class="text-[10px] text-secondary">Delivered Flits</div>
+<div class="font-mono text-on-surface font-bold text-[13px] mt-0.5">3,824,192</div>
+<div class="text-[10px] text-[#1d7a4c]">98.6% of injected</div>
+</div>
+<div class="p-1.5 bg-surface-container-low border border-outline-variant rounded">
+<div class="text-[10px] text-secondary">Delivered Volume</div>
+<div class="font-mono text-on-surface font-bold text-[13px] mt-0.5">61.18 MB</div>
+<div class="text-[10px] text-secondary">128-bit flits</div>
+</div>
+<div class="p-1.5 bg-surface-container-low border border-outline-variant rounded col-span-2">
+<div class="flex items-center justify-between">
+<span class="text-[10px] text-secondary">Effective Throughput</span>
+<span class="text-[10px] text-tertiary">@ 1.4 GHz clock</span>
+</div>
+<div class="font-mono text-on-surface font-bold text-headline-sm mt-0.5">43.8 GB/s</div>
+</div>
+</div>
+</div>
+<!-- Latency & Requirements Check Box -->
+<div class="p-space-sm bg-[#fdf2f2] border border-[#f5c2c7] rounded space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase font-bold text-error flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">cancel</span>
+                Requirement Violated
+              </span>
+<span class="font-mono text-[10px] text-error font-semibold">REQ-LAT-04</span>
+</div>
+<div class="text-[11px] font-body-sm text-on-surface">
+              Constraint: <span class="font-mono font-medium">P95 Transaction Latency ≤ 25.0 ns</span> during burst phase.
+            </div>
+<div class="p-1 bg-surface-container-lowest rounded border border-[#f5c2c7] flex items-center justify-between font-code-sm text-code-sm">
+<span class="text-secondary">Observed P95:</span>
+<span class="font-mono font-bold text-error">28.6 ns (+3.6 ns)</span>
+</div>
+<div class="grid grid-cols-3 gap-1 text-[10px] font-mono text-center pt-1 border-t border-[#f5c2c7]/60">
+<div><span class="text-secondary block">Min</span><span class="font-semibold text-on-surface">9.2 ns</span></div>
+<div><span class="text-secondary block">Mean</span><span class="font-semibold text-on-surface">17.4 ns</span></div>
+<div><span class="text-secondary block">P99</span><span class="font-semibold text-error">34.8 ns</span></div>
+</div>
+</div>
+<!-- Bottleneck Observations -->
+<div class="space-y-1 font-body-sm text-body-sm">
+<div class="font-label-md text-label-md uppercase text-secondary font-semibold">Bottleneck Evidence</div>
+<div class="p-2 bg-surface-container-low border border-outline-variant rounded space-y-1.5 font-code-sm text-[11px]">
+<div class="flex items-start gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-[#8a5d0c] shrink-0 mt-0.5">warning</span>
+<span><strong>Link Saturation:</strong> 92% flit utilization on link <code class="font-mono text-primary">R_1_2 → R_0_2</code> with 78% average VC buffer depth.</span>
+</div>
+<div class="flex items-start gap-1 text-secondary pt-1 border-t border-outline-variant">
+<span class="material-symbols-outlined text-[14px] shrink-0 mt-0.5">info</span>
+<span>Cycle-accurate per-packet trace was not recorded for SIM-402 (aggregate flit counters only).</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Workflow Buttons -->
+<div class="p-space-sm border-t border-outline-variant bg-surface-container-low space-y-1 font-code-sm text-code-sm">
+<button class="w-full flex items-center justify-between px-space-xs py-1 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded text-on-surface" type="button">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary">grid_view</span>
+            Inspect Link in Topology Canvas
+          </span>
+<span class="material-symbols-outlined text-[13px] text-secondary">arrow_forward</span>
+</button>
+<button class="w-full flex items-center justify-between px-space-xs py-1 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded text-on-surface" type="button">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">rule</span>
+            View REQ-LAT-04 in Requirements
+          </span>
+<span class="material-symbols-outlined text-[13px] text-secondary">open_in_new</span>
+</button>
+<button class="w-full flex items-center justify-between px-space-xs py-1 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded text-on-surface" type="button">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">auto_fix_high</span>
+            Propose Buffer Reconfiguration
+          </span>
+<span class="material-symbols-outlined text-[13px] text-secondary">edit</span>
+</button>
+<button class="w-full flex items-center justify-center gap-1.5 px-space-sm py-1 bg-primary text-on-primary hover:bg-primary-container rounded font-medium shadow-xs" type="button">
+<span class="material-symbols-outlined text-[14px]">refresh</span>
+          Re-evaluate with Trace Enabled
+        </button>
+</div>
+</aside>
+</div>
+<!-- 4. Collapsible Bottom Drawer / Auxiliary System Bar -->
+<div class="bg-surface-container-lowest border-t border-outline-variant px-space-md py-1 flex flex-wrap items-center justify-between gap-space-sm text-on-surface font-code-sm text-code-sm shadow-xs">
+<div class="flex items-center gap-space-md">
+<button class="flex items-center gap-1 font-medium text-error hover:underline" type="button">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+<span>Problems: <strong>1 Warning</strong> (Uplink Saturation W-NOC-4021)</span>
+</button>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-1 text-secondary">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span>Sim #403 running (Bert_Large 18%)</span>
+</div>
+<span class="text-outline-variant">|</span>
+<button class="flex items-center gap-1 text-secondary hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[13px]">terminal</span>
+<span>Console & Execution Logs (BookSim-v2.1)</span>
+</button>
+</div>
+<div class="flex items-center gap-space-sm text-secondary">
+<span>Evaluation Target: <strong class="text-on-surface">Falcon8_NoC_Gen2</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Matrix State: <strong class="text-primary font-mono">Synchronized</strong></span>
+</div>
+</div>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-lowest border-t border-outline-variant z-50 px-space-md flex items-center justify-between font-code-sm text-code-sm text-secondary"><div class="flex items-center gap-space-md"><button class="flex items-center gap-space-xs hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[13px] text-error">error</span><span>Problems: <strong>0 Errors</strong>, <strong>1 Warning</strong></span></button><div class="h-3 w-px bg-outline-variant"></div><button class="flex items-center gap-space-xs hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[13px] text-primary animate-spin">sync</span><span>Jobs: <strong>1 running</strong> (Sim #403)</span></button><div class="h-3 w-px bg-outline-variant"></div><button class="flex items-center gap-space-xs hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[13px]">terminal</span><span>Console & Simulation Logs</span></button></div><div class="flex items-center gap-space-md"><span class="text-on-surface-variant">Workspace: <strong class="text-on-surface">Analysis / Traffic Matrix</strong></span><div class="h-3 w-px bg-outline-variant"></div><span>Cycle: <strong class="text-on-surface font-mono">14,289,200</strong></span><div class="h-3 w-px bg-outline-variant"></div><span class="text-error font-medium">Run SIM-402 Violated</span></div></footer></body></html>

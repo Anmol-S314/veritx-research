@@ -249,7 +249,7 @@ schema: Gates 2–6 compose from them and may not add an eleventh axis.
 
 | Node | Real | Owner | Edit | Kind | Stored | Deps | Inv | Val | Unsup | Vis |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `model_family` | **R3** (4 of 5) | CI | TCU | CMT | request | lowering | **D** | L1n | **lowering: MoE, diffusion, CNN, custom** | 3 |
+| `model_family` | **R3** (5 of 5) | CI | TCU | CMT | request | authoring (`family_collectives`), lowering | **D** | L1n | `custom` requires explicit collectives | 1 |
 | `model_name` | R1 | CI | TCU | INERT | request only | — | A | L1n | — | 1 + annotate |
 | `serving_mode` | R1 | CI | TCU | INERT | request only | — | A | L1n | — | 1 + annotate |
 | `tp/pp/ep/dp` | R2 | CI | TCU | CMT | request → `NodeInventory`, `MappingArtifact`, `WavedParallelism` | mapping, groups, VC scope, lowering | B | L1n + L3d | — | 1 |
@@ -370,7 +370,7 @@ Gate-1 question set exists to catch.
 
 | Correction | Evidence |
 |---|---|
-| `model_family` is **not** generally supported. `intent_lowering.py:224` raises `UnsupportedSemantics` unless `model_family == dense_transformer`: *"MoE dispatch/combine, diffusion, CNN, and custom intents have no proven intent→collective mapping here."* **4 of the 5 values the UI offers refuse at lowering.** | `workload/intent_lowering.py:224-228` |
+| `model_family` **is** now generally supported, and this row previously overstated the gap. Lowering's gate (`intent_lowering.py:191`) only fires when a request declares **no** collectives — so diffusion/CNN/custom already lowered fine when collectives were explicit; the old text's *"raises unless `model_family == dense_transformer`"* was stale (MoE had been admitted alongside dense). What was genuinely missing was the **implicit intent→collective mapping**, which `workload/family_collectives.py` now supplies as a DECLARED table applied at authoring time (`ProductService.put_draft`), never inside lowering. `custom` still requires explicit collectives by design. | `workload/family_collectives.py`, `workload/intent_lowering.py:191` |
 | `agents[].protocol` is **R1, not R2**. The only reads are validation (`compile_model.py:254`) and storage into the attachment endpoint (`attachment.py:149`). No consumer reads `interface.protocol`. It is still serialized into the attachment artifact, so changing it moves `attachment_hash` → `resolved_fabric_hash` → certificate **while changing nothing functional**. | `grep -rn '\.protocol'` |
 | `agents[].{clock_domain,power_domain}` can **refuse**: `fabric_artifact.py:305-323` derives the domain sets and refuses >1 distinct value. They are `B/D`, not plain `B`. | `model/fabric_artifact.py:305` |
 | **Empty `collectives` is invalid.** `intent_lowering.py:229` raises `InvalidInput`: *"intent declares no collectives — a fabric workload with no communication is under-specified."* The page has no collectives control, so any project not seeded from a workload template cannot lower. | `workload/intent_lowering.py:229` |

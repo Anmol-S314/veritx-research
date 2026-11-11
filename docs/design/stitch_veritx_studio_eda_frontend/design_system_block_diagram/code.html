@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "outline": "#707880",
+        "secondary-container": "#d2e6f1",
+        "error": "#ba1a1a",
+        "primary-fixed-dim": "#8fcdff",
+        "on-secondary": "#ffffff",
+        "surface-tint": "#006494",
+        "on-background": "#151c24",
+        "on-surface-variant": "#40484f",
+        "on-primary": "#ffffff",
+        "on-secondary-container": "#546770",
+        "surface": "#f7f9ff",
+        "surface-container": "#e8eef9",
+        "inverse-surface": "#2a3139",
+        "surface-variant": "#dce3ee",
+        "inverse-primary": "#8fcdff",
+        "tertiary-fixed": "#d8e4f2",
+        "tertiary": "#444f5a",
+        "on-error": "#ffffff",
+        "on-primary-container": "#d0e8ff",
+        "on-secondary-fixed-variant": "#374952",
+        "surface-container-high": "#e2e9f4",
+        "surface-container-lowest": "#ffffff",
+        "surface-dim": "#d4dae5",
+        "secondary-fixed": "#d2e6f1",
+        "on-primary-fixed": "#001e30",
+        "on-error-container": "#93000a",
+        "surface-bright": "#f7f9ff",
+        "on-primary-fixed-variant": "#004b71",
+        "on-secondary-fixed": "#0a1e26",
+        "tertiary-container": "#5c6773",
+        "background": "#f7f9ff",
+        "on-tertiary": "#ffffff",
+        "error-container": "#ffdad6",
+        "primary-container": "#0f6c9e",
+        "surface-container-low": "#eef4ff",
+        "tertiary-fixed-dim": "#bcc8d5",
+        "on-tertiary-fixed": "#121d27",
+        "primary": "#00537c",
+        "secondary": "#4e616a",
+        "outline-variant": "#c0c7d0",
+        "on-surface": "#151c24",
+        "primary-fixed": "#cbe6ff",
+        "on-tertiary-container": "#dae6f4",
+        "on-tertiary-fixed-variant": "#3d4853",
+        "secondary-fixed-dim": "#b6c9d4",
+        "surface-container-highest": "#dce3ee",
+        "inverse-on-surface": "#eaf1fc"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.125rem",
+        "lg": "0.25rem",
+        "xl": "0.5rem",
+        "full": "0.75rem"
+      },
+      "spacing": {
+        "space-xs": "0.25rem",
+        "margin": "0.5rem",
+        "space-md": "0.75rem",
+        "space-lg": "1rem",
+        "gutter": "0.5rem",
+        "space-sm": "0.5rem",
+        "space-xl": "1.5rem"
+      },
+      "fontFamily": {
+        "body-sm": ["Inter"],
+        "headline-sm": ["Inter"],
+        "code-sm": ["JetBrains Mono"],
+        "code-md": ["JetBrains Mono"],
+        "headline-md": ["Inter"],
+        "label-md": ["Inter"],
+        "code-table": ["JetBrains Mono"],
+        "headline-lg": ["Inter"],
+        "body-md": ["Inter"]
+      },
+      "fontSize": {
+        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "headline-sm": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600"}],
+        "code-sm": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+        "code-md": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+        "headline-md": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+        "label-md": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+        "code-table": ["11px", {"lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500"}],
+        "headline-lg": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+        "body-md": ["13px", {"lineHeight": "18px", "fontWeight": "400"}]
+      }
+    }
+  }
+}</script></head><body class="bg-surface text-on-surface font-body-sm text-body-sm select-none antialiased"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant flex flex-col"><div class="h-9 px-gutter flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest"><div class="flex items-center gap-space-sm"><div class="flex items-center gap-space-xs pr-space-sm border-r border-outline-variant"><span class="material-symbols-outlined text-primary text-[18px]">memory</span><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface font-bold">VERITX</span><span class="font-code-sm text-code-sm text-outline px-space-xs py-0.5 bg-surface-container rounded">SROTA</span></div><div class="flex items-center gap-space-xs"><button class="flex items-center gap-space-xs px-space-xs py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-sm text-code-sm" type="button"><span class="font-semibold">Falcon8_NoC_Gen2</span><span class="text-outline">[rev: d7a4e9b-mod1* • draft]</span><span class="material-symbols-outlined text-[14px] text-outline">arrow_drop_down</span></button><span class="px-space-xs py-0.5 rounded bg-secondary-container text-on-secondary-container font-code-sm text-code-sm">[Sample Design: Illustrative Data]</span></div><div class="hidden xl:flex items-center gap-space-sm pl-space-sm border-l border-outline-variant text-on-surface-variant font-code-sm text-code-sm"><span>Node: <strong class="text-on-surface font-semibold">TSMC N5 StdCell</strong></span><span>•</span><span>Clk: <strong class="text-on-surface font-semibold">1.4 GHz</strong></span><span>•</span><span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>1 Active Job (Sim #403: Bert_Large 18%)</span><span>•</span><span class="text-primary font-semibold">DRC: Clean</span></div></div><div class="flex items-center gap-space-sm"><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-2 text-outline text-[14px]">search</span><input class="pl-6 pr-2 py-0.5 h-6 w-64 rounded bg-surface-container-low border border-outline-variant font-code-sm text-code-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary" placeholder="Search architecture, nodes, registers... (Cmd+K)" type="text"/></div><div class="flex items-center gap-1 px-space-xs py-0.5 rounded bg-surface-container font-code-sm text-code-sm text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>Local Daemon v2.4.1</span></div><button class="flex items-center gap-1 px-space-xs py-0.5 rounded border border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container font-body-sm text-body-sm" type="button"><span class="material-symbols-outlined text-[14px]">smart_toy</span><span>AI Assistant (Closed)</span></button><button class="w-6 h-6 flex items-center justify-center rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant" type="button"><span class="material-symbols-outlined text-[16px]">settings</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="h-8 px-gutter flex items-center justify-between bg-surface-container-low border-b border-outline-variant"><nav class="flex items-center gap-1 h-full" data-active-classes="bg-surface-container-lowest text-primary border-b-2 border-primary font-semibold"><a aria-current="page" class="px-space-md h-full flex items-center transition-colors bg-surface-container-lowest text-primary border-b-2 border-primary font-semibold" data-path="design" href="#">Design</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface transition-colors font-headline-sm text-headline-sm" data-path="workloads-and-requirements" href="#">Workloads & Requirements</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface transition-colors font-headline-sm text-headline-sm" data-path="analysis" href="#">Analysis</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface transition-colors font-headline-sm text-headline-sm" data-path="explore" href="#">Explore</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface transition-colors font-headline-sm text-headline-sm" data-path="verify" href="#">Verify</a><a class="px-space-md h-full flex items-center text-on-surface-variant hover:text-on-surface transition-colors font-headline-sm text-headline-sm" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-xs"><button class="h-6 px-space-sm flex items-center gap-1 rounded border border-outline-variant bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm" type="button"><span class="material-symbols-outlined text-[14px]">account_tree</span><span>Inspect Netlist</span></button><button class="h-6 px-space-sm flex items-center gap-1 rounded bg-primary text-on-primary hover:bg-primary-container font-body-sm text-body-sm font-semibold" type="button"><span class="material-symbols-outlined text-[14px]">file_download</span><span>Export Architecture Intent (.yaml)</span></button></div></div><div class="h-7 px-gutter flex items-center justify-between bg-surface border-b border-outline-variant"><nav class="flex items-center gap-space-xs" data-active-classes="text-primary font-semibold bg-surface-container-high rounded"><a class="px-space-sm py-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-label-md text-label-md" data-path="fabric-topology-and-router-inspector" href="#">Fabric Topology & Router Inspector</a><a aria-current="page" class="px-space-sm py-0.5 transition-colors text-primary font-semibold bg-surface-container-high rounded" data-path="design" href="#">System / Block Diagram</a><a class="px-space-sm py-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-label-md text-label-md" data-path="interface-and-adapter-map" href="#">Interface & Adapter Map</a><a class="px-space-sm py-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-label-md text-label-md" data-path="address-map-and-routing-tables" href="#">Address Map & Routing Tables</a></nav><div class="flex items-center gap-space-sm font-code-sm text-code-sm text-outline"><span>Radix: 5-Port Mesh</span><span>|</span><span>Tile Grid: 4x4 Torus</span></div></div></header><aside class="fixed left-0 top-[92px] bottom-6 w-56 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between"><div class="flex flex-col"><div class="h-6 px-space-sm flex items-center justify-between bg-surface-container-high border-b border-outline-variant font-label-md text-label-md text-on-surface uppercase tracking-wider"><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">tune</span>Architecture Elements</span><button class="text-outline hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[14px]">add</span></button></div><nav class="p-space-xs flex flex-col gap-0.5 font-code-sm text-code-sm" data-active-classes="bg-secondary-container text-on-secondary-container font-semibold"><a aria-current="page" class="flex items-center gap-1.5 px-space-xs py-1 rounded bg-secondary-container text-on-secondary-container font-semibold" data-path="design" href="#"><span class="material-symbols-outlined text-[14px]">grid_view</span>Routers & Switches (R0-R15)</a><a class="flex items-center gap-1.5 px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" data-path="interface-and-adapter-map" href="#"><span class="material-symbols-outlined text-[14px]">hub</span>Network Interfaces (NI)</a><a class="flex items-center gap-1.5 px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" data-path="address-map-and-routing-tables" href="#"><span class="material-symbols-outlined text-[14px]">storage</span>Memory & LLC Controllers</a><a class="flex items-center gap-1.5 px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" data-path="fabric-topology-and-router-inspector" href="#"><span class="material-symbols-outlined text-[14px]">alt_route</span>Virtual Channels & Buffers</a></nav></div><div class="p-space-xs border-t border-outline-variant bg-surface-container-low"><div class="px-space-xs py-1 text-on-surface-variant font-code-sm text-code-sm flex justify-between"><span>Active Engine:</span><span class="text-on-surface font-semibold">Cycle-Accurate</span></div><div class="px-space-xs py-1 text-on-surface-variant font-code-sm text-code-sm flex justify-between"><span>Synthesis Target:</span><span class="text-on-surface font-semibold">RTL Verilog</span></div></div></aside><div class="pl-56"><main class="relative pt-[92px] pb-6 min-h-screen bg-surface"><div class="flex flex-col w-full font-body-sm text-body-sm text-on-surface antialiased">
+<!-- Sub-Toolbar 1: Architectural Revision & Evaluation Strip -->
+<div class="bg-surface-container-low px-gutter py-1 flex flex-wrap items-center justify-between gap-y-1">
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center gap-1.5 font-code-sm text-code-sm">
+<span class="font-semibold text-primary uppercase tracking-tight">System Architecture:</span>
+<span class="bg-surface-container-lowest px-1.5 py-0.5 rounded text-on-surface font-semibold shadow-sm">Falcon8_NoC_Gen2</span>
+<span class="text-tertiary">[rev: d7a4e9b-mod1* Draft]</span>
+</div>
+<span class="text-outline-variant font-code-sm text-code-sm">/</span>
+<div class="flex items-center gap-1 text-on-surface-variant font-code-sm text-code-sm">
+<span class="text-outline">Scope:</span>
+<span class="font-medium text-on-surface">Full System (16 EPs + Mesh)</span>
+</div>
+<span class="text-outline-variant font-code-sm text-code-sm">/</span>
+<div class="flex items-center gap-1 text-on-surface-variant font-code-sm text-code-sm">
+<span class="text-outline">RTL Boundary:</span>
+<span class="text-primary font-medium">Fabric & Adapters Only</span>
+<span class="text-tertiary text-[11px]">(Compute & HBM PHY are Model-Only / External IP)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<button class="h-6 px-2 flex items-center gap-1 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px] text-tertiary">difference</span>
+<span>Diff vs d7a4e9b</span>
+</button>
+<button class="h-6 px-2 flex items-center gap-1 rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-medium shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px]">code_blocks</span>
+<span>Export Arch Intent (.yaml)</span>
+</button>
+</div>
+</div>
+<!-- Sub-Toolbar 2: Interactive Filter & Verification Actions -->
+<div class="bg-surface-container-lowest px-gutter py-1 flex flex-wrap items-center justify-between gap-y-1 shadow-sm">
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center gap-1">
+<button class="h-6 px-2 flex items-center gap-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-sm text-code-sm" type="button">
+<span class="material-symbols-outlined text-[14px] text-outline">filter_alt</span>
+<span>Filter Blocks</span>
+<span class="material-symbols-outlined text-[12px] text-outline">arrow_drop_down</span>
+</button>
+<button class="h-6 px-2 flex items-center gap-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-code-sm text-code-sm" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">add_box</span>
+<span>Add Block from Catalog</span>
+</button>
+</div>
+<div class="h-3.5 w-px bg-outline-variant"></div>
+<button class="h-6 px-2 flex items-center gap-1.5 rounded bg-error-container text-on-error-container font-code-sm text-code-sm hover:opacity-90" type="button">
+<span class="material-symbols-outlined text-[14px] text-error">warning</span>
+<span class="font-medium">Compatibility Audit: 2 Warnings</span>
+</button>
+<button class="h-6 px-2 flex items-center gap-1.5 rounded bg-secondary-container text-on-secondary-container font-code-sm text-code-sm hover:bg-surface-container-high transition-colors" id="boundary-toggle" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">layers</span>
+<span>Show Generation Boundary</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+</button>
+</div>
+<!-- Architectural Provenance Legend -->
+<div class="flex items-center gap-3 font-code-sm text-code-sm text-on-surface-variant flex-wrap">
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-2.5 rounded-xs bg-primary inline-block"></span>
+<span class="text-on-surface">RTL Eligible (Srota Interconnect)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-2.5 rounded-xs bg-surface-container-highest inline-block"></span>
+<span>Model-Only Behavioral</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-2.5 rounded-xs bg-tertiary-fixed inline-block"></span>
+<span>External Supplied IP</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-2.5 rounded-xs bg-error-container inline-block"></span>
+<span class="text-error font-medium">Unresolved / Missing IP</span>
+</div>
+</div>
+</div>
+<!-- Workspace Tri-Pane Engineering Workbench -->
+<div class="flex flex-1 w-full overflow-hidden bg-surface" style="min-height: calc(100vh - 156px);">
+<!-- LEFT COLUMN: System Hierarchy & IP Catalog (260px) -->
+<aside class="w-64 flex-shrink-0 bg-surface-container-lowest flex flex-col justify-between shadow-sm">
+<div class="flex flex-col">
+<!-- Panel Title & Live Search -->
+<div class="p-space-xs bg-surface-container-high flex flex-col gap-1">
+<div class="flex items-center justify-between font-label-md text-label-md uppercase tracking-wider text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">account_tree</span>
+              System Hierarchy (18)
+            </span>
+<span class="font-code-sm text-code-sm text-outline font-normal">TSMC N5</span>
+</div>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-1.5 text-outline text-[12px]">search</span>
+<input class="w-full pl-5 pr-2 py-0.5 h-5 rounded bg-surface-container-lowest font-code-sm text-code-sm text-on-surface placeholder:text-outline focus:outline-none" placeholder="Filter blocks or ports..." type="text"/>
+</div>
+</div>
+<!-- Hierarchical System Tree -->
+<div class="p-space-xs flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-320px)]">
+<!-- Group 1: Fabric & Routing -->
+<div class="flex flex-col">
+<div class="px-1 py-0.5 flex items-center justify-between text-on-surface font-headline-sm text-headline-sm bg-surface-container-low rounded-xs cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span>Fabric & Routing</span>
+</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">1 NoC</span>
+</div>
+<div class="pl-3 pt-0.5 flex flex-col gap-0.5 font-code-sm text-code-sm">
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between bg-primary-fixed text-on-primary-fixed cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-semibold">Falcon8_4x4_Mesh</span>
+</span>
+<span class="text-[10px] uppercase font-bold text-primary">RTL Gen</span>
+</div>
+</div>
+</div>
+<!-- Group 2: Protocol Adapters -->
+<div class="flex flex-col">
+<div class="px-1 py-0.5 flex items-center justify-between text-on-surface font-headline-sm text-headline-sm bg-surface-container-low rounded-xs cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span>Protocol Adapters</span>
+</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">14 Shims</span>
+</div>
+<div class="pl-3 pt-0.5 flex flex-col gap-0.5 font-code-sm text-code-sm">
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between bg-surface-container-high text-on-surface cursor-pointer shadow-sm">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-medium text-primary">ADPT_AXI_00 (Active)</span>
+</span>
+<span class="text-[10px] text-tertiary">128b</span>
+</div>
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>ADPT_AXI_01..07</span>
+</span>
+<span class="text-[10px] text-outline">128b</span>
+</div>
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>ADPT_TL_01 (CDC)</span>
+</span>
+<span class="text-[10px] text-tertiary">256b</span>
+</div>
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>ADPT_HBM_00</span>
+</span>
+<span class="text-[10px] text-outline">256b</span>
+</div>
+</div>
+</div>
+<!-- Group 3: Compute Subsystem -->
+<div class="flex flex-col">
+<div class="px-1 py-0.5 flex items-center justify-between text-on-surface font-headline-sm text-headline-sm bg-surface-container-low rounded-xs cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span>Compute Subsystem</span>
+</span>
+<span class="font-code-sm text-code-sm text-outline">8 Nodes</span>
+</div>
+<div class="pl-3 pt-0.5 flex flex-col gap-0.5 font-code-sm text-code-sm">
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-surface-container-highest"></span>
+<span>PE_Array_0..7</span>
+</span>
+<span class="text-[10px] text-tertiary font-medium">Model-Only</span>
+</div>
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim"></span>
+<span>Host_Bridge_TL</span>
+</span>
+<span class="text-[10px] text-tertiary font-medium">Supplied IP</span>
+</div>
+</div>
+</div>
+<!-- Group 4: Memory Subsystem -->
+<div class="flex flex-col">
+<div class="px-1 py-0.5 flex items-center justify-between text-on-surface font-headline-sm text-headline-sm bg-surface-container-low rounded-xs cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span>Memory Subsystem</span>
+</span>
+<span class="font-code-sm text-code-sm text-outline">4 Channels</span>
+</div>
+<div class="pl-3 pt-0.5 flex flex-col gap-0.5 font-code-sm text-code-sm">
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim"></span>
+<span>HBM3_MC0..3 + PHY</span>
+</span>
+<span class="text-[10px] text-tertiary font-medium">Ext IP</span>
+</div>
+</div>
+</div>
+<!-- Group 5: Specialized Acceleration -->
+<div class="flex flex-col">
+<div class="px-1 py-0.5 flex items-center justify-between text-on-surface font-headline-sm text-headline-sm bg-surface-container-low rounded-xs cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">arrow_drop_down</span>
+<span>Acceleration Blocks</span>
+</span>
+<span class="font-code-sm text-code-sm text-error font-semibold">1 Alert</span>
+</div>
+<div class="pl-3 pt-0.5 flex flex-col gap-0.5 font-code-sm text-code-sm">
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between hover:bg-surface-container text-on-surface-variant cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-surface-container-highest"></span>
+<span>Conv2D_Engine</span>
+</span>
+<span class="text-[10px] text-tertiary font-medium">Model-Only</span>
+</div>
+<div class="px-1.5 py-0.5 rounded flex items-center justify-between bg-error-container text-on-error-container cursor-pointer font-semibold">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-error">warning</span>
+<span>Aux_Accel_V2</span>
+</span>
+<span class="text-[10px] text-error uppercase font-bold">Unresolved</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Scope Boundary Guidance Callout -->
+<div class="p-space-xs bg-surface-container-low">
+<div class="p-2 bg-surface-container-lowest rounded-sm shadow-sm flex flex-col gap-1">
+<div class="flex items-center gap-1 text-primary font-headline-sm text-headline-sm">
+<span class="material-symbols-outlined text-[14px]">verified</span>
+<span>RTL Synthesis Target</span>
+</div>
+<p class="font-code-sm text-code-sm text-on-surface-variant leading-tight">
+            Only Fabric Routers, Links, and Adapters lower to synthesizable SystemVerilog. Compute cores and external memory PHY remain behavioral models.
+          </p>
+</div>
+</div>
+</aside>
+<!-- CENTER COLUMN: Primary System / Block Diagram Canvas -->
+<section class="flex-1 flex flex-col bg-surface min-w-0 overflow-hidden relative">
+<!-- Canvas Control & Zoom Overlay Toolbar -->
+<div class="h-8 px-space-sm bg-surface-container-lowest flex items-center justify-between z-10 shadow-sm">
+<div class="flex items-center gap-1">
+<div class="flex items-center bg-surface-container rounded-xs p-0.5">
+<button class="w-5 h-5 flex items-center justify-center hover:bg-surface-container-high rounded text-on-surface" title="Zoom In" type="button">
+<span class="material-symbols-outlined text-[13px]">add</span>
+</button>
+<button class="w-5 h-5 flex items-center justify-center hover:bg-surface-container-high rounded text-on-surface" title="Zoom Out" type="button">
+<span class="material-symbols-outlined text-[13px]">remove</span>
+</button>
+<button class="px-1.5 h-5 flex items-center justify-center hover:bg-surface-container-high rounded text-on-surface font-code-sm text-code-sm" type="button">
+              100%
+            </button>
+<button class="w-5 h-5 flex items-center justify-center hover:bg-surface-container-high rounded text-on-surface" title="Fit to Screen" type="button">
+<span class="material-symbols-outlined text-[13px]">fit_screen</span>
+</button>
+</div>
+<div class="h-3 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-0.5 bg-surface-container rounded-xs p-0.5 text-on-surface font-code-sm text-code-sm">
+<button class="px-1.5 h-5 bg-surface-container-lowest text-primary font-semibold rounded shadow-sm" type="button">Logical Architecture</button>
+<button class="px-1.5 h-5 text-on-surface-variant hover:text-on-surface rounded" type="button">Floorplan Physical</button>
+</div>
+</div>
+<div class="flex items-center gap-2 font-code-sm text-code-sm text-outline">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary inline-block"></span>16 Endpoints Connected</span>
+<span>•</span>
+<span>Bisection BW: 358.4 GB/s</span>
+<span>•</span>
+<span class="text-error font-medium">1 Interface Latency Hazard</span>
+</div>
+</div>
+<!-- Canvas Scroll Area -->
+<div class="flex-1 overflow-auto p-4 relative" style="background-image: radial-gradient(circle, #c0c7d0 0.75px, transparent 0.75px); background-size: 16px 16px;">
+<!-- Outer SOC Chip-Level Boundary Box -->
+<div class="relative w-full max-w-6xl mx-auto p-4 bg-surface-container-lowest/80 rounded shadow-md backdrop-blur-sm">
+<!-- Boundary Header -->
+<div class="flex items-center justify-between pb-3 mb-3">
+<div class="flex items-center gap-2">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-code-sm text-code-sm font-semibold">SOC TOP-LEVEL BOUNDARY</span>
+<span class="font-code-sm text-code-sm text-tertiary">TSMC N5 Process Node • Dual Clock: 1.4 GHz Core / 800 MHz Mem</span>
+</div>
+<div class="flex items-center gap-2 font-code-sm text-code-sm">
+<span class="px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container font-medium">Interconnect: Srota NoC V2.4</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface">Target Package: 48x48mm CoWoS</span>
+</div>
+</div>
+<!-- Three Distinct Functional Subsystem Enclosures -->
+<div class="grid grid-cols-12 gap-4 items-start relative">
+<!-- LEFT ZONE: Compute & Accelerator Tiles (Model-Only Behavioral) (Cols 1-4) -->
+<div class="col-span-4 flex flex-col gap-3">
+<div class="px-2 py-1 bg-surface-container-high rounded-xs flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Compute & Accelerators</span>
+<span class="font-code-sm text-code-sm text-outline">Behavioral Models</span>
+</div>
+<!-- Block 1: Compute PE Cluster 0..3 -->
+<div class="p-3 bg-surface-container-low rounded shadow-sm hover:shadow-md transition-shadow relative">
+<div class="flex items-start justify-between pb-1.5 mb-1.5">
+<div>
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface">Core_0..Core_3 (PE Cluster)</div>
+<div class="font-code-sm text-code-sm text-tertiary">Model: Analytical Roofline (128 GFLOPS/core)</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface font-code-sm text-code-sm">1.40 GHz</span>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col">
+<span class="text-[10px] text-outline uppercase font-semibold">Master Port</span>
+<span class="font-semibold text-on-surface">AXI4-Master 128b</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-primary font-medium">
+<span>to ADPT_AXI_00</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</div>
+</div>
+</div>
+<!-- Block 2: Host PCIe Subsystem -->
+<div class="p-3 bg-surface-container-low rounded shadow-sm hover:shadow-md transition-shadow relative">
+<div class="flex items-start justify-between pb-1.5 mb-1.5">
+<div>
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface">Host_PCIe_Subsystem</div>
+<div class="font-code-sm text-code-sm text-tertiary">Supplied IP: Synopsys Gen5 x16 TL-UL</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-code-sm text-code-sm font-medium">1.00 GHz</span>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col">
+<span class="text-[10px] text-outline uppercase font-semibold">Master Port</span>
+<span class="font-semibold text-on-surface">TileLink-UL 256b</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-primary font-medium">
+<span>to ADPT_TL_01 (CDC)</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</div>
+</div>
+</div>
+<!-- Block 3: Aux Accel V2 (Unresolved Hazard) -->
+<div class="p-3 bg-error-container/40 rounded shadow-sm relative">
+<div class="flex items-start justify-between pb-1.5 mb-1.5">
+<div>
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center gap-1">
+<span>Aux_Accel_V2</span>
+<span class="material-symbols-outlined text-[14px] text-error">warning</span>
+</div>
+<div class="font-code-sm text-code-sm text-error font-medium">Interface Model Missing / Unresolved</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-error-container text-error font-code-sm text-code-sm font-bold">UNRESOLVED</span>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col">
+<span class="text-[10px] text-outline uppercase font-semibold">Streaming Flit</span>
+<span class="font-semibold text-on-surface">Non-standard 64b</span>
+</div>
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-error font-semibold">
+<span>Protocol Mismatch</span>
+<span class="material-symbols-outlined text-[14px]">report_problem</span>
+</div>
+</div>
+</div>
+</div>
+<!-- CENTER ZONE: Synthesizable SROTA RTL Generation Scope (Cols 5-9) -->
+<div class="col-span-5 flex flex-col gap-3 p-3 bg-primary-fixed/20 rounded-md relative shadow-md">
+<div class="px-2 py-1 bg-primary text-on-primary rounded-xs flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider font-bold">RTL Generation Scope: Srota NoC Fabric & Adapters</span>
+<span class="font-code-sm text-code-sm bg-primary-container text-on-primary-container px-1 rounded font-semibold">Synthesizable SV</span>
+</div>
+<!-- Protocol Adapters Ingress Shims Row -->
+<div class="flex flex-col gap-1.5">
+<div class="font-label-md text-label-md text-primary font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">input</span>
+<span>Protocol Adapters (Ingress & Clock Domain Crossing)</span>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<!-- Selected Target Adapter: ADPT_AXI_00 -->
+<div class="p-2 rounded bg-surface-container-lowest shadow-md cursor-pointer transition-all">
+<div class="flex items-center justify-between pb-1">
+<span class="font-code-sm text-code-sm font-bold text-primary">ADPT_AXI_00</span>
+<span class="w-2 h-2 rounded-full bg-primary inline-block"></span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col gap-0.5">
+<div>AXI4 128b → Flit 128b</div>
+<div class="text-[10px] text-tertiary">Sync 1.4 GHz • 1 cyc lat</div>
+</div>
+</div>
+<!-- ADPT_TL_01 (CDC) -->
+<div class="p-2 rounded bg-surface-container-lowest shadow-sm hover:shadow transition-shadow cursor-pointer">
+<div class="flex items-center justify-between pb-1">
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">ADPT_TL_01 (CDC)</span>
+<span class="px-1 rounded bg-secondary-container text-on-secondary-container text-[9px] font-bold">CDC</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant flex flex-col gap-0.5">
+<div>TileLink 256b → Flit 128b</div>
+<div class="text-[10px] text-tertiary">1.0 GHz → 1.4 GHz (+2 cyc)</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Srota Interconnect Fabric Core Grid Representation -->
+<div class="p-3 bg-surface-container-lowest rounded shadow-sm flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<div>
+<div class="font-headline-sm text-headline-sm font-bold text-primary">Falcon8 4x4 2D-Mesh Interconnect</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">16 Routers • 128-bit Bi-directional Channels • 22.4 GB/s per port</div>
+</div>
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface font-semibold">1.40 GHz</span>
+</div>
+<!-- 4x4 Routers Matrix Representation -->
+<div class="grid grid-cols-4 gap-1.5 p-2 bg-surface-container-low rounded">
+<!-- Row 0 -->
+<div class="p-1 rounded bg-primary text-on-primary font-code-sm text-code-sm text-center font-bold flex flex-col justify-center items-center shadow-sm">
+<span>R_0_0</span>
+<span class="text-[9px] text-primary-fixed">Local AXI</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_0_1</span>
+<span class="text-[9px] text-outline">TL_01</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_0_2</span>
+<span class="text-[9px] text-outline">PE_2</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_0_3</span>
+<span class="text-[9px] text-outline">MC_0</span>
+</div>
+<!-- Row 1 -->
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_1_0</span>
+<span class="text-[9px] text-outline">PE_4</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_1_1</span>
+<span class="text-[9px] text-outline">Mesh</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_1_2</span>
+<span class="text-[9px] text-outline">Mesh</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_1_3</span>
+<span class="text-[9px] text-outline">MC_1</span>
+</div>
+<!-- Row 2 -->
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_2_0</span>
+<span class="text-[9px] text-outline">PE_5</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_2_1</span>
+<span class="text-[9px] text-outline">Mesh</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_2_2</span>
+<span class="text-[9px] text-outline">Mesh</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_2_3</span>
+<span class="text-[9px] text-outline">MC_2</span>
+</div>
+<!-- Row 3 -->
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_3_0</span>
+<span class="text-[9px] text-outline">PE_7</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_3_1</span>
+<span class="text-[9px] text-outline">Aux_2</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_3_2</span>
+<span class="text-[9px] text-outline">Conv2D</span>
+</div>
+<div class="p-1 rounded bg-surface-container-lowest font-code-sm text-code-sm text-center text-on-surface flex flex-col justify-center items-center">
+<span>R_3_3</span>
+<span class="text-[9px] text-outline">MC_3</span>
+</div>
+</div>
+<div class="flex items-center justify-between font-code-sm text-code-sm text-tertiary pt-1">
+<span>Routing: Dimension Order (XY)</span>
+<span>VC Alloc: 2 VCs/port (Credit-Based)</span>
+</div>
+</div>
+<!-- Egress Adapter Section -->
+<div class="p-2 rounded bg-surface-container-lowest shadow-sm flex items-center justify-between">
+<div class="font-code-sm text-code-sm">
+<span class="font-bold text-on-surface">ADPT_HBM_00 (Egress Shim)</span>
+<div class="text-[10px] text-tertiary">Flit 128b → AXI4-Slave 256b (Dual Channel CDC @ 800MHz)</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-primary-fixed text-primary font-code-sm text-code-sm font-semibold">RTL Gen</span>
+</div>
+</div>
+<!-- RIGHT ZONE: Memory Subsystem & PHY (Supplied IP) (Cols 10-12) -->
+<div class="col-span-3 flex flex-col gap-3">
+<div class="px-2 py-1 bg-surface-container-high rounded-xs flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Memory Subsystem</span>
+<span class="font-code-sm text-code-sm text-tertiary">Supplied IP & PHY</span>
+</div>
+<!-- HBM3 Controller Block -->
+<div class="p-3 bg-surface-container-low rounded shadow-sm hover:shadow-md transition-shadow relative">
+<div class="flex items-start justify-between pb-1.5 mb-1.5">
+<div>
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface">HBM3 Controller</div>
+<div class="font-code-sm text-code-sm text-tertiary">Vendor: Rambus / TSMC N5 Model</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-code-sm text-code-sm font-medium">800 MHz</span>
+</div>
+<div class="flex flex-col gap-1 font-code-sm text-code-sm text-on-surface-variant pt-1">
+<div class="flex justify-between">
+<span>Channels:</span>
+<span class="font-semibold text-on-surface">Dual CH0/CH1</span>
+</div>
+<div class="flex justify-between">
+<span>Bus Width:</span>
+<span class="font-semibold text-on-surface">AXI4-Slave 256b</span>
+</div>
+<div class="flex justify-between">
+<span>Peak Bandwidth:</span>
+<span class="font-semibold text-primary">819.2 GB/s</span>
+</div>
+</div>
+</div>
+<!-- Dual-Channel HBM3 PHY Block -->
+<div class="p-3 bg-surface-container-low rounded shadow-sm hover:shadow-md transition-shadow relative">
+<div class="flex items-start justify-between pb-1.5 mb-1.5">
+<div>
+<div class="font-headline-sm text-headline-sm font-semibold text-on-surface">HBM3 Physical PHY</div>
+<div class="font-code-sm text-code-sm text-tertiary">Hard Macro (CoWoS Interposer)</div>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface font-code-sm text-code-sm">Hard IP</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant leading-tight pt-1">
+                  16-Hi Stack compliant. DFI 5.0 interface connected directly to controller hard placement.
+                </div>
+</div>
+</div>
+</div>
+<!-- Signal Bus Latency & Width Annotation Overlay Footer -->
+<div class="mt-4 pt-2 flex items-center justify-between font-code-sm text-code-sm text-tertiary">
+<div class="flex items-center gap-4">
+<span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-primary"></span>Sync On-Chip Link (128b @ 1.4 GHz, 1 cyc)</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-secondary"></span>Clock Domain Crosser (+2 cyc CDC Handshake)</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-error"></span>Missing Port / Interface Mismatch</span>
+</div>
+<span>System Layout Canvas V2.4</span>
+</div>
+</div>
+</div>
+</section>
+<!-- RIGHT COLUMN: Selected Block & Adapter Inspector (340px) -->
+<aside class="w-80 flex-shrink-0 bg-surface-container-lowest flex flex-col justify-between shadow-sm">
+<div class="flex flex-col">
+<!-- Inspector Title Header -->
+<div class="p-space-xs bg-surface-container-high flex flex-col gap-0.5">
+<div class="flex items-center justify-between font-label-md text-label-md uppercase tracking-wider text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">tune</span>
+              Adapter Inspector
+            </span>
+<span class="font-code-sm text-code-sm bg-primary-fixed text-primary px-1 rounded font-bold">RTL Eligible</span>
+</div>
+<div class="font-code-sm text-code-sm text-primary font-bold">ADPT_AXI_00</div>
+<div class="font-code-sm text-code-sm text-tertiary">Ingress Protocol Shim (Core_0 → Router R_0_0)</div>
+</div>
+<!-- Scrollable Inspection Properties -->
+<div class="p-space-xs flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-320px)]">
+<!-- Provenance Badge Banner -->
+<div class="p-2 bg-surface-container-low rounded-sm shadow-sm flex flex-col gap-1">
+<div class="flex items-center justify-between font-code-sm text-code-sm">
+<span class="text-outline">Implementation:</span>
+<span class="font-semibold text-primary">Srota RTL Generator Eligible</span>
+</div>
+<div class="flex items-center justify-between font-code-sm text-code-sm">
+<span class="text-outline">Component Type:</span>
+<span class="font-medium text-on-surface">Hardware Interface Adapter</span>
+</div>
+</div>
+<!-- Configuration Parameters Matrix -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Configuration Parameters</span>
+<div class="flex flex-col gap-1 font-code-sm text-code-sm">
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Upstream Interface:</span>
+<span class="font-semibold text-on-surface">AXI4-Master 128b</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Address / ID Width:</span>
+<span class="font-semibold text-on-surface">40-bit Addr / 8-bit ID</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Downstream NoC:</span>
+<span class="font-semibold text-primary">Flit-Stream 128b + 16b Hdr</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Clock Domain:</span>
+<span class="font-semibold text-on-surface">Synchronous 1.400 GHz</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Packetization:</span>
+<span class="font-semibold text-on-surface">4-Flit Bursts (64B cacheline)</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Flow Control:</span>
+<span class="font-semibold text-on-surface">Credit-Back (Queue: 8)</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="text-on-surface-variant">Ingress Virtual Channels:</span>
+<span class="font-semibold text-on-surface">2 VCs (VC0:Req, VC1:Rsp)</span>
+</div>
+</div>
+</div>
+<!-- Hardware Boundary Synthesis Notice -->
+<div class="p-2 bg-secondary-container/40 rounded-sm shadow-sm flex flex-col gap-1">
+<span class="font-label-md text-label-md text-primary font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">info</span>
+              Generation Boundary Notice
+            </span>
+<p class="font-code-sm text-code-sm text-on-secondary-container leading-tight">
+              Generates clean synthesizable SystemVerilog module <code class="bg-surface-container-lowest px-1 rounded font-bold text-primary">srota_axi4_shim_128b.sv</code>. Upstream compute pipelines and downstream memory controller logic are not generated.
+            </p>
+</div>
+<!-- Port Compatibility Findings -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Port Compatibility Findings</span>
+<div class="flex flex-col gap-1 font-code-sm text-code-sm">
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[13px] text-primary">check_circle</span>
+<span>Bus Width Match (128b == 128b)</span>
+</span>
+<span class="text-primary font-bold">PASS</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[13px] text-primary">check_circle</span>
+<span>Protocol Parity (AXI4 → Flit)</span>
+</span>
+<span class="text-on-surface-variant font-medium">+1 cyc lat</span>
+</div>
+<div class="p-1.5 bg-surface-container-low rounded flex items-center justify-between">
+<span class="flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[13px] text-primary">check_circle</span>
+<span>Clock Boundary Matching</span>
+</span>
+<span class="text-primary font-bold">1:1 Sync</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Buttons Footer -->
+<div class="p-space-xs bg-surface-container-low flex flex-col gap-1">
+<button class="w-full h-6 px-2 flex items-center justify-center gap-1 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-code-sm text-code-sm shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px] text-outline">tune</span>
+<span>Edit Shim Parameters</span>
+</button>
+<button class="w-full h-6 px-2 flex items-center justify-center gap-1 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-code-sm text-code-sm shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px] text-primary">code</span>
+<span>View Generated Verilog Template</span>
+</button>
+<button class="w-full h-6 px-2 flex items-center justify-center gap-1 rounded bg-primary text-on-primary hover:bg-primary-container font-code-sm text-code-sm font-semibold shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px]">alt_route</span>
+<span>Trace to Router R_0_0</span>
+</button>
+</div>
+</aside>
+</div>
+</div>
+<script>
+  // Simple toggle for Generation Boundary visual feedback
+  document.getElementById('boundary-toggle')?.addEventListener('click', function() {
+    const activeDot = this.querySelector('.rounded-full');
+    if (activeDot) {
+      if (activeDot.classList.contains('bg-primary')) {
+        activeDot.classList.remove('bg-primary');
+        activeDot.classList.add('bg-outline');
+      } else {
+        activeDot.classList.remove('bg-outline');
+        activeDot.classList.add('bg-primary');
+      }
+    }
+  });
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-lowest border-t border-outline-variant z-50 px-gutter flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-sm"><span class="flex items-center gap-1 text-tertiary"><span class="material-symbols-outlined text-[14px] text-tertiary">warning</span>Problems: 0 Errors, 2 Warnings (Interface Mismatch)</span><span>|</span><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-primary">sync</span>Jobs: 1 running (Sim #403)</span><span>|</span><button class="hover:text-on-surface flex items-center gap-1" type="button"><span class="material-symbols-outlined text-[14px]">terminal</span>Console & Logs</button></div><div class="flex items-center gap-space-sm"><span>Workspace: <strong class="text-on-surface font-semibold">Design / Falcon8_NoC_Gen2</strong></span><span>|</span><span>Cycles: <strong class="text-on-surface font-mono">14,289,200</strong></span><span>|</span><span>Generation Scope: <strong class="text-on-surface">NoC Interconnect Only (Fabric + Adapters)</strong></span><span>|</span><span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-outline"></span>AI: Offline</span></div></footer></body></html>

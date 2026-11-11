@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-background": "#151c24", "on-primary-fixed-variant": "#004b71", "on-primary-fixed": "#001e30", "surface-container-highest": "#dce3ee", "on-primary": "#ffffff", "error": "#ba1a1a", "secondary-fixed-dim": "#b6c9d4", "surface-container-low": "#eef4ff", "background": "#f7f9ff", "primary-container": "#0f6c9e", "on-tertiary": "#ffffff", "primary-fixed": "#cbe6ff", "on-error-container": "#93000a", "secondary-container": "#d2e6f1", "tertiary-fixed": "#d8e4f2", "on-primary-container": "#d0e8ff", "inverse-primary": "#8fcdff", "on-error": "#ffffff", "on-surface-variant": "#40484f", "on-tertiary-fixed-variant": "#3d4853", "tertiary-fixed-dim": "#bcc8d5", "surface-container": "#e8eef9", "surface": "#f7f9ff", "outline-variant": "#c0c7d0", "surface-dim": "#d4dae5", "surface-bright": "#f7f9ff", "error-container": "#ffdad6", "primary": "#00537c", "on-secondary-container": "#546770", "surface-variant": "#dce3ee", "secondary": "#4e616a", "surface-container-lowest": "#ffffff", "inverse-surface": "#2a3139", "on-secondary-fixed-variant": "#374952", "inverse-on-surface": "#eaf1fc", "on-secondary-fixed": "#0a1e26", "on-tertiary-fixed": "#121d27", "on-surface": "#151c24", "on-secondary": "#ffffff", "tertiary": "#444f5a", "surface-tint": "#006494", "tertiary-container": "#5c6773", "outline": "#707880", "surface-container-high": "#e2e9f4", "on-tertiary-container": "#dae6f4", "primary-fixed-dim": "#8fcdff", "secondary-fixed": "#d2e6f1" }, "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, "spacing": { "margin": "0.5rem", "gutter": "0.5rem", "space-sm": "0.5rem", "space-xl": "1.5rem", "space-lg": "1rem", "space-xs": "0.25rem", "space-md": "0.75rem" }, "fontFamily": { "label-md": ["Inter"], "code-md": ["JetBrains Mono"], "body-md": ["Inter"], "body-sm": ["Inter"], "code-sm": ["JetBrains Mono"], "headline-lg": ["Inter"], "code-table": ["JetBrains Mono"], "headline-sm": ["Inter"], "headline-md": ["Inter"] }, "fontSize": { "label-md": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }], "code-md": ["12px", { "lineHeight": "16px", "fontWeight": "400" }], "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }], "code-sm": ["11px", { "lineHeight": "14px", "fontWeight": "400" }], "headline-lg": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600" }], "code-table": ["11px", { "lineHeight": "14px", "letterSpacing": "-0.02em", "fontWeight": "500" }], "headline-sm": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "600" }], "headline-md": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }] } } } };</script></head><body class="bg-background font-body-sm text-body-sm text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 h-10 bg-surface-container-lowest border-b border-surface-dim z-50 flex items-center justify-between px-space-md shadow-[0_1px_4px_rgba(0,0,0,0.03)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><div class="w-5 h-5 bg-primary-container text-on-primary flex items-center justify-center font-code-md text-code-sm font-semibold rounded">V</div><span class="font-label-md text-label-md font-bold tracking-wider text-on-surface uppercase">SROTA STUDIO</span><span class="text-outline-variant font-code-sm text-code-sm">/</span><span class="font-code-sm text-code-sm text-secondary font-medium">VERITX</span></div><div class="h-4 w-[1px] bg-surface-dim"></div><div class="flex items-center gap-space-xs bg-surface-container-low px-space-xs py-[2px] rounded border border-surface-dim"><span class="material-symbols-outlined text-[14px] text-primary">account_tree</span><span class="font-code-sm text-code-sm text-on-surface font-medium">Falcon8_NoC_Gen2</span><span class="material-symbols-outlined text-[12px] text-secondary">arrow_drop_down</span></div><div class="flex items-center gap-1 font-code-sm text-code-sm"><span class="bg-surface-container px-space-xs py-[1px] rounded text-on-surface-variant border border-surface-dim">rev: d7a4e9b</span><span class="text-[10px] text-primary bg-primary-fixed/40 px-1 py-[1px] rounded font-label-md text-label-md">draft modified</span></div></div><nav class="flex items-center h-full" data-active-classes="bg-primary-container text-on-primary font-semibold"><a class="h-full px-space-md flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" data-path="design" href="#">Design</a><a class="h-full px-space-md flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="h-full px-space-md flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" data-path="analysis" href="#">Analysis</a><a aria-current="page" class="h-full px-space-md flex items-center transition-colors bg-primary-container text-on-primary font-semibold" data-path="explore-workbench" href="#">Explore</a><a class="h-full px-space-md flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" data-path="verify" href="#">Verify</a><a class="h-full px-space-md flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-md font-code-sm text-code-sm"><div class="flex items-center gap-space-xs px-space-xs py-[2px] bg-surface-container rounded border border-surface-dim text-on-surface-variant cursor-pointer hover:bg-surface-container-high"><span class="material-symbols-outlined text-[13px]">search</span><span>Quick find</span><kbd class="bg-surface-container-lowest px-1 rounded text-[10px] text-secondary border border-surface-dim">⌘K</kbd></div><div class="flex items-center gap-1 text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>Daemon v2.4.1 (Local)</span></div><div class="flex items-center gap-1.5 px-space-xs py-[2px] bg-secondary-container/40 rounded border border-surface-dim text-on-surface"><span class="w-2 h-2 rounded-full border-2 border-primary border-t-transparent animate-spin"></span><span>SIM-403: 42%</span></div><div class="flex items-center gap-1 text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-primary">verified</span><span>DRC: Clean</span></div><span class="material-symbols-outlined text-[16px] text-secondary" title="Local EDA Sandbox">cloud_off</span><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><aside class="fixed left-0 top-10 bottom-6 w-72 bg-surface-container-lowest border-r border-surface-dim z-40 flex flex-col justify-between"><div class="flex flex-col flex-1 overflow-hidden"><div class="px-space-md py-space-xs bg-surface-container-low border-b border-surface-dim flex items-center justify-between"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px] text-primary">tune</span><span class="font-label-md text-label-md tracking-wider uppercase text-on-surface font-bold">Explore / Studies &amp; Sweeps</span></div><button class="p-0.5 hover:bg-surface-container-high rounded text-secondary"><span class="material-symbols-outlined text-[14px]">add</span></button></div><div class="flex-1 overflow-y-auto px-space-xs py-space-sm flex flex-col gap-space-sm"><div class="flex flex-col gap-[2px]"><div class="px-space-xs py-[3px] text-[10px] font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center justify-between"><span>Active Studies (2)</span><span class="material-symbols-outlined text-[12px]">expand_more</span></div><a class="group flex flex-col p-space-xs rounded bg-surface-container-low border border-primary/30 hover:border-primary" data-path="explore-workbench" href="#"><div class="flex items-center justify-between"><span class="font-code-sm text-code-sm font-semibold text-primary">STD-084: 4x4 Mesh VC &amp; Buffer Depth Sweep</span><span class="w-1.5 h-1.5 rounded-full bg-primary"></span></div><div class="flex items-center justify-between text-secondary font-code-sm text-[10px] mt-1"><span>14/20 evaluated</span><span class="text-primary font-medium">Running (SIM-403)</span></div></a><a class="group flex flex-col p-space-xs rounded hover:bg-surface-container border border-transparent" data-path="explore-workbench" href="#"><div class="flex items-center justify-between"><span class="font-code-sm text-code-sm font-medium text-on-surface">STD-082: Concentrator Radix Exploration</span><span class="material-symbols-outlined text-[12px] text-primary">check_circle</span></div><div class="flex items-center justify-between text-secondary font-code-sm text-[10px] mt-1"><span>32 evaluated</span><span class="text-on-surface font-medium">4 Met</span></div></a></div><div class="flex flex-col gap-[2px]"><div class="px-space-xs py-[3px] text-[10px] font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center justify-between"><span>Draft Briefs &amp; Templates</span><span class="material-symbols-outlined text-[12px]">expand_more</span></div><div class="p-space-xs rounded hover:bg-surface-container text-on-surface font-code-sm text-code-sm flex items-center gap-space-xs cursor-pointer"><span class="material-symbols-outlined text-[13px] text-secondary">draft</span><span class="truncate">BRF-085-DRAFT: Cross-Family Torus vs Mesh</span></div><div class="p-space-xs rounded hover:bg-surface-container text-on-surface font-code-sm text-code-sm flex items-center gap-space-xs cursor-pointer"><span class="material-symbols-outlined text-[13px] text-secondary">content_copy</span><span class="truncate">Brief Template: Iso-Latency Buffer Sweep</span></div></div><div class="flex flex-col gap-[2px]"><div class="px-space-xs py-[3px] text-[10px] font-label-md text-label-md uppercase tracking-wider text-secondary flex items-center justify-between"><span>Candidate Archives &amp; Adoptions</span><span class="material-symbols-outlined text-[12px]">chevron_right</span></div><div class="p-space-xs rounded hover:bg-surface-container text-secondary font-code-sm text-code-sm flex items-center justify-between cursor-pointer"><span>Adopted Candidates</span><span class="bg-surface-container-high px-1 rounded text-[10px]">1</span></div><div class="p-space-xs rounded hover:bg-surface-container text-secondary font-code-sm text-code-sm flex items-center justify-between cursor-pointer"><span>Rejected / Quarantined</span><span class="bg-surface-container-high px-1 rounded text-[10px]">4</span></div></div></div></div><div class="p-space-sm bg-surface-container-low border-t border-surface-dim flex flex-col gap-1 font-code-sm text-[10px] text-secondary"><div class="flex items-center justify-between font-label-md text-label-md text-on-surface"><span>Local Workstation Engine</span><span class="text-primary font-code-sm">ONLINE</span></div><div class="flex items-center justify-between"><span>Workers</span><span class="text-on-surface">4/4 Cores Alloc</span></div><div class="w-full bg-surface-dim h-1 rounded overflow-hidden"><div class="bg-primary h-full w-full"></div></div><div class="flex items-center justify-between pt-1"><span>RAM: 6.8 / 16.0 GB</span><span>NVMe: 420 MB / 2.0 GB</span></div></div></aside><div class="pl-72"><main class="relative pt-10 pb-6 w-full px-space-md min-h-screen bg-background"><div class="flex flex-col w-full">
+<!-- Top View & Study Context Ribbon -->
+<div class="bg-surface-container-lowest px-space-md py-space-sm mb-space-sm shadow-sm flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-secondary">
+<span>Explore</span>
+<span>/</span>
+<span>Studies</span>
+<span>/</span>
+<span class="font-semibold text-on-surface">STD-084: 4x4 Mesh VC &amp; Buffer Depth Sweep</span>
+<span class="bg-primary/10 text-primary px-space-xs py-[1px] font-label-md text-label-md uppercase">Active Study</span>
+<span class="bg-surface-container text-on-surface-variant px-space-xs py-[1px] font-code-sm text-[10px]">BRF-084.v2</span>
+</div>
+<!-- Scope Expansion Flag (Pending Review) -->
+<div class="flex items-center gap-space-xs bg-error-container/40 text-on-error-container px-space-xs py-[2px] font-label-md text-label-md cursor-pointer hover:bg-error-container/60 transition-colors" onclick="switchInspectorTab('tab-scope')">
+<span class="material-symbols-outlined text-[13px] text-error">priority_high</span>
+<span>Scope Expansion Requested (Pending Human Review)</span>
+</div>
+</div>
+<!-- Navigation Sub-views and Quick Actions -->
+<div class="flex items-center justify-between pt-space-xs">
+<div class="flex items-center gap-space-sm">
+<a class="px-space-xs py-[3px] font-label-md text-label-md text-secondary hover:text-on-surface" href="#">Study Overview &amp; Brief</a>
+<a class="px-space-xs py-[3px] font-label-md text-label-md text-on-primary bg-primary font-semibold" href="#">Study Execution &amp; Budgets</a>
+<a class="px-space-xs py-[3px] font-label-md text-label-md text-secondary hover:text-on-surface" href="#">Candidate Matrix &amp; Pareto</a>
+<a class="px-space-xs py-[3px] font-label-md text-label-md text-secondary hover:text-on-surface" href="#">Artifacts &amp; Logs</a>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-secondary mr-space-xs">
+          State: <span class="text-primary font-semibold">Running</span> (14 Evaluated, 2 Running, 4 Queued / 20 Max)
+        </span>
+<button class="h-6 px-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md transition-colors">
+          Stop Launching New Candidates
+        </button>
+<button class="h-6 px-space-xs bg-surface-container hover:bg-surface-container-high text-error font-label-md text-label-md transition-colors">
+          Cancel Pending Queue
+        </button>
+<a class="h-6 px-space-xs bg-surface-container-low hover:bg-surface-container-high text-primary flex items-center gap-1 font-label-md text-label-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[12px]">description</span>
+<span>Inspect Brief (BRF-084.v2)</span>
+</a>
+</div>
+</div>
+</div>
+<!-- Analytical KPI & Budget Execution Telemetry Grid -->
+<div class="grid grid-cols-4 gap-space-sm mb-space-sm">
+<!-- Card 1: Candidate Progress & Outcomes -->
+<div class="bg-surface-container-lowest p-space-sm shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-secondary mb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider">Candidate Progress &amp; Outcomes</span>
+<span class="font-code-sm text-code-sm text-on-surface font-bold">14 / 20 Evaluated</span>
+</div>
+<!-- Progress bar segments -->
+<div class="w-full bg-surface-container h-2 mb-space-xs flex overflow-hidden">
+<div class="bg-primary h-full" style="width: 15%" title="3 Met Requirements (15%)"></div>
+<div class="bg-secondary h-full" style="width: 45%" title="9 Violated Requirements (45%)"></div>
+<div class="bg-outline-variant h-full" style="width: 10%" title="2 Inconclusive / Missing Trace (10%)"></div>
+<div class="bg-primary-fixed-dim h-full animate-pulse" style="width: 10%" title="2 Running (10%)"></div>
+<div class="bg-surface-container-high h-full" style="width: 20%" title="4 Queued (20%)"></div>
+</div>
+<div class="grid grid-cols-3 gap-1 font-code-sm text-[10px] text-secondary">
+<div class="bg-surface-container-low px-1 py-[2px]"><span class="font-bold text-primary">3</span> Met</div>
+<div class="bg-surface-container-low px-1 py-[2px]"><span class="font-bold text-on-surface">9</span> Violated</div>
+<div class="bg-surface-container-low px-1 py-[2px]"><span class="font-bold text-secondary">2</span> Inconcl.</div>
+</div>
+</div>
+<div class="mt-space-xs pt-space-xs bg-surface-container-low/60 px-space-xs py-[2px] text-[10px] text-on-surface-variant font-body-sm">
+        Candidate validation, simulation execution, and requirement satisfaction are independent states.
+      </div>
+</div>
+<!-- Card 2: Execution Wall-Clock & Worker Time -->
+<div class="bg-surface-container-lowest p-space-sm shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-secondary mb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider">Wall-Clock &amp; Worker Time</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">~18m Est. Rem</span>
+</div>
+<div class="flex items-baseline justify-between mb-1">
+<div>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">48m 22s</span>
+<span class="font-code-sm text-code-sm text-secondary"> / 1h 30m max</span>
+</div>
+<span class="font-code-sm text-[11px] text-secondary">53.7% Wall</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 mb-2 overflow-hidden">
+<div class="bg-primary h-full" style="width: 53.7%"></div>
+</div>
+<div class="font-code-sm text-[10px] text-secondary flex justify-between">
+<span>Worker CPU Sum: <strong class="text-on-surface">3h 13m 28s</strong></span>
+<span>4 Cores @ 1.4 GHz</span>
+</div>
+</div>
+<div class="mt-space-xs text-[10px] font-code-sm text-secondary">
+        Avg Job: 4.5m / eval | SIM-405, SIM-406 active
+      </div>
+</div>
+<!-- Card 3: Resource & Storage Budget -->
+<div class="bg-surface-container-lowest p-space-sm shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-secondary mb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider">Resource &amp; Storage Budget</span>
+<span class="font-code-sm text-code-sm text-on-surface">486.4 MB / 1.0 GB</span>
+</div>
+<div class="flex items-baseline justify-between mb-1">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">48.6%</span>
+<span class="font-code-sm text-[10px] text-secondary">Trimmed Trace Policy</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 mb-2 overflow-hidden">
+<div class="bg-primary-container h-full" style="width: 48.6%"></div>
+</div>
+<div class="font-code-sm text-[10px] text-secondary flex justify-between">
+<span>RAM Allocation: <strong class="text-on-surface">6.2 / 8.0 GB</strong></span>
+<span>Cost: <strong class="text-primary">$0.00</strong> (Local)</span>
+</div>
+</div>
+<div class="mt-space-xs text-[10px] font-code-sm text-on-surface-variant flex items-center justify-between">
+<span>Raw flit trace trimming active</span>
+<span class="bg-surface-container px-1 rounded text-primary">DRC Safe</span>
+</div>
+</div>
+<!-- Card 4: Budget Policy & Enforcement -->
+<div class="bg-surface-container-lowest p-space-sm shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-secondary mb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider">Policy Enforcement</span>
+<span class="material-symbols-outlined text-[14px] text-primary">security</span>
+</div>
+<div class="font-headline-sm text-headline-sm text-on-surface font-semibold mb-1">
+          Hard Stop Guardrails
+        </div>
+<div class="font-code-sm text-code-sm text-secondary space-y-1">
+<div class="flex justify-between">
+<span>Candidate Limit:</span>
+<span class="text-on-surface font-medium">20 Max</span>
+</div>
+<div class="flex justify-between">
+<span>Storage Ceiling:</span>
+<span class="text-on-surface font-medium">1.0 GB NVMe</span>
+</div>
+</div>
+</div>
+<div class="mt-space-xs bg-surface-container-low px-space-xs py-[3px] text-[10px] font-code-sm text-primary flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Enforcing brief limits. No automatic expansion.</span>
+</div>
+</div>
+</div>
+<!-- Main View Splitter: Left Table Ledger & Multi-Dimensional Status, Right Contextual Inspector -->
+<div class="grid grid-cols-12 gap-space-sm items-start">
+<!-- Left/Center Pane: Study Candidates Ledger (Col 8) -->
+<div class="col-span-8 bg-surface-container-lowest shadow-sm flex flex-col">
+<!-- Ledger Header & Filter Controls -->
+<div class="p-space-sm bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-space-md">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold">Study Candidates Ledger</span>
+<div class="flex items-center gap-1 bg-surface-container-lowest px-1 py-[2px] font-code-sm text-[11px]">
+<span class="material-symbols-outlined text-[13px] text-secondary">filter_list</span>
+<button class="px-1.5 py-[1px] bg-primary text-on-primary font-medium">All (20)</button>
+<button class="px-1.5 py-[1px] text-secondary hover:text-on-surface">Running (2)</button>
+<button class="px-1.5 py-[1px] text-secondary hover:text-on-surface">Met (3)</button>
+<button class="px-1.5 py-[1px] text-secondary hover:text-on-surface">Violated (9)</button>
+<button class="px-1.5 py-[1px] text-secondary hover:text-on-surface">Inconcl. (2)</button>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<div class="flex items-center bg-surface-container-lowest px-2 py-[2px] text-secondary font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[13px] mr-1">search</span>
+<input class="bg-transparent border-0 outline-none text-on-surface w-44 font-code-sm text-code-sm" placeholder="Filter candidate, revision, VC..." type="text"/>
+</div>
+<button class="h-6 px-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">
+            Matrix View
+          </button>
+</div>
+</div>
+<!-- Candidate Data Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left font-code-table text-code-table">
+<thead class="bg-surface-container text-secondary text-[10px] uppercase tracking-wider">
+<tr>
+<th class="py-space-xs px-space-sm">Candidate ID</th>
+<th class="py-space-xs px-space-xs">Isolated Rev</th>
+<th class="py-space-xs px-space-xs">Dimensions (VC / Depth / Arb)</th>
+<th class="py-space-xs px-space-xs">Sim Ref</th>
+<th class="py-space-xs px-space-xs">REQ-LAT-04 (≤25ns)</th>
+<th class="py-space-xs px-space-xs">REQ-THR-02 (≥18GB/s)</th>
+<th class="py-space-xs px-space-xs">Artifacts</th>
+<th class="py-space-xs px-space-sm text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-highest">
+<!-- Row 1: CND-011 Selected / MET -->
+<tr class="bg-secondary-container/30 hover:bg-secondary-container/50 cursor-pointer transition-colors" onclick="selectCandidate('CND-011')">
+<td class="py-space-xs px-space-sm font-semibold text-primary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>CND-011</span>
+<span class="bg-primary/10 text-primary px-1 text-[9px] font-bold">MET</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant font-medium">d7a4e9b-cnd11</td>
+<td class="py-space-xs px-space-xs text-on-surface">4 VC / 8 flits / iSLIP</td>
+<td class="py-space-xs px-space-xs text-secondary">SIM-402</td>
+<td class="py-space-xs px-space-xs text-primary font-semibold">22.4 ns (MET)</td>
+<td class="py-space-xs px-space-xs text-primary font-semibold">21.1 GB/s (MET)</td>
+<td class="py-space-xs px-space-xs">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[13px] hover:text-primary" title="Latency Histogram CSV">bar_chart</span>
+<span class="material-symbols-outlined text-[13px] hover:text-primary" title="Flit Routing Matrix">hub</span>
+<span class="material-symbols-outlined text-[13px] hover:text-primary" title="Link Utilization">timeline</span>
+</div>
+</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-primary-container text-on-primary font-label-md text-label-md">Inspect</button>
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">Adopt...</button>
+</td>
+</tr>
+<!-- Row 2: CND-015 RUNNING -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-015')">
+<td class="py-space-xs px-space-sm font-semibold text-on-surface flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+<span>CND-015</span>
+<span class="bg-primary-fixed-dim/40 text-primary px-1 text-[9px] font-bold">RUNNING</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd15</td>
+<td class="py-space-xs px-space-xs text-on-surface">8 VC / 16 flits / iSLIP</td>
+<td class="py-space-xs px-space-xs text-primary">SIM-405 (68%)</td>
+<td class="py-space-xs px-space-xs text-secondary italic">In progress...</td>
+<td class="py-space-xs px-space-xs text-secondary italic">In progress...</td>
+<td class="py-space-xs px-space-xs text-secondary">Streaming...</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">Attach Tail</button>
+</td>
+</tr>
+<!-- Row 3: CND-016 RUNNING -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-016')">
+<td class="py-space-xs px-space-sm font-semibold text-on-surface flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+<span>CND-016</span>
+<span class="bg-primary-fixed-dim/40 text-primary px-1 text-[9px] font-bold">RUNNING</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd16</td>
+<td class="py-space-xs px-space-xs text-on-surface">8 VC / 4 flits / RoundRobin</td>
+<td class="py-space-xs px-space-xs text-primary">SIM-406 (12%)</td>
+<td class="py-space-xs px-space-xs text-secondary italic">In progress...</td>
+<td class="py-space-xs px-space-xs text-secondary italic">In progress...</td>
+<td class="py-space-xs px-space-xs text-secondary">Streaming...</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">Attach Tail</button>
+</td>
+</tr>
+<!-- Row 4: CND-014 VIOLATED -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-014')">
+<td class="py-space-xs px-space-sm font-semibold text-secondary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span>CND-014</span>
+<span class="bg-error-container text-error px-1 text-[9px] font-bold">VIOLATED</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd14</td>
+<td class="py-space-xs px-space-xs text-on-surface">2 VC / 4 flits / RoundRobin</td>
+<td class="py-space-xs px-space-xs text-secondary">SIM-404</td>
+<td class="py-space-xs px-space-xs text-error font-medium">27.2 ns (VIOL)</td>
+<td class="py-space-xs px-space-xs text-error font-medium">15.9 GB/s (VIOL)</td>
+<td class="py-space-xs px-space-xs">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[13px] hover:text-primary">bar_chart</span>
+<span class="material-symbols-outlined text-[13px] hover:text-primary">hub</span>
+</div>
+</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-secondary font-label-md text-label-md">Diff</button>
+</td>
+</tr>
+<!-- Row 5: CND-010 MET -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-010')">
+<td class="py-space-xs px-space-sm font-semibold text-primary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>CND-010</span>
+<span class="bg-primary/10 text-primary px-1 text-[9px] font-bold">MET</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd10</td>
+<td class="py-space-xs px-space-xs text-on-surface">4 VC / 16 flits / iSLIP</td>
+<td class="py-space-xs px-space-xs text-secondary">SIM-401</td>
+<td class="py-space-xs px-space-xs text-primary font-medium">21.8 ns (MET)</td>
+<td class="py-space-xs px-space-xs text-primary font-medium">20.4 GB/s (MET)</td>
+<td class="py-space-xs px-space-xs">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[13px] hover:text-primary">bar_chart</span>
+<span class="material-symbols-outlined text-[13px] hover:text-primary">hub</span>
+<span class="material-symbols-outlined text-[13px] hover:text-primary">timeline</span>
+</div>
+</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">Inspect</button>
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md">Adopt...</button>
+</td>
+</tr>
+<!-- Row 6: CND-009 VIOLATED -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-009')">
+<td class="py-space-xs px-space-sm font-semibold text-secondary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span>CND-009</span>
+<span class="bg-error-container text-error px-1 text-[9px] font-bold">VIOLATED</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd09</td>
+<td class="py-space-xs px-space-xs text-on-surface">2 VC / 8 flits / RoundRobin</td>
+<td class="py-space-xs px-space-xs text-secondary">SIM-400</td>
+<td class="py-space-xs px-space-xs text-error font-medium">28.6 ns (VIOL)</td>
+<td class="py-space-xs px-space-xs text-error font-medium">16.2 GB/s (VIOL)</td>
+<td class="py-space-xs px-space-xs">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[13px] hover:text-primary">bar_chart</span>
+</div>
+</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-secondary font-label-md text-label-md">Diff</button>
+</td>
+</tr>
+<!-- Row 7: CND-008 INCONCLUSIVE -->
+<tr class="hover:bg-surface-container-low transition-colors" onclick="selectCandidate('CND-008')">
+<td class="py-space-xs px-space-sm font-semibold text-secondary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span>CND-008</span>
+<span class="bg-surface-container-high text-secondary px-1 text-[9px] font-bold">INCONCL.</span>
+</td>
+<td class="py-space-xs px-space-xs text-on-surface-variant">d7a4e9b-cnd08</td>
+<td class="py-space-xs px-space-xs text-on-surface">8 VC / 8 flits / iSLIP</td>
+<td class="py-space-xs px-space-xs text-secondary">SIM-398</td>
+<td class="py-space-xs px-space-xs text-secondary">Truncated</td>
+<td class="py-space-xs px-space-xs text-secondary">Missing Trace</td>
+<td class="py-space-xs px-space-xs">
+<span class="material-symbols-outlined text-[13px] text-error" title="Early stop triggered">warning</span>
+</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-secondary font-label-md text-label-md">Re-run</button>
+</td>
+</tr>
+<!-- Row 8: CND-017 QUEUED -->
+<tr class="opacity-60 bg-surface-container/20">
+<td class="py-space-xs px-space-sm text-secondary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span>CND-017</span>
+<span class="text-[9px] font-bold">QUEUED</span>
+</td>
+<td class="py-space-xs px-space-xs text-secondary">d7a4e9b-cnd17</td>
+<td class="py-space-xs px-space-xs text-secondary">4 VC / 4 flits / iSLIP</td>
+<td class="py-space-xs px-space-xs text-secondary">Pending Worker 3</td>
+<td class="py-space-xs px-space-xs text-secondary">-</td>
+<td class="py-space-xs px-space-xs text-secondary">-</td>
+<td class="py-space-xs px-space-xs text-secondary">-</td>
+<td class="py-space-xs px-space-sm text-right space-x-1">
+<button class="px-1.5 py-[1px] bg-surface-container hover:bg-surface-container-high text-secondary font-label-md text-label-md">Prioritize</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Ledger Footer Pagination & Micro-stats -->
+<div class="px-space-sm py-space-xs bg-surface-container-low flex items-center justify-between font-code-sm text-code-sm text-secondary">
+<div class="flex items-center gap-space-sm">
+<span>Showing 8 of 20 Candidates</span>
+<span class="text-on-surface-variant font-medium">Backend: BookSim2 Qualified | Srota RTL: Pending RTL Stub</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-2 py-[1px] bg-surface-container text-on-surface hover:bg-surface-container-high">Prev</button>
+<span class="px-2 text-on-surface font-semibold">1 / 3</span>
+<button class="px-2 py-[1px] bg-surface-container text-on-surface hover:bg-surface-container-high">Next</button>
+</div>
+</div>
+</div>
+<!-- Right Pane: Contextual Inspector (Col 4) -->
+<div class="col-span-4 bg-surface-container-lowest shadow-sm flex flex-col">
+<!-- Tabs for Inspector Pane -->
+<div class="bg-surface-container flex items-center justify-between px-space-xs">
+<div class="flex">
+<button class="px-space-xs py-space-xs font-label-md text-label-md text-on-surface font-bold bg-surface-container-lowest flex items-center gap-1" id="btn-tab-scope" onclick="switchInspectorTab('tab-scope')">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span>Expansion Req</span>
+</button>
+<button class="px-space-xs py-space-xs font-label-md text-label-md text-secondary hover:text-on-surface flex items-center gap-1" id="btn-tab-cand" onclick="switchInspectorTab('tab-cand')">
+<span>CND-011 Detail</span>
+</button>
+<button class="px-space-xs py-space-xs font-label-md text-label-md text-secondary hover:text-on-surface flex items-center gap-1" id="btn-tab-audit" onclick="switchInspectorTab('tab-audit')">
+<span>Audit Events</span>
+</button>
+</div>
+<span class="material-symbols-outlined text-[14px] text-secondary">dock_to_left</span>
+</div>
+<!-- TAB 1: Scope Expansion Request (Active by default) -->
+<div class="p-space-sm flex flex-col gap-space-sm" id="tab-scope">
+<div class="bg-error-container/30 p-space-xs flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-error mt-[1px]">warning</span>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-error-container font-bold uppercase">Pending Engineer Sign-Off</span>
+<span class="font-body-sm text-body-sm text-on-surface">Exploration optimizer has requested a scope expansion to exceed approved Brief BRF-084.v2 parameters.</span>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md uppercase text-secondary">Optimizer Justification</span>
+<p class="font-body-sm text-body-sm text-on-surface bg-surface-container-low p-space-xs leading-relaxed">
+            "Gradient analysis across evaluated runs [CND-001..CND-014] indicates latency curve flattening between 6 and 8 VCs. To locate true saturation elbow for ResNet50_Burst workloads, expanding VC space to 12 &amp; 16 VCs is recommended. Requires 10 additional candidate runs."
+          </p>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md uppercase text-secondary">Proposed Delta Against Budget</span>
+<div class="bg-surface-container-low font-code-sm text-code-sm p-space-xs flex flex-col gap-1">
+<div class="flex justify-between py-[1px]">
+<span class="text-secondary">Candidate Count:</span>
+<span><span class="text-on-surface">20</span> → <strong class="text-primary">30 candidates</strong> (+10)</span>
+</div>
+<div class="flex justify-between py-[1px]">
+<span class="text-secondary">Search Dimension:</span>
+<span>VCs [2..8] → <strong class="text-on-surface">[2..16]</strong></span>
+</div>
+<div class="flex justify-between py-[1px]">
+<span class="text-secondary">Wall-Clock Max:</span>
+<span>1h 30m → <strong class="text-on-surface">2h 15m</strong> (+45m)</span>
+</div>
+<div class="flex justify-between py-[1px]">
+<span class="text-secondary">NVMe Storage Ceiling:</span>
+<span>1.0 GB → <strong class="text-on-surface">1.5 GB</strong> (+500 MB)</span>
+</div>
+</div>
+</div>
+<div class="p-space-xs bg-surface-container text-[11px] font-body-sm text-on-surface-variant">
+<strong>Policy Constraint:</strong> Rejecting expansion leaves current 20-candidate run intact under BRF-084.v2. No jobs will execute outside verified budget bounds.
+        </div>
+<div class="flex flex-col gap-space-xs pt-space-xs">
+<button class="w-full py-1.5 px-space-xs bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md font-semibold flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px]">check</span>
+<span>Approve Scope Expansion (Creates BRF-084.v3)</span>
+</button>
+<button class="w-full py-1.5 px-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md transition-colors">
+            Reject Expansion &amp; Continue Within Scope
+          </button>
+</div>
+</div>
+<!-- TAB 2: Candidate Inspector (CND-011) -->
+<div class="p-space-sm hidden flex-col gap-space-sm" id="tab-cand">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface">CND-011</span>
+<span class="bg-primary/10 text-primary px-space-xs py-[1px] font-label-md text-label-md">MET CRITERIA</span>
+</div>
+<span class="font-code-sm text-code-sm text-secondary">d7a4e9b-cnd11</span>
+</div>
+<div class="bg-surface-container-low p-space-xs font-code-sm text-code-sm flex flex-col gap-1">
+<div class="text-secondary text-[10px] uppercase font-bold">Parameters Configuration</div>
+<div class="flex justify-between">
+<span class="text-secondary">VCs per Router Port:</span>
+<span class="font-semibold text-on-surface">4 Virtual Channels</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Buffer Depth / VC:</span>
+<span class="font-semibold text-on-surface">8 Flits</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Switch Allocator:</span>
+<span class="font-semibold text-on-surface">iSLIP (2 Iterations)</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Simulated Workload:</span>
+<span class="font-semibold text-on-surface">ResNet50_Burst [w12]</span>
+</div>
+</div>
+<!-- Latency distribution mini spark chart -->
+<div class="bg-surface-container-low p-space-xs flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-label-md text-label-md uppercase text-secondary">Flit Latency Distribution</span>
+<span class="font-code-sm text-[10px] text-primary">P99: 22.4 ns (Target ≤25 ns)</span>
+</div>
+<svg class="w-full h-12 text-primary" fill="none" viewbox="0 0 200 40">
+<path d="M 0 38 Q 40 38, 70 30 T 110 8 T 130 20 T 160 36 L 200 38" fill="none" stroke="currentColor" stroke-width="1.5"></path>
+<line stroke="#ba1a1a" stroke-dasharray="2,2" stroke-width="1" x1="140" x2="140" y1="0" y2="40"></line>
+<text fill="#ba1a1a" font-family="JetBrains Mono" font-size="6" x="142" y="10">25ns Limit</text>
+</svg>
+</div>
+<div class="bg-surface-container-low p-space-xs font-code-sm text-code-sm flex flex-col gap-1">
+<div class="text-secondary text-[10px] uppercase font-bold">Requirement Satisfactions</div>
+<div class="flex items-center justify-between text-primary">
+<span>REQ-LAT-04 (P99 Latency ≤ 25ns)</span>
+<span class="font-bold">22.4 ns [MET]</span>
+</div>
+<div class="flex items-center justify-between text-primary">
+<span>REQ-THR-02 (Ingress ≥ 18.0 GB/s)</span>
+<span class="font-bold">21.1 GB/s [MET]</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs text-[11px] font-body-sm text-on-surface-variant flex items-start gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary mt-0.5">info</span>
+<span>This candidate is an isolated study object. Adopting will create a new draft branch and will NOT overwrite active design d7a4e9b.</span>
+</div>
+<div class="flex gap-space-xs pt-space-xs">
+<button class="flex-1 py-1 px-space-xs bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md font-semibold transition-colors">
+            Adopt to New Draft Branch
+          </button>
+<button class="py-1 px-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md transition-colors">
+            Diff Baseline
+          </button>
+</div>
+</div>
+<!-- TAB 3: Audit Activity Feed -->
+<div class="p-space-sm hidden flex-col gap-space-xs font-code-sm text-code-sm" id="tab-audit">
+<div class="flex items-center justify-between text-secondary mb-1">
+<span class="font-label-md text-label-md uppercase">Execution Audit Events</span>
+<span class="text-[10px]">Local Daemon Sync</span>
+</div>
+<div class="space-y-space-xs">
+<div class="bg-surface-container-low p-space-xs flex flex-col">
+<div class="flex items-center justify-between text-secondary text-[10px]">
+<span>14:28:10</span>
+<span class="text-error font-medium">SIM-404 Complete</span>
+</div>
+<span class="text-on-surface mt-0.5">Candidate CND-014 completed evaluation. REQ-LAT-04 Violated (27.2 ns).</span>
+</div>
+<div class="bg-surface-container-low p-space-xs flex flex-col">
+<div class="flex items-center justify-between text-secondary text-[10px]">
+<span>14:26:02</span>
+<span class="text-primary font-medium">Job Spawned</span>
+</div>
+<span class="text-on-surface mt-0.5">Job SIM-405 spawned for candidate CND-015 on Worker 1.</span>
+</div>
+<div class="bg-surface-container-low p-space-xs flex flex-col">
+<div class="flex items-center justify-between text-secondary text-[10px]">
+<span>14:22:15</span>
+<span class="text-on-surface font-medium">Storage Guardrail Check</span>
+</div>
+<span class="text-on-surface mt-0.5">Storage monitor check: 486.4 MB / 1000 MB (Normal, within bounds).</span>
+</div>
+<div class="bg-surface-container-low p-space-xs flex flex-col">
+<div class="flex items-center justify-between text-secondary text-[10px]">
+<span>14:15:30</span>
+<span class="text-primary font-medium">Scope Proposal</span>
+</div>
+<span class="text-on-surface mt-0.5">Scope-expansion proposal submitted by local search optimizer. Awaiting engineer sign-off.</span>
+</div>
+<div class="bg-surface-container-low p-space-xs flex flex-col">
+<div class="flex items-center justify-between text-secondary text-[10px]">
+<span>13:45:00</span>
+<span class="text-on-surface font-medium">Study Launched</span>
+</div>
+<span class="text-on-surface mt-0.5">Study STD-084 launched with approved Brief BRF-084.v2 (Author: Engineering User).</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+    function switchInspectorTab(tabId) {
+      document.getElementById('tab-scope').classList.add('hidden');
+      document.getElementById('tab-scope').classList.remove('flex');
+      document.getElementById('tab-cand').classList.add('hidden');
+      document.getElementById('tab-cand').classList.remove('flex');
+      document.getElementById('tab-audit').classList.add('hidden');
+      document.getElementById('tab-audit').classList.remove('flex');
+
+      document.getElementById('btn-tab-scope').className = 'px-space-xs py-space-xs font-label-md text-label-md text-secondary hover:text-on-surface flex items-center gap-1';
+      document.getElementById('btn-tab-cand').className = 'px-space-xs py-space-xs font-label-md text-label-md text-secondary hover:text-on-surface flex items-center gap-1';
+      document.getElementById('btn-tab-audit').className = 'px-space-xs py-space-xs font-label-md text-label-md text-secondary hover:text-on-surface flex items-center gap-1';
+
+      var target = document.getElementById(tabId);
+      target.classList.remove('hidden');
+      target.classList.add('flex');
+
+      if (tabId === 'tab-scope') {
+        document.getElementById('btn-tab-scope').className = 'px-space-xs py-space-xs font-label-md text-label-md text-on-surface font-bold bg-surface-container-lowest flex items-center gap-1';
+      } else if (tabId === 'tab-cand') {
+        document.getElementById('btn-tab-cand').className = 'px-space-xs py-space-xs font-label-md text-label-md text-on-surface font-bold bg-surface-container-lowest flex items-center gap-1';
+      } else if (tabId === 'tab-audit') {
+        document.getElementById('btn-tab-audit').className = 'px-space-xs py-space-xs font-label-md text-label-md text-on-surface font-bold bg-surface-container-lowest flex items-center gap-1';
+      }
+    }
+
+    function selectCandidate(candidateId) {
+      switchInspectorTab('tab-cand');
+    }
+  </script>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container border-t border-surface-dim z-50 flex items-center justify-between px-space-md font-code-table text-code-table text-on-surface-variant"><div class="flex items-center gap-space-md"><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary">memory</span><span class="font-medium text-on-surface">BookSim2 v2.1.0-alpha</span></div><div class="h-3 w-[1px] bg-outline-variant"></div><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px] text-primary">sync</span><span>Job: SIM-403 Running</span></div><div class="h-3 w-[1px] bg-outline-variant"></div><span>Violations: 0</span><span>Lint: 1 Note</span><button class="flex items-center gap-1 hover:text-on-surface"><span class="material-symbols-outlined text-[13px]">terminal</span><span>Console &amp; Execution Logs</span></button></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-1 bg-surface-dim px-space-xs py-[1px] rounded text-error font-medium"><span class="material-symbols-outlined text-[12px]">info</span><span>Illustrative Sample Data</span></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[13px]">smart_toy</span><span>AI Assistant: Offline (Closed)</span></div></div></footer></body></html>

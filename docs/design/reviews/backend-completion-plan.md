@@ -14,9 +14,15 @@
 
 A real failure discovered during testing was fixed: HTTP 200 does not imply compilation success. `UNSUPPORTED` compilation results now show the refusal instead of appearing successful. The real workload requires 72 endpoint seats; a 4×4 mesh was correctly refused, and the successful test used a 9×9 mesh.
 
+## Runtime closure update
+
+10. **Optional general agent runtime:** `/agents/capabilities` reports an OpenAI-compatible server transport or owner-approved ACP-v1 stdio transport. Chat is memory-only and tool-free; draft context is opt-in and hash-pinned. Workload translation returns a schema-validated, non-executed proposal; only workload/compute sections can be changed, while source references and all other design intent are preserved. Adoption is explicit, hash-pinned, revalidated under the store lock, and archives the displaced draft. Tests cover consent, stale hashes, denied ACP tool/permission requests, timeout/termination, private-thought exclusion, invalid proposals, and adoption. The ACP subprocess is **not OS-sandboxed**; enabling it requires explicit owner trust and must only use a suitably isolated local runtime.
+11. **Job events and artifact bytes:** bounded job-state SSE and log SSE endpoints exist; these are records/logs, not backend console capture. Original artifact downloads validate manifest path/size/digest and the browser verifies returned bytes against digest metadata. Injection trace decoding is limited to the supported recorded formats.
+12. **Restart and store preservation:** gateway was restarted after confirming no active jobs. All 26 project IDs present after the browser suite were preserved; no disposable `prototype-smoke-*` project remains. The restarted gateway reports `stale=false`.
+
 ## Remaining — not represented as complete
 
-- **Real-model verification:** blocked on missing `VERITX_AI_BASE_URL`/`VERITX_AI_MODEL` credentials; the local mock covers the contract, not a live provider.
+- **Real-model verification:** blocked on owner configuration and policy approval. The currently configured runtime is unconfigured; no confidential project data was sent externally. ACP requires explicit process trust and does not itself provide an OS sandbox.
 - **Hardware outputs:** RTL generation, ASIC/FPGA implementation, target qualification, and physical signoff remain separate engineering capabilities, not implied by manifest export.
 
 ## Reproducible checks
@@ -33,6 +39,6 @@ VERITX_LIVE_TEST=1 npm --prefix apps/studio/prototype run test:e2e -- tests/live
 cd tracks/t3-topology/dse && python -m pytest tests/test_prototype_backend_closure.py tests/test_agent_runtime_closure.py tests/test_ai_provider_mock.py -q
 ```
 
-Final result: build passed; **24 unit tests and 33 browser tests passed** (1 live test skipped without the opt-in flag), plus **16 backend closure tests**. With the live test enabled the store returned to **18 projects**, with no disposable projects remaining.
+Latest verification: frontend build passed; **134 unit tests passed**. The broad browser suite had **62 passed, 2 failed, and 12 skipped**. The failures are stale expectations in `tests/intent-workspace.spec.ts` (expects an old `Engineering decision loop` navigation) and `tests/prototype.spec.ts` (catalog addition persistence assertion); these are not ACP/runtime tests. The explicit live-backend browser suite was attempted twice; its UI phase still expects the removed `clock_freq_mhz` editor control and failed before evaluation. Its `finally` cleanup passed, and no disposable smoke project remains. Backend checks: the latest focused closure/evidence rerun passed **44 tests**; product regressions passed **39, with 1 skipped**. The initial product regression command exceeded its timeout; rerunning with a longer deadline passed. The Vite >500 kB chunk advisory remains.
 
 Tests live in `tests/backend-hardening.spec.ts`, `tests/live-backend.spec.ts`, `src/artifacts.test.ts`, and `src/model.test.ts`, alongside the backend suites. The Vite >500 kB chunk advisory remains.

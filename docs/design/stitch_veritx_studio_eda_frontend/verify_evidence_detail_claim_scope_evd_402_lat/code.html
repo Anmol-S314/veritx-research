@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"on-tertiary-fixed-variant":"#3d4853","error-container":"#ffdad6","surface-tint":"#006494","surface":"#f7f9ff","background":"#f7f9ff","on-secondary":"#ffffff","on-tertiary-container":"#dae6f4","on-primary-fixed-variant":"#004b71","on-surface-variant":"#40484f","surface-container":"#e8eef9","tertiary":"#444f5a","primary":"#00537c","on-primary-container":"#d0e8ff","inverse-primary":"#8fcdff","primary-fixed-dim":"#8fcdff","on-tertiary-fixed":"#121d27","on-secondary-fixed":"#0a1e26","inverse-on-surface":"#eaf1fc","surface-container-highest":"#dce3ee","on-secondary-fixed-variant":"#374952","surface-variant":"#dce3ee","surface-container-high":"#e2e9f4","secondary-fixed-dim":"#b6c9d4","secondary-fixed":"#d2e6f1","primary-container":"#0f6c9e","on-background":"#151c24","tertiary-fixed":"#d8e4f2","tertiary-fixed-dim":"#bcc8d5","surface-container-low":"#eef4ff","secondary-container":"#d2e6f1","surface-bright":"#f7f9ff","on-primary-fixed":"#001e30","on-tertiary":"#ffffff","primary-fixed":"#cbe6ff","outline":"#707880","on-error":"#ffffff","surface-dim":"#d4dae5","on-secondary-container":"#546770","outline-variant":"#c0c7d0","error":"#ba1a1a","tertiary-container":"#5c6773","inverse-surface":"#2a3139","surface-container-lowest":"#ffffff","on-error-container":"#93000a","on-primary":"#ffffff","on-surface":"#151c24","secondary":"#4e616a"},borderRadius:{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},spacing:{"margin":"0.5rem","space-lg":"1rem","space-xs":"0.25rem","space-md":"0.75rem","space-sm":"0.5rem","gutter":"0.5rem","space-xl":"1.5rem"},fontFamily:{"headline-lg":["Inter"],"label-md":["Inter"],"body-md":["Inter"],"headline-sm":["Inter"],"code-sm":["JetBrains Mono"],"code-md":["JetBrains Mono"],"code-table":["JetBrains Mono"],"headline-md":["Inter"],"body-sm":["Inter"]},fontSize:{"headline-lg":["20px",{lineHeight:"28px",letterSpacing:"-0.015em",fontWeight:"600"}],"label-md":["11px",{lineHeight:"14px",letterSpacing:"0.02em",fontWeight:"600"}],"body-md":["13px",{lineHeight:"18px",fontWeight:"400"}],"headline-sm":["14px",{lineHeight:"20px",letterSpacing:"-0.005em",fontWeight:"600"}],"code-sm":["11px",{lineHeight:"14px",fontWeight:"400"}],"code-md":["12px",{lineHeight:"16px",fontWeight:"400"}],"code-table":["11px",{lineHeight:"14px",letterSpacing:"-0.02em",fontWeight:"500"}],"headline-md":["16px",{lineHeight:"24px",letterSpacing:"-0.01em",fontWeight:"600"}],"body-sm":["12px",{lineHeight:"16px",fontWeight:"400"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 w-full px-space-md flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between h-8"><div class="flex items-center gap-space-md"><div class="flex items-baseline gap-space-xs"><span class="font-headline-sm text-headline-sm font-bold text-primary tracking-tight">VERITX</span><span class="font-label-md text-label-md uppercase tracking-wider text-on-surface-variant bg-surface-container px-space-xs py-0.5 rounded">Srota Studio</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[16px]">developer_board</span><span class="font-code-md text-code-md font-semibold text-on-surface">Falcon8_NoC_Gen2</span><span class="font-code-sm text-code-sm text-on-surface-variant bg-surface-container-high px-space-xs py-0.5 rounded">rev: d7a4e9b-draft*</span></div></div><div class="flex items-center gap-space-md"><button class="flex items-center gap-space-sm bg-surface-container-low px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[16px]">search</span><span class="font-body-sm text-body-sm">Global Interconnect Palette</span><kbd class="font-code-sm text-code-sm bg-surface-container px-space-xs rounded text-secondary">Ctrl+K</kbd></button><div class="flex items-center gap-space-xs px-space-xs py-0.5 rounded bg-surface-container-low text-secondary border border-outline-variant"><span class="material-symbols-outlined text-[14px]">smart_toy</span><span class="font-label-md text-label-md uppercase">EDA Copilot (Off)</span></div><div class="h-4 w-px bg-outline-variant"></div><button class="text-secondary hover:text-on-surface p-1" title="Settings"><span class="material-symbols-outlined text-[18px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="flex items-center gap-space-xs h-7 border-t border-surface-container-high" data-active-classes="bg-surface-container-high text-primary font-semibold border-b-2 border-primary"><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="design" href="#">Design</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="explore" href="#">Explore</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="verify" href="#">Verify</a><a class="px-space-md py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="deliver" href="#">Deliver</a></nav></div></header><aside class="fixed left-0 top-16 bottom-7 w-72 bg-surface-container-lowest z-40 flex flex-col border-r border-surface-container-highest shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="p-space-sm border-b border-surface-container"><div class="font-label-md text-label-md uppercase tracking-wider text-secondary mb-space-xs flex items-center justify-between"><span>Pinned Context</span><span class="material-symbols-outlined text-[14px]">push_pin</span></div><div class="p-space-xs bg-secondary-container rounded text-on-secondary-container"><div class="flex items-center gap-space-xs"><span class="font-code-table text-code-table font-semibold text-primary">EVD-402-LAT</span><span class="font-label-md text-label-md bg-surface-container-lowest px-1 rounded text-secondary">REQ-LAT-04</span></div><div class="font-body-sm text-body-sm truncate text-on-surface-variant mt-0.5">SIM-402 Transaction Latency Distribution</div></div><div class="mt-space-xs flex items-center justify-between text-secondary"><span class="font-code-sm text-code-sm flex items-center gap-1"><span class="material-symbols-outlined text-[12px] text-primary">lock</span>sha256:9e4f..a12d</span><span class="font-label-md text-label-md bg-surface-container px-1 rounded">Snapshot</span></div></div><div class="px-space-md py-space-xs font-label-md text-label-md uppercase tracking-wider text-secondary">Verification Navigator</div><nav class="flex-1 overflow-y-auto px-space-xs space-y-0.5" data-active-classes="bg-secondary-container text-on-secondary-container font-semibold border-l-2 border-primary"><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="evidence-overview" href="#"><span class="material-symbols-outlined text-[16px]">inventory_2</span><span>Evidence Overview</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="configuration-support-checks" href="#"><span class="material-symbols-outlined text-[16px]">checklist</span><span>Configuration Support Checks</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="check-setup-and-results" href="#"><span class="material-symbols-outlined text-[16px]">rule_settings</span><span>Check Setup &amp; Results</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="outstanding-obligations" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[16px]">assignment_late</span><span>Outstanding Obligations</span></div><span class="font-code-sm text-code-sm px-1 rounded bg-error-container text-on-error-container">3</span></a><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-1.5 rounded transition-colors bg-secondary-container text-on-secondary-container font-semibold border-l-2 border-primary" data-path="evidence-detail-claim-scope" href="#"><span class="material-symbols-outlined text-[16px]">fact_check</span><span>Evidence Detail / Claim Scope</span></a></nav><div class="p-space-sm border-t border-surface-container-high bg-surface-container-low text-secondary flex items-center justify-between"><span class="font-code-sm text-code-sm">RADIX-8 TORUS</span><span class="font-code-sm text-code-sm text-primary">CLK: 1.25GHz</span></div></aside><div class="pl-72"><main class="relative pt-16 pb-7 w-full min-h-screen bg-surface"><div class="flex flex-col w-full">
+<!-- Top Context Sub-Header & Breadcrumb Bar -->
+<section class="w-full bg-surface-container-lowest px-space-md py-space-xs shadow-sm">
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm">
+<div class="flex flex-wrap items-center gap-space-xs text-on-surface-variant font-label-md text-label-md">
+<span class="text-tertiary">VERIFY</span>
+<span class="material-symbols-outlined text-[13px] text-outline">chevron_right</span>
+<span class="text-tertiary">Evidence Repository</span>
+<span class="material-symbols-outlined text-[13px] text-outline">chevron_right</span>
+<span class="font-code-md text-code-md font-semibold text-primary">EVD-402-LAT</span>
+<span class="bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded font-code-sm text-code-sm">SIM-402: ResNet50_Burst [w12]</span>
+<span class="bg-error-container text-on-error-container font-code-sm text-code-sm font-semibold px-2 py-0.5 rounded ml-1">VIOLATED</span>
+</div>
+<div class="flex items-center gap-space-sm text-body-sm font-body-sm">
+<a class="inline-flex items-center gap-1 text-primary hover:text-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[14px]">arrow_back</span>
+<span>Return to SIM-402 (Analysis)</span>
+</a>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<a class="inline-flex items-center gap-1 text-on-surface-variant hover:text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>View REQ-LAT-04 in Requirements</span>
+</a>
+</div>
+</div>
+<!-- Snapshot & Integrity Verification Ribbon -->
+<div class="mt-space-xs pt-space-xs bg-surface-container-low p-space-xs rounded flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest text-primary font-code-sm text-code-sm font-semibold shadow-sm">
+<span class="material-symbols-outlined text-[14px] text-primary">verified</span>
+<span>IMMUTABLE ARTIFACT SNAPSHOT</span>
+</div>
+<div class="flex items-center gap-1 text-tertiary font-code-sm text-code-sm">
+<span class="text-outline">SHA-256:</span>
+<span class="bg-surface-container-high px-1 rounded text-on-surface select-all">9e4f0c8b3d8174aa4c5e3209bf1841a12d908e2f091c0b3</span>
+<span class="material-symbols-outlined text-[13px] text-primary cursor-pointer" title="Copy Checksum">content_copy</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-tertiary">shield</span>
+<span>Cryptographic integrity establishes byte authenticity; it does not establish proof completeness or requirement compliance.</span>
+</div>
+</div>
+<!-- Active Working Draft Invalidation / Divergence Warning -->
+<div class="mt-space-xs bg-surface-container p-space-xs rounded flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-tertiary text-[16px] mt-0.5">history_toggle_off</span>
+<div class="flex-1 font-body-sm text-body-sm text-on-surface-variant leading-snug">
+<strong class="font-semibold text-on-surface">CURRENT DRAFT CHANGED:</strong>
+        Active working draft <code class="font-code-sm text-code-sm bg-surface-container-high px-1 rounded text-primary">rev: d7a4e9b-phys04*</code> has 2 uncommitted floorplan shifts since SIM-402 capture (Base: <code class="font-code-sm text-code-sm">d7a4e9b</code>).
+        Evidence remains historically valid for snapshot <code class="font-code-sm text-code-sm">d7a4e9b</code> only. Current draft changes:
+        <span class="font-code-sm text-code-sm font-semibold text-error uppercase ml-1">NOT EVALUATED</span>.
+      </div>
+</div>
+</section>
+<!-- Evidence Artifact Variant Switcher Strip -->
+<section class="w-full bg-surface-container-high px-space-md py-1 flex items-center justify-between text-label-md font-label-md">
+<div class="flex items-center gap-space-xs overflow-x-auto">
+<span class="text-tertiary uppercase tracking-wider text-[10px]">Evidence Switcher:</span>
+<button class="px-space-xs py-0.5 rounded bg-surface-container-lowest text-primary font-semibold shadow-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">insights</span>
+<span>EVD-402-LAT (Simulation Metric)</span>
+</button>
+<button class="px-space-xs py-0.5 rounded hover:bg-surface-container-lowest text-on-surface-variant transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">task_alt</span>
+<span>EVD-408-LINT (RTL Elaboration Clean)</span>
+</button>
+<button class="px-space-xs py-0.5 rounded hover:bg-surface-container-lowest text-on-surface-variant transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">verified_user</span>
+<span>EVD-390-FRM (Formal Bounded Proof k=30)</span>
+</button>
+</div>
+<div class="hidden sm:flex items-center gap-1 text-[10px] font-code-sm text-tertiary">
+<span class="material-symbols-outlined text-[12px]">info</span>
+<span>Illustrative EDA Artifact Model Dataset (Read-Only)</span>
+</div>
+</section>
+<!-- Main Multi-Column Workbench Pane -->
+<div class="w-full grid grid-cols-1 xl:grid-cols-12 gap-space-sm p-space-sm">
+<!-- Left / Center Main Pane (Cols 1-8): Claims, Scope, Methodology & Interactive Preview -->
+<div class="xl:col-span-8 flex flex-col gap-space-sm min-w-0">
+<!-- Section 1: Formal Claim & Evaluation Scope -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex items-start justify-between gap-space-md">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Section 1.0</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Formal Claim &amp; Evaluation Scope</h2>
+</div>
+<div class="flex items-center gap-space-xs bg-error-container text-on-error-container px-2 py-1 rounded">
+<span class="material-symbols-outlined text-[16px]">cancel</span>
+<span class="font-code-md text-code-md font-semibold uppercase">Scope Verdict: VIOLATED</span>
+</div>
+</div>
+<!-- Stated Question & Numerical delta -->
+<div class="bg-surface-container-low p-space-sm rounded flex flex-col gap-1">
+<div class="text-tertiary font-label-md text-label-md uppercase">Stated Engineering Claim / Question</div>
+<p class="font-body-md text-body-md text-on-surface font-medium leading-relaxed">
+            “Does the 4×4 mesh with 128-bit links meet the &lt;25.0 ns packet traversal and transaction completion latency under peak burst injection of ResNet50_Burst [w12]?”
+          </p>
+<div class="mt-1 flex flex-wrap items-center gap-space-md pt-space-xs bg-surface-container-lowest p-space-xs rounded">
+<div class="flex items-baseline gap-1">
+<span class="text-tertiary font-body-sm text-body-sm">Target Threshold:</span>
+<span class="font-code-md text-code-md font-semibold text-on-surface">≤ 25.0 ns</span>
+</div>
+<div class="h-3 w-px bg-outline-variant"></div>
+<div class="flex items-baseline gap-1">
+<span class="text-tertiary font-body-sm text-body-sm">Simulated Mean:</span>
+<span class="font-code-md text-code-md font-semibold text-error">28.6 ns (+3.6 ns violation)</span>
+</div>
+<div class="h-3 w-px bg-outline-variant"></div>
+<div class="flex items-baseline gap-1">
+<span class="text-tertiary font-body-sm text-body-sm">Simulated P99:</span>
+<span class="font-code-md text-code-md font-semibold text-error">44.2 ns</span>
+</div>
+</div>
+</div>
+<!-- Scope Boundary Splitter: Supported vs NOT Supported -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm pt-space-xs">
+<!-- What is Supported / Measured -->
+<div class="bg-surface-container-low p-space-sm rounded flex flex-col gap-space-xs">
+<div class="flex items-center gap-1 text-primary font-label-md text-label-md uppercase tracking-wider">
+<span class="material-symbols-outlined text-[15px]">check_circle</span>
+<span>Supported &amp; Evaluated Boundaries</span>
+</div>
+<ul class="space-y-1.5 font-body-sm text-body-sm text-on-surface-variant">
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-primary text-[14px] mt-0.5">check</span>
+<span><strong>Traversal Bound:</strong> Packet flit injection at source to last-flit egress on destination router buffers.</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-primary text-[14px] mt-0.5">check</span>
+<span><strong>Clock Accuracy:</strong> Strictly measured at 1.4 GHz nominal VDD domain over 450,000 cycles (321.4 μs real-time equivalent).</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-primary text-[14px] mt-0.5">check</span>
+<span><strong>Hardware Coverage:</strong> Uniform sampling across all 16 mesh routers (R_0_0 through R_3_3).</span>
+</li>
+</ul>
+</div>
+<!-- Explicit Limitations & Non-Claims -->
+<div class="bg-surface-container-high p-space-sm rounded flex flex-col gap-space-xs">
+<div class="flex items-center gap-1 text-error font-label-md text-label-md uppercase tracking-wider">
+<span class="material-symbols-outlined text-[15px]">warning</span>
+<span>Explicit Non-Claims &amp; Exclusions</span>
+</div>
+<ul class="space-y-1.5 font-body-sm text-body-sm text-on-surface">
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-error text-[14px] mt-0.5">block</span>
+<span><strong>Not Complete DRAM Latency:</strong> Does not model DRAM controller command scheduling or tRCD/tRP memory row misses.</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-error text-[14px] mt-0.5">block</span>
+<span><strong>No Deadlock Freedom:</strong> Empirical absence of cyclic dependency is NOT a mathematical deadlock proof.</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-error text-[14px] mt-0.5">block</span>
+<span><strong>Model-Only Backend:</strong> Pure C++ event-discrete BookSim model. Zero post-layout parasitic or standard cell timing signoff.</span>
+</li>
+<li class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-error text-[14px] mt-0.5">block</span>
+<span><strong>ASIC/FPGA Ineligible:</strong> Analytical observation only; cannot qualify configuration for Srota RTL Generator v2.3 tapeout signoff.</span>
+</li>
+</ul>
+</div>
+</div>
+</section>
+<!-- Section 2: Measurement Definition & Methodology -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Section 2.0</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Measurement Definition &amp; Methodology</h2>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">Methodology ID: MET-SIM-DISC-09</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-xs font-body-sm text-body-sm">
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<span class="font-label-md text-label-md text-tertiary uppercase">Simulation Engine</span>
+<span class="font-code-md text-code-md font-semibold text-primary">BookSim-Srota v4.8</span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">Cycle-accurate flit level scheduler</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<span class="font-label-md text-label-md text-tertiary uppercase">Evaluated Arch Snapshot</span>
+<span class="font-code-md text-code-md font-semibold text-on-surface">d7a4e9b (16R, 128-bit)</span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">22.4 GB/s bi-directional link bw</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<span class="font-label-md text-label-md text-tertiary uppercase">Traffic Injection Vector</span>
+<span class="font-code-md text-code-md font-semibold text-on-surface">ResNet50_Burst [w12]</span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">450k cycles / 321.4 μs window</span>
+</div>
+</div>
+<!-- Window timeline progress breakdown -->
+<div class="bg-surface-container p-space-xs rounded flex flex-col gap-1 text-on-surface font-body-sm text-body-sm">
+<div class="flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<span>WARMUP: 50,000 cycles (Discarded)</span>
+<span class="text-primary font-semibold">EVALUATION WINDOW: 400,000 cycles (Included in Histogram)</span>
+</div>
+<div class="w-full h-2.5 bg-surface-container-high rounded overflow-hidden flex">
+<div class="w-[11.1%] bg-secondary-fixed-dim" title="Warmup Phase (50,000 cycles)"></div>
+<div class="w-[88.9%] bg-primary-container" title="Sampling Window (400,000 cycles)"></div>
+</div>
+<div class="flex items-center justify-between text-tertiary font-code-sm text-code-sm">
+<span>Cycle 0</span>
+<span>Cycle 50,000</span>
+<span>Cycle 450,000</span>
+</div>
+</div>
+</section>
+<!-- Section 3: Safe Read-Only Artifact Preview & Telemetry -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div>
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Section 3.0</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Artifact Preview &amp; Verification Telemetry</h2>
+</div>
+<!-- Actions & sandbox indicator -->
+<div class="flex items-center gap-space-xs">
+<button class="px-space-xs py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-body-sm font-body-sm transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">download</span>
+<span>Export .parquet</span>
+</button>
+<button class="px-space-xs py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-body-sm font-body-sm transition-colors flex items-center gap-1" onclick="navigator.clipboard.writeText('srota-cli verify fetch EVD-402-LAT --sha256 9e4f0c8b3d8174aa4c5e3209bf1841a12d908e2f091c0b3')">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+<span>CLI Copy</span>
+</button>
+</div>
+</div>
+<!-- Safe Sandbox Notice -->
+<div class="bg-surface-container-low px-space-xs py-1 rounded flex items-center justify-between text-secondary font-code-sm text-code-sm">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[14px]">lock</span>
+<span>Safe Sandbox Active: Read-only memory container without subprocess shell exec.</span>
+</div>
+<span class="text-tertiary">Schema: Parquet v2.6.0 (ZSTD)</span>
+</div>
+<!-- Tab Bar for Preview -->
+<div class="flex items-center gap-space-xs border-b border-surface-container-high">
+<button class="px-space-sm py-1 font-label-md text-label-md font-semibold text-primary border-b-2 border-primary bg-surface-container-low">
+            Latency Distribution (Rendered Histogram)
+          </button>
+<button class="px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface">
+            Parquet Schema &amp; Manifest
+          </button>
+<button class="px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:text-on-surface">
+            Producer Log (stdout excerpt)
+          </button>
+</div>
+<!-- Tab 1: Rendered Interactive Histogram Chart -->
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col gap-space-sm">
+<div class="flex items-center justify-between text-body-sm font-body-sm text-tertiary">
+<span class="font-code-sm text-code-sm text-on-surface">Distribution: 1,204,912 Injected Flits (50 Bins @ 1.0 ns step)</span>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-primary rounded-xs"></span> In-Spec Packets</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-error rounded-xs"></span> Latency Violations</span>
+<span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-tertiary"></span> Threshold (25.0 ns)</span>
+</div>
+</div>
+<!-- Inline SVG Histogram Chart -->
+<div class="w-full bg-surface-container-low p-space-xs rounded overflow-hidden">
+<svg class="w-full h-56 text-on-surface" fill="none" viewbox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+<!-- Grid Lines -->
+<line stroke="currentColor" stroke-dasharray="2 2" stroke-opacity="0.08" x1="40" x2="660" y1="20" y2="20"></line>
+<line stroke="currentColor" stroke-dasharray="2 2" stroke-opacity="0.08" x1="40" x2="660" y1="60" y2="60"></line>
+<line stroke="currentColor" stroke-dasharray="2 2" stroke-opacity="0.08" x1="40" x2="660" y1="100" y2="100"></line>
+<line stroke="currentColor" stroke-opacity="0.15" x1="40" x2="660" y1="140" y2="140"></line>
+<!-- Y-Axis Labels -->
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" text-anchor="end" x="32" y="24">120k</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" text-anchor="end" x="32" y="64">80k</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" text-anchor="end" x="32" y="104">40k</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" text-anchor="end" x="32" y="144">0</text>
+<!-- Safe Bars (< 25 ns) -->
+<rect class="fill-primary" height="8" opacity="0.6" width="10" x="50" y="132"></rect>
+<rect class="fill-primary" height="15" opacity="0.6" width="10" x="64" y="125"></rect>
+<rect class="fill-primary" height="22" opacity="0.7" width="10" x="78" y="118"></rect>
+<rect class="fill-primary" height="35" opacity="0.7" width="10" x="92" y="105"></rect>
+<rect class="fill-primary" height="50" opacity="0.8" width="10" x="106" y="90"></rect>
+<rect class="fill-primary" height="66" opacity="0.8" width="10" x="120" y="74"></rect>
+<rect class="fill-primary" height="82" opacity="0.85" width="10" x="134" y="58"></rect>
+<rect class="fill-primary" height="95" opacity="0.9" width="10" x="148" y="45"></rect>
+<rect class="fill-primary" height="104" opacity="0.95" width="10" x="162" y="36"></rect>
+<rect class="fill-primary" height="108" width="10" x="176" y="32"></rect>
+<rect class="fill-primary" height="112" width="10" x="190" y="28"></rect>
+<rect class="fill-primary" height="110" width="10" x="204" y="30"></rect>
+<rect class="fill-primary" height="106" width="10" x="218" y="34"></rect>
+<rect class="fill-primary" height="98" width="10" x="232" y="42"></rect>
+<rect class="fill-primary" height="88" width="10" x="246" y="52"></rect>
+<rect class="fill-primary" height="74" width="10" x="260" y="66"></rect>
+<!-- VIOLATION Threshold Line (25.0 ns at x=280) -->
+<line stroke="#ba1a1a" stroke-dasharray="3 2" stroke-width="1.5" x1="280" x2="280" y1="15" y2="155"></line>
+<text class="font-code-sm" fill="#ba1a1a" font-size="10" font-weight="600" x="284" y="24">Limit: 25.0 ns</text>
+<!-- Violating Bars (> 25 ns) -->
+<rect class="fill-error" height="62" opacity="0.85" width="10" x="274" y="78"></rect>
+<rect class="fill-error" height="54" opacity="0.9" width="10" x="288" y="86"></rect>
+<rect class="fill-error" height="48" opacity="0.9" width="10" x="302" y="92"></rect>
+<!-- Mean Latency Marker (28.6 ns at x=318) -->
+<line stroke="#ba1a1a" stroke-width="1" x1="318" x2="318" y1="15" y2="155"></line>
+<polygon fill="#ba1a1a" points="318,15 314,8 322,8"></polygon>
+<text class="font-code-sm" fill="#ba1a1a" font-size="10" font-weight="600" x="322" y="40">Mean: 28.6 ns</text>
+<rect class="fill-error" height="42" opacity="0.9" width="10" x="316" y="98"></rect>
+<rect class="fill-error" height="36" opacity="0.85" width="10" x="330" y="104"></rect>
+<rect class="fill-error" height="28" opacity="0.8" width="10" x="344" y="112"></rect>
+<rect class="fill-error" height="22" opacity="0.8" width="10" x="358" y="118"></rect>
+<rect class="fill-error" height="16" opacity="0.75" width="10" x="372" y="124"></rect>
+<rect class="fill-error" height="13" opacity="0.7" width="10" x="386" y="127"></rect>
+<rect class="fill-error" height="10" opacity="0.6" width="10" x="400" y="130"></rect>
+<rect class="fill-error" height="8" opacity="0.6" width="10" x="414" y="132"></rect>
+<rect class="fill-error" height="6" opacity="0.5" width="10" x="428" y="134"></rect>
+<rect class="fill-error" height="5" opacity="0.5" width="10" x="442" y="135"></rect>
+<rect class="fill-error" height="4" opacity="0.4" width="10" x="456" y="136"></rect>
+<!-- P99 Latency Marker (44.2 ns at x=470) -->
+<line stroke="#707880" stroke-dasharray="2 2" stroke-width="1" x1="470" x2="470" y1="50" y2="155"></line>
+<text class="font-code-sm" fill="#40484f" font-size="9" font-weight="600" x="474" y="65">P99: 44.2 ns</text>
+<rect class="fill-tertiary" height="3" width="10" x="470" y="137"></rect>
+<rect class="fill-tertiary" height="2" width="10" x="484" y="138"></rect>
+<rect class="fill-tertiary" height="1.5" width="10" x="498" y="138.5"></rect>
+<!-- X-Axis Labels -->
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="50" y="156">8 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="148" y="156">16 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="246" y="156">24 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="344" y="156">32 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="442" y="156">40 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="540" y="156">48 ns</text>
+<text class="font-code-sm" fill="currentColor" fill-opacity="0.5" font-size="9" x="638" y="156">56 ns</text>
+</svg>
+</div>
+<!-- Quick Metrics Sub-Strip -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-space-xs font-code-sm text-code-sm">
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col">
+<span class="text-tertiary">Min Packet Latency</span>
+<span class="font-semibold text-on-surface">9.28 ns (13 cyc)</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col">
+<span class="text-tertiary">Median Latency</span>
+<span class="font-semibold text-on-surface">22.14 ns (31 cyc)</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col">
+<span class="text-tertiary">P95 Latency</span>
+<span class="font-semibold text-error">38.57 ns (54 cyc)</span>
+</div>
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col">
+<span class="text-tertiary">Flits &gt; 25.0 ns</span>
+<span class="font-semibold text-error">284,119 (23.58%)</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Pane (Cols 9-12): Provenance, Assessment Separation & File Manifest -->
+<div class="xl:col-span-4 flex flex-col gap-space-sm">
+<!-- Panel 1: Assessment Separation (EDA Quality Standard) -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Assessment Separation</h3>
+<span class="material-symbols-outlined text-secondary text-[16px]">balance</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Strict EDA distinction between raw numerical simulator observations and requirement policy compliance.
+        </p>
+<!-- Observation Slab -->
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center justify-between font-label-md text-label-md uppercase text-secondary">
+<span>Raw Simulator Observation</span>
+<span class="text-primary font-code-sm text-code-sm">Exit 0</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface">
+            Packets tracked: <strong>1,204,912</strong> • Mean: <strong>28.6 ns</strong> • Run time: 42.8s
+          </div>
+</div>
+<!-- Policy Assessment Slab -->
+<div class="bg-error-container p-space-xs rounded flex flex-col gap-1 text-on-error-container">
+<div class="flex items-center justify-between font-label-md text-label-md uppercase">
+<span>Requirement Compliance Policy</span>
+<span class="font-bold">1 VIOLATION</span>
+</div>
+<div class="font-body-sm text-body-sm">
+            Target <strong>REQ-LAT-04</strong> declared failed due to mean latency exceeding 25.0 ns ceiling by +3.6 ns.
+          </div>
+</div>
+<!-- Human Signoff Review -->
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center justify-between font-label-md text-label-md uppercase text-secondary">
+<span>Architect Assessment Status</span>
+<span class="material-symbols-outlined text-primary text-[14px]">edit_note</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface">
+            Reviewed by Lead Architect <strong>E. Chen</strong>:
+            <span class="text-on-surface-variant italic">“Root cause: HBM ingress crossbar contention at R_1_2. Action: Branch CAND-042 exploration initiated with deeper VC buffers.”</span>
+</div>
+</div>
+<!-- Copilot Assistance Disclaimer -->
+<div class="bg-surface-container p-space-xs rounded flex items-start gap-1.5 text-tertiary font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[14px] text-secondary mt-0.5">smart_toy</span>
+<div>
+<strong>Copilot Note:</strong> Cites EVD-402-LAT contention on Port_North buffers. AI advisory cannot modify verification pass/fail status.
+          </div>
+</div>
+</section>
+<!-- Panel 2: Lineage & Provenance Metadata -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Lineage &amp; Provenance</h3>
+<span class="material-symbols-outlined text-secondary text-[16px]">account_tree</span>
+</div>
+<div class="flex flex-col gap-space-xs font-body-sm text-body-sm">
+<div class="flex items-center justify-between py-1 border-b border-surface-container">
+<span class="text-tertiary">Producer Engine</span>
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">BookSim-Srota v4.8 (8821a)</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-surface-container">
+<span class="text-tertiary">Host Environment</span>
+<span class="font-code-sm text-code-sm text-on-surface">Linux 6.1.0-eda-rt (x86_64)</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-surface-container">
+<span class="text-tertiary">Compute Platform</span>
+<span class="font-code-sm text-code-sm text-on-surface">Dual Xeon Platinum 8480+</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-surface-container">
+<span class="text-tertiary">Deterministic Seed</span>
+<span class="font-code-sm text-code-sm font-semibold text-primary">0x44AF93</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-surface-container">
+<span class="text-tertiary">Execution Timestamp</span>
+<span class="font-code-sm text-code-sm text-on-surface">2025-02-14 09:18:22 UTC</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-tertiary">Execution Run Reference</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">SIM-402 (PID 30192)</span>
+</div>
+</div>
+</section>
+<!-- Panel 3: Artifact Files Manifest -->
+<section class="bg-surface-container-lowest rounded shadow-sm p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Artifact Files Manifest</h3>
+<span class="material-symbols-outlined text-secondary text-[16px]">folder_zip</span>
+</div>
+<div class="flex flex-col gap-space-xs font-code-sm text-code-sm">
+<!-- File 1: Parquet Latency Hist -->
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-semibold text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">description</span>
+                sim402_latency_hist.parquet
+              </span>
+<span class="text-tertiary">4.2 MB</span>
+</div>
+<div class="text-[10px] text-tertiary flex items-center justify-between">
+<span>SHA256: 9e4f..a12d</span>
+<span class="text-primary font-medium">Valid Snapshot</span>
+</div>
+</div>
+<!-- File 2: Run Config JSON -->
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-semibold text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-secondary">data_object</span>
+                sim402_run_config.json
+              </span>
+<span class="text-tertiary">14 KB</span>
+</div>
+<div class="text-[10px] text-tertiary flex items-center justify-between">
+<span>SHA256: 3c11..88fa</span>
+<span class="text-primary font-medium">Verified Ingest</span>
+</div>
+</div>
+<!-- File 3: Trace PCAP (Disabled / Missing intentionally) -->
+<div class="bg-surface-container-high p-space-xs rounded flex flex-col gap-0.5">
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-outline">file_present</span>
+                sim402_trace_sample.pcap
+              </span>
+<span class="text-error font-medium">Uncollected</span>
+</div>
+<div class="text-[10px] text-tertiary">
+              Trace capture disabled to conserve disk. Latency histogram fully valid without raw flit stream.
+            </div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Lower Obligation Sub-Drawer / Srota Workspace Status -->
+<section class="w-full bg-surface-container-low px-space-md py-space-xs mt-space-sm flex flex-col sm:flex-row items-center justify-between gap-space-sm font-label-md text-label-md text-secondary">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">task_alt</span>
+<span class="text-on-surface">Configuration Support Checklist: 3 Valid, 1 Unresolved</span>
+</div>
+<div class="hidden md:flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-error">assignment_late</span>
+<span class="text-on-surface">Outstanding Obligations: 2 for REQ-LAT-04</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-code-sm text-code-sm bg-surface-container-high px-1.5 py-0.5 rounded text-on-surface">VERITX Srota Engine v3.12-rc1</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">Deterministic State Locked</span>
+</div>
+</section>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-7 bg-surface-container-lowest z-50 border-t border-surface-container-highest flex items-center justify-between px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-1 text-on-surface-variant hover:text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[14px] text-error">error</span><span class="font-label-md text-label-md">0 Errors</span></div><div class="flex items-center gap-1 text-on-surface-variant hover:text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[14px] text-secondary">warning</span><span class="font-label-md text-label-md">2 Obligations Pending</span></div><div class="h-3 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-secondary">Jobs:</span><span class="font-code-sm text-code-sm bg-surface-container px-1 py-0.5 rounded text-primary font-medium">SIM-403: 42%</span></div><div class="flex items-center gap-1 text-on-surface-variant hover:text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[14px]">terminal</span><span class="font-label-md text-label-md">Simulation Logs</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-primary">verified_user</span><span class="font-code-sm text-code-sm text-primary font-medium uppercase">Isolation ENFORCED</span></div><div class="h-3 w-px bg-outline-variant"></div><span class="font-code-sm text-code-sm text-on-surface-variant">Cycle 0x004A2F81</span></div></footer></body></html>

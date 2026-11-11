@@ -61,6 +61,8 @@ fields:
   CompileRequestV4.migration_provenance:       {owner: "-",          src: METADATA,  class: METADATA}
   CompileRequestV4.topology:                   {owner: FABRIC,       src: UI,        class: G1, default: REQUIRED, capability: FAB-008, behaviour: RENDER_WITH_LIMIT, limit: typed topology intent is REQUIRED and is the only topology authority; gec (all four modes) and fattree are AUTHORABLE but stop at MATERIALIZATION; flatfly/torus materialize but stop at ROUTING}
   CompileRequestV4.noc_controls:               {owner: FABRIC,       src: UI,        class: container}
+  CompileRequestV4.agent_intents:              {owner: SYSTEM,       src: UI,        class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  CompileRequestV4.traffic_policy:             {owner: FABRIC,       src: UI,        class: G2, default: RECOMMENDATION, preset: true, capability: COMM-006}
   NocControls.arbitration:                     {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
   NocControls.rcu_enabled:                     {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
   NocControls.link_width:                      {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
@@ -81,6 +83,7 @@ fields:
   CompileRequestV3.synthesis_provenance:        {owner: "-",          src: METADATA,  class: METADATA}
 
   WorkloadV3.model_family:   {owner: WORKLOAD,    src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: WORK-001}
+  WorkloadV3.traffic_profiles:       {owner: WORKLOAD,     src: UI,        class: G1, default: RECOMMENDATION, preset: true, capability: COMM-001}
   WorkloadV3.model_name:     {owner: WORKLOAD,    src: METADATA, class: G1, default: NONE,           preset: true}
   WorkloadV3.tp:             {owner: PARALLELISM, src: UI,       class: G1, default: NONE,           preset: true,  capability: PAR-001}
   WorkloadV3.pp:             {owner: PARALLELISM, src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: PAR-004, limit: stage lowering incomplete}
@@ -105,6 +108,7 @@ fields:
   Agent.protocol:      {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
   Agent.clock_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-003, limit: multi-clock fabric execution unavailable}
   Agent.power_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.group_name:    {owner: SYSTEM, src: UI, class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
   Agent.ip_template_id:      {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}
   Agent.ip_template_version: {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}
   Agent.ip_instance_id:     {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}

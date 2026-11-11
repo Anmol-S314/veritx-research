@@ -1,0 +1,94 @@
+{
+  "kind": "native-topology-smoke",
+  "topology": "fly_native",
+  "intent": {"kind": "fly_native", "radix": 4, "levels": 3},
+  "preset": "fly_native64",
+  "profile_id": "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1",
+  "projection_semantics_version": "booksim2-fork+fly-dest-tag+ingress0-egress2/v1",
+  "lowerer_version": "FLYDESTTAG/1",
+  "routing_class": "FLY_DEST_TAG",
+  "note": "Authenticated product execution of the exact native 4-ary 3-stage fly through BookSim's own `fly` network with `dest_tag_fly`. This is simulator evidence for the modeled fabric, not a hardware measurement and not a reference-benchmark result.",
+
+  "producer": {
+    "binary_sha256": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+    "binary_size": 24884344,
+    "build_manifest_sha256": "1c588e7a79f964ecf088b7f78a0d20660dcec86ada585097bfac7c217aebd1d2",
+    "build_recipe_version": "booksim2-fork/v2",
+    "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+    "producer_dirty": false
+  },
+
+  "construction": {
+    "routers": 48,
+    "stages": 3,
+    "routers_per_stage": 16,
+    "directed_channels": 128,
+    "terminals": 64,
+    "ingress_seats": {"stage_0": 4, "stage_1": 0, "stage_2": 0},
+    "egress_slots": {"stage_0": 0, "stage_1": 0, "stage_2": 4},
+    "attachment": "asymmetric: terminal t injects at stage-0 router t//4 port t%4 and ejects at stage-2 router t//4 port t%4",
+    "channel_id_law": "stage * k**n + addr * k + port (BookSim KNFly::_OutChannel)",
+    "router_id_law": "stage * k**(n-1) + addr (BookSim KNFly::_BuildNet node counter)",
+    "every_channel_advances_one_stage": true
+  },
+
+  "static_first_hop_table": {
+    "dialect": "executed first-hop realization (deterministic; no legal-choice union needed)",
+    "rows": 3072,
+    "expected_rows": 3072,
+    "expected_rows_law": "routers x terminals = 48 x 64",
+    "comparison": "exact row equality AND exact port equality against the literal dest_tag_fly law",
+    "note": "The function answers every (router, destination node) pair, including pairs no real flow can occupy (a stage-2 router answering for a terminal that ejects elsewhere); the table is compared over all of them."
+  },
+
+  "executed_route_compute": {
+    "rows": 72576,
+    "flits": 24192,
+    "rows_per_stage": [24192, 24192, 24192],
+    "checks": [
+      "every observed hop used the destination-tag port for (router, destination)",
+      "every flit's first observation is its own stage-0 injection router",
+      "every hop advanced exactly one stage",
+      "no flit appeared at a middle stage its digit class could not reach",
+      "every flit ejected at its own stage-2 router and nowhere else",
+      "every hop ran in the whole configured VC range"
+    ]
+  },
+
+  "deadlock": {
+    "expansion": "fly_destination_indexed",
+    "edges": 64,
+    "argument": "The CDG is built per destination terminal along that terminal's deterministic channel chain; every edge advances one stage, so acyclicity is a property of the construction rather than an assumption about it."
+  },
+
+  "metrics": {
+    "flits_injected": 169344,
+    "flits_accepted": 169344,
+    "packets_delivered": 24192,
+    "packet_latency_avg": 66.125,
+    "flit_latency_avg": 39.2202,
+    "p50": 70.0,
+    "p95": 111.0,
+    "p99": 111.0,
+    "completion_cycles": 24290,
+    "simulation_unstable": false
+  },
+
+  "evidence": {
+    "evidence_id": "sha256:47cae8c7d46a48a32bdea4d296d91010f6043fde96cb174a01214cc8c389376b",
+    "route_dump_sha256": "93965b14fc8e8403fc9d3ceb3511d390bea8aff5195d504a5404f9ea9239960f",
+    "route_observation": "EXECUTED_ROUTE_OBSERVED",
+    "execution_fidelity": "QUALIFIED",
+    "transport": "SUPERVISED_PROCESS",
+    "exit_status": 0,
+    "config_sha256": "6f41eec6c13bd299150b8a041c34c3b854475c4021e0f808c8bf9bca6c327d3a",
+    "resolved_fabric_hash": "7d9e8ab3d9880fbeecf614705fc7a916fabe0553ab8fde497d022df32685e9c7"
+  },
+
+  "boundaries": [
+    "modeled fabric evidence only; no energy, area or timing measurement",
+    "no reference-benchmark or selected-project claim",
+    "num_vcs = 1 in this workload's VC resource, so the destination-tag rule allocates the whole single-VC range",
+    "the generic stateless routing normalizer refuses FLY_DEST_TAG; the destination-indexed CDG is the deadlock proof"
+  ]
+}

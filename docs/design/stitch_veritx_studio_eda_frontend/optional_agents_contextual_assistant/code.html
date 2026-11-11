@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface-container-highest":"#dce3ee","primary-container":"#0f6c9e","surface-dim":"#d4dae5","inverse-primary":"#8fcdff","on-tertiary-fixed":"#121d27","on-tertiary-container":"#dae6f4","tertiary-fixed":"#d8e4f2","inverse-on-surface":"#eaf1fc","on-tertiary":"#ffffff","on-tertiary-fixed-variant":"#3d4853","surface-variant":"#dce3ee","on-surface-variant":"#40484f","primary":"#00537c","inverse-surface":"#2a3139","primary-fixed-dim":"#8fcdff","on-secondary-fixed-variant":"#374952","on-background":"#151c24","surface-bright":"#f7f9ff","on-secondary-fixed":"#0a1e26","outline-variant":"#c0c7d0","on-primary-container":"#d0e8ff","on-primary-fixed-variant":"#004b71","surface-container-lowest":"#ffffff","secondary-fixed":"#d2e6f1","primary-fixed":"#cbe6ff","surface-container-high":"#e2e9f4","on-error-container":"#93000a","on-secondary":"#ffffff","error-container":"#ffdad6","on-error":"#ffffff","tertiary-fixed-dim":"#bcc8d5","tertiary-container":"#5c6773","surface-container":"#e8eef9","surface":"#f7f9ff","on-primary":"#ffffff","surface-tint":"#006494","on-secondary-container":"#546770","background":"#f7f9ff","secondary":"#4e616a","on-surface":"#151c24","error":"#ba1a1a","secondary-container":"#d2e6f1","secondary-fixed-dim":"#b6c9d4","on-primary-fixed":"#001e30","outline":"#707880","surface-container-low":"#eef4ff","tertiary":"#444f5a"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"space-md":"0.75rem","space-xl":"1.5rem","gutter":"0.5rem","space-lg":"1rem","space-sm":"0.5rem","margin":"0.5rem","space-xs":"0.25rem"},"fontFamily":{"headline-sm":["Inter"],"headline-lg":["Inter"],"body-md":["Inter"],"code-md":["JetBrains Mono"],"label-md":["Inter"],"body-sm":["Inter"],"headline-md":["Inter"],"code-sm":["JetBrains Mono"],"code-table":["JetBrains Mono"]},"fontSize":{"headline-sm":["14px",{"lineHeight":"20px","letterSpacing":"-0.005em","fontWeight":"600"}],"headline-lg":["20px",{"lineHeight":"28px","letterSpacing":"-0.015em","fontWeight":"600"}],"body-md":["13px",{"lineHeight":"18px","fontWeight":"400"}],"code-md":["12px",{"lineHeight":"16px","fontWeight":"400"}],"label-md":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"600"}],"body-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"headline-md":["16px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"600"}],"code-sm":["11px",{"lineHeight":"14px","fontWeight":"400"}],"code-table":["11px",{"lineHeight":"14px","letterSpacing":"-0.02em","fontWeight":"500"}]}}}};</script></head><body class="bg-surface font-body-md text-on-surface antialiased selection:bg-secondary-container selection:text-on-secondary-container"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-14 w-full px-space-md flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs select-none"><span class="font-code-md text-code-md font-bold tracking-tight text-primary">VERITX</span><span class="text-outline font-code-sm text-code-sm">/</span><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface">SROTA</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[16px] text-secondary">memory</span><span class="font-code-sm text-code-sm text-on-surface font-medium">Falcon8_NoC_Gen2</span><span class="inline-flex items-center px-space-xs py-0.5 rounded-DEFAULT bg-surface-container-high text-on-surface-variant font-code-sm text-[10px]">rev: d7a4e9b-draft*</span></div><div class="h-4 w-px bg-outline-variant"></div><nav class="flex items-center gap-space-xs h-14" data-active-classes="border-b-2 border-primary text-primary font-medium"><a class="h-full flex items-center px-space-sm text-on-surface-variant hover:text-on-surface text-body-sm font-body-sm transition-colors" data-path="design" href="#">Design</a><a class="h-full flex items-center px-space-sm text-on-surface-variant hover:text-on-surface text-body-sm font-body-sm transition-colors" data-path="workloads-requirements" href="#">Workloads &amp; Requirements</a><a aria-current="page" class="h-full flex items-center px-space-sm transition-colors border-b-2 border-primary text-primary font-medium" data-path="analysis" href="#">Analysis</a><a class="h-full flex items-center px-space-sm text-on-surface-variant hover:text-on-surface text-body-sm font-body-sm transition-colors" data-path="explore" href="#">Explore</a><a class="h-full flex items-center px-space-sm text-on-surface-variant hover:text-on-surface text-body-sm font-body-sm transition-colors" data-path="verify" href="#">Verify</a><a class="h-full flex items-center px-space-sm text-on-surface-variant hover:text-on-surface text-body-sm font-body-sm transition-colors" data-path="deliver" href="#">Deliver</a></nav></div><div class="flex items-center gap-space-md"><button class="flex items-center gap-space-md h-7 px-space-sm rounded-DEFAULT bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface hover:border-outline text-body-sm font-body-sm transition-colors" type="button"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[15px] text-secondary">search</span><span>Command Matrix</span></div><kbd class="px-1 py-0.2 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-code-sm text-[10px] text-secondary">Ctrl+K</kbd></button><div class="flex items-center gap-space-xs border border-primary-container bg-surface-container-low px-space-xs py-0.5 rounded-DEFAULT"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span class="font-label-md text-label-md text-primary uppercase">Copilot Active</span><button class="p-0.5 text-primary hover:text-on-primary-container" type="button"><span class="material-symbols-outlined text-[14px]">tune</span></button></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs"><button class="w-7 h-7 flex items-center justify-center rounded-DEFAULT text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[17px]">notifications</span></button><button class="w-7 h-7 flex items-center justify-center rounded-DEFAULT text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[17px]">settings</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></div></header><aside class="fixed left-0 top-14 bottom-6 w-60 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between"><div class="flex flex-col"><div class="h-8 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-low"><span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Workspace Explorer</span><span class="material-symbols-outlined text-[15px] text-secondary">dock_to_left</span></div><nav class="py-space-xs flex flex-col" data-active-classes="bg-surface-container-high text-primary font-medium border-l-2 border-primary"><a aria-current="page" class="h-8 px-space-md flex items-center gap-space-sm transition-colors bg-surface-container-high text-primary font-medium border-l-2 border-primary" data-path="analysis" href="#"><span class="material-symbols-outlined text-[16px]">hub</span><span>Mesh Topology</span></a><a class="h-8 px-space-md flex items-center gap-space-sm text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="routing-matrices" href="#"><span class="material-symbols-outlined text-[16px]">alt_route</span><span>Routing Matrices</span></a><a class="h-8 px-space-md flex items-center gap-space-sm text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="latency-profiling" href="#"><span class="material-symbols-outlined text-[16px]">speed</span><span>Latency Profiling</span></a><a class="h-8 px-space-md flex items-center gap-space-sm text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="buffer-allocation" href="#"><span class="material-symbols-outlined text-[16px]">layers</span><span>Virtual Channels</span></a><a class="h-8 px-space-md flex items-center gap-space-sm text-body-sm font-body-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="drc-timing" href="#"><span class="material-symbols-outlined text-[16px]">rule</span><span>DRC &amp; Timing</span></a></nav></div><div class="border-t border-outline-variant p-space-sm bg-surface-container-low"><div class="flex items-center justify-between text-secondary font-label-md text-label-md mb-1"><span>MESH CONSTRAINTS</span><span class="font-code-sm text-[10px]">8x8_T</span></div><div class="space-y-1 font-code-sm text-[11px] text-on-surface-variant"><div class="flex justify-between"><span>Flit Width:</span><span class="text-on-surface font-medium">256-bit</span></div><div class="flex justify-between"><span>Max Radix:</span><span class="text-on-surface font-medium">8 Ports</span></div><div class="flex justify-between"><span>Clock Domain:</span><span class="text-on-surface font-medium">clk_core_0</span></div></div></div></aside><div class="pl-60 pr-80 pb-6"><main class="relative pt-14 w-full min-h-[calc(100vh-3.5rem)] bg-surface"><div class="flex flex-col w-full font-body-md text-on-surface antialiased bg-surface min-h-[calc(100vh-5.5rem)]">
+<!-- Top Run Meta Header / Global Context Ribbon -->
+<div class="w-full bg-surface-container-lowest border-b border-outline-variant px-space-md py-space-xs flex items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm min-w-0">
+<nav class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant shrink-0">
+<span class="hover:text-on-surface transition-colors cursor-pointer">Analysis</span>
+<span class="text-outline">/</span>
+<span class="text-on-surface font-semibold">Run SIM-402</span>
+<span class="text-outline">/</span>
+<span class="text-primary font-medium">Metrics &amp; Obligations</span>
+</nav>
+<div class="h-3 w-px bg-outline-variant shrink-0"></div>
+<div class="flex items-center gap-1.5 px-space-xs py-0.5 rounded-DEFAULT bg-surface-container font-code-sm text-[10px] text-on-surface-variant shrink-0">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-medium text-on-surface">BookSim2-CycleAccurate</span>
+<span class="text-outline">|</span>
+<span>450,000 cyc (321.4 µs)</span>
+</div>
+<span class="px-1.5 py-0.5 rounded-DEFAULT bg-surface-container-highest font-code-sm text-[10px] text-on-surface font-medium truncate">
+        ResNet50_Burst [w12]
+      </span>
+</div>
+<!-- Action Bar -->
+<div class="flex items-center gap-space-xs shrink-0">
+<div class="flex items-center bg-surface-container-low border border-outline-variant rounded-DEFAULT p-0.5">
+<button class="px-space-sm h-6 flex items-center gap-1 font-body-sm text-body-sm text-on-surface hover:bg-surface-container transition-colors rounded-DEFAULT" type="button">
+<span class="material-symbols-outlined text-[14px] text-secondary">file_download</span>
+<span>Export CSV</span>
+</button>
+<div class="h-3.5 w-px bg-outline-variant"></div>
+<button class="px-space-sm h-6 flex items-center gap-1 font-body-sm text-body-sm text-on-surface hover:bg-surface-container transition-colors rounded-DEFAULT" type="button">
+<span class="material-symbols-outlined text-[14px] text-secondary">difference</span>
+<span>Compare SIM-401</span>
+</button>
+<div class="h-3.5 w-px bg-outline-variant"></div>
+<button class="px-space-sm h-6 flex items-center gap-1 font-body-sm text-body-sm text-on-surface hover:bg-surface-container transition-colors rounded-DEFAULT" type="button">
+<span class="material-symbols-outlined text-[14px] text-secondary">assignment_turned_in</span>
+<span>Attach to Claim</span>
+</button>
+</div>
+<div class="flex items-center gap-1 bg-primary text-on-primary px-space-sm h-6 rounded-DEFAULT font-label-md text-label-md uppercase tracking-wider shadow-sm select-none">
+<span class="w-1.5 h-1.5 rounded-full bg-inverse-primary animate-pulse"></span>
+<span>Contextual Agent Active</span>
+</div>
+</div>
+</div>
+<!-- Multi-Pane Workplace Splitter Wrapper -->
+<div class="flex flex-1 w-full min-h-0 relative">
+<!-- SUB-NAV / CONTEXTUAL WORKSPACE SIDEBAR (LEFT) -->
+<aside class="w-64 bg-surface-container-low border-r border-outline-variant flex flex-col shrink-0">
+<!-- Scoped Snapshot Meta Card -->
+<div class="p-space-sm border-b border-outline-variant bg-surface-container-lowest">
+<div class="flex items-center justify-between mb-1">
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">Execution Anchor</span>
+<span class="inline-flex items-center px-1 rounded-DEFAULT bg-secondary-container text-on-secondary-container font-code-sm text-[10px] font-semibold">LOCKED</span>
+</div>
+<div class="space-y-1 font-code-sm text-code-sm">
+<div class="flex justify-between items-baseline">
+<span class="text-on-surface-variant">Run ID:</span>
+<span class="font-medium text-primary">SIM-402</span>
+</div>
+<div class="flex justify-between items-baseline">
+<span class="text-on-surface-variant">Snapshot:</span>
+<span class="font-code-table text-on-surface">d7a4e9b</span>
+</div>
+<div class="flex justify-between items-baseline">
+<span class="text-on-surface-variant">Mesh Grid:</span>
+<span class="text-on-surface">8x8 Torus (Radix 8)</span>
+</div>
+<div class="flex justify-between items-baseline">
+<span class="text-on-surface-variant">Status:</span>
+<span class="inline-flex items-center gap-1 text-primary font-medium">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+              Converged
+            </span>
+</div>
+</div>
+</div>
+<!-- Sub-Workspace Directory -->
+<div class="p-space-xs border-b border-outline-variant bg-surface-container">
+<span class="px-space-xs font-label-md text-[10px] text-secondary uppercase font-semibold tracking-wider">Analysis Workspaces</span>
+</div>
+<nav class="flex flex-col py-1 text-body-sm font-body-sm">
+<a class="h-7 px-space-md flex items-center justify-between text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">dashboard</span>
+<span>Summary</span>
+</div>
+<span class="font-code-sm text-[10px] text-secondary">01</span>
+</a>
+<a class="h-7 px-space-md flex items-center justify-between text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">grid_view</span>
+<span>Traffic Matrix</span>
+</div>
+<span class="font-code-sm text-[10px] text-secondary">64x64</span>
+</a>
+<!-- Active View -->
+<a class="h-7 px-space-md flex items-center justify-between bg-surface-container-highest text-primary font-medium border-l-2 border-primary" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-primary">analytics</span>
+<span class="font-semibold text-on-surface">Metrics &amp; Obligations</span>
+</div>
+<span class="px-1 rounded-DEFAULT bg-error-container text-on-error-container font-code-sm text-[10px] font-bold">2 VIOL</span>
+</a>
+<a class="h-7 px-space-md flex items-center justify-between text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">share</span>
+<span>Topology Overlay</span>
+</div>
+<span class="font-code-sm text-[10px] text-secondary">Heat</span>
+</a>
+<a class="h-7 px-space-md flex items-center justify-between text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">reorder</span>
+<span>Trace Viewer</span>
+</div>
+<span class="font-code-sm text-[10px] text-secondary">1.2GB</span>
+</a>
+<a class="h-7 px-space-md flex items-center justify-between text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">compare_arrows</span>
+<span>Run Comparison</span>
+</div>
+<span class="font-code-sm text-[10px] text-secondary">Delta</span>
+</a>
+</nav>
+<!-- Bottom Mini Telemetry / Hardware Constraints -->
+<div class="mt-auto border-t border-outline-variant bg-surface-container-lowest p-space-sm space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md uppercase text-secondary">Flit Injection Budget</span>
+<span class="font-code-sm text-[10px] text-on-surface font-semibold">128-bit @ 1.4GHz</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[88%]"></div>
+</div>
+<div class="flex justify-between font-code-sm text-[10px] text-on-surface-variant">
+<span>Observed: 21.2 GB/s</span>
+<span>Max: 22.4 GB/s</span>
+</div>
+</div>
+</aside>
+<!-- MAIN METRIC INSPECTION & EVIDENCE VIEW (CENTER) -->
+<main class="flex-1 min-w-0 bg-surface flex flex-col overflow-y-auto">
+<!-- System Notification: Divergence Warning -->
+<div class="mx-space-md mt-space-md p-space-sm bg-surface-container-high border border-outline-variant rounded-DEFAULT flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[18px] shrink-0 mt-0.5">warning</span>
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md uppercase text-on-surface tracking-wider font-semibold">Draft Divergence Warning</span>
+<span class="font-code-sm text-[10px] px-1 bg-surface-container-lowest rounded text-secondary border border-outline-variant">PHYS-SHIFT</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 leading-snug">
+            Active workspace draft <code class="font-code-sm font-semibold text-primary">rev: d7a4e9b-phys04*</code> contains 2 uncommitted floorplan macros in North quadrant. Displayed telemetry strictly reflects immutable snapshot <code class="font-code-sm font-semibold text-on-surface">d7a4e9b</code>.
+          </p>
+</div>
+<button class="shrink-0 px-2 py-0.5 border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-on-surface hover:bg-surface-container font-code-sm text-[11px] transition-colors" type="button">
+          Re-Synthesize Draft
+        </button>
+</div>
+<!-- Section: Key Requirements & Obligations Matrix -->
+<div class="p-space-md flex-1 flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-sm text-headline-sm text-on-surface">Architectural Obligations &amp; Contract Verification</span>
+<span class="px-1.5 py-0.5 rounded-DEFAULT bg-surface-container-highest text-secondary font-code-sm text-[11px]">4 Tracked Bounds</span>
+</div>
+<div class="flex items-center gap-space-xs text-secondary font-code-sm text-code-sm">
+<span class="inline-block w-2 h-2 rounded-full bg-error"></span>
+<span>2 Critical Tail Violations</span>
+</div>
+</div>
+<!-- Metric Table -->
+<div class="border border-outline-variant rounded-DEFAULT bg-surface-container-lowest overflow-hidden shadow-sm">
+<table class="w-full text-left border-collapse font-body-sm">
+<thead>
+<tr class="bg-surface-container-low border-b border-outline-variant font-label-md text-[11px] uppercase tracking-wider text-secondary">
+<th class="py-2 px-space-md font-semibold">Obligation ID / Metric</th>
+<th class="py-2 px-space-md font-semibold text-right">Contract Bound</th>
+<th class="py-2 px-space-md font-semibold text-right">SIM-402 Observed</th>
+<th class="py-2 px-space-md font-semibold">Domain Scope</th>
+<th class="py-2 px-space-md font-semibold text-center">State</th>
+<th class="py-2 px-space-md font-semibold">Artifact Provenance</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant font-code-sm text-code-sm">
+<!-- Row 1: REQ-LAT-04 (SELECTED) -->
+<tr class="bg-secondary-container/40 hover:bg-secondary-container/60 transition-colors border-l-2 border-primary cursor-pointer">
+<td class="py-2 px-space-md font-medium text-on-surface">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">radio_button_checked</span>
+<span class="font-semibold text-primary">REQ-LAT-04</span>
+<span class="text-secondary font-body-sm text-[11px]">Packet Latency p99</span>
+</div>
+</td>
+<td class="py-2 px-space-md text-right font-code-table text-on-surface-variant">≤ 25.0 ns</td>
+<td class="py-2 px-space-md text-right font-code-table font-semibold text-error">28.6 ns</td>
+<td class="py-2 px-space-md text-on-surface">PE_0,0 → HBM_CTRL_0</td>
+<td class="py-2 px-space-md text-center">
+<span class="inline-flex items-center px-1.5 py-0.2 rounded-DEFAULT bg-error-container text-on-error-container font-semibold text-[10px]">
+                    VIOLATED
+                  </span>
+</td>
+<td class="py-2 px-space-md font-code-table text-secondary flex items-center justify-between">
+<span class="truncate max-w-[140px]">sim402_hist_lat.json</span>
+<span class="material-symbols-outlined text-[14px] text-outline hover:text-on-surface">open_in_new</span>
+</td>
+</tr>
+<!-- Row 2: REQ-TP-01 -->
+<tr class="hover:bg-surface-container transition-colors cursor-pointer">
+<td class="py-2 px-space-md font-medium text-on-surface">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-outline">radio_button_unchecked</span>
+<span class="font-semibold">REQ-TP-01</span>
+<span class="text-secondary font-body-sm text-[11px]">Peak Flit Injection</span>
+</div>
+</td>
+<td class="py-2 px-space-md text-right font-code-table text-on-surface-variant">≥ 18.0 GB/s</td>
+<td class="py-2 px-space-md text-right font-code-table font-semibold text-on-surface">21.2 GB/s</td>
+<td class="py-2 px-space-md text-on-surface">North Ingress Port 2</td>
+<td class="py-2 px-space-md text-center">
+<span class="inline-flex items-center px-1.5 py-0.2 rounded-DEFAULT bg-surface-container-high text-on-surface font-semibold text-[10px]">
+                    MET
+                  </span>
+</td>
+<td class="py-2 px-space-md font-code-table text-secondary flex items-center justify-between">
+<span class="truncate max-w-[140px]">sim402_trace.parquet</span>
+<span class="material-symbols-outlined text-[14px] text-outline hover:text-on-surface">open_in_new</span>
+</td>
+</tr>
+<!-- Row 3: REQ-BUF-02 -->
+<tr class="hover:bg-surface-container transition-colors cursor-pointer">
+<td class="py-2 px-space-md font-medium text-on-surface">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-outline">radio_button_unchecked</span>
+<span class="font-semibold">REQ-BUF-02</span>
+<span class="text-secondary font-body-sm text-[11px]">Virtual Channel Occupancy</span>
+</div>
+</td>
+<td class="py-2 px-space-md text-right font-code-table text-on-surface-variant">≤ 85.0%</td>
+<td class="py-2 px-space-md text-right font-code-table font-semibold text-error">94.2% (Peak)</td>
+<td class="py-2 px-space-md text-on-surface">Router_1_2 VC1</td>
+<td class="py-2 px-space-md text-center">
+<span class="inline-flex items-center px-1.5 py-0.2 rounded-DEFAULT bg-error-container text-on-error-container font-semibold text-[10px]">
+                    VIOLATED
+                  </span>
+</td>
+<td class="py-2 px-space-md font-code-table text-secondary flex items-center justify-between">
+<span class="truncate max-w-[140px]">vc_alloc_sim402.dat</span>
+<span class="material-symbols-outlined text-[14px] text-outline hover:text-on-surface">open_in_new</span>
+</td>
+</tr>
+<!-- Row 4: REQ-DEADLOCK-01 -->
+<tr class="hover:bg-surface-container transition-colors cursor-pointer">
+<td class="py-2 px-space-md font-medium text-on-surface">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-outline">radio_button_unchecked</span>
+<span class="font-semibold">REQ-DEADLOCK-01</span>
+<span class="text-secondary font-body-sm text-[11px]">Credit Starvation Freedom</span>
+</div>
+</td>
+<td class="py-2 px-space-md text-right font-code-table text-on-surface-variant">0 cycles</td>
+<td class="py-2 px-space-md text-right font-code-table font-semibold text-on-surface">0 stall cyc</td>
+<td class="py-2 px-space-md text-on-surface">Global Radix-8 Mesh</td>
+<td class="py-2 px-space-md text-center">
+<span class="inline-flex items-center px-1.5 py-0.2 rounded-DEFAULT bg-surface-container-high text-on-surface font-semibold text-[10px]">
+                    MET
+                  </span>
+</td>
+<td class="py-2 px-space-md font-code-table text-secondary flex items-center justify-between">
+<span class="truncate max-w-[140px]">credit_mon.log</span>
+<span class="material-symbols-outlined text-[14px] text-outline hover:text-on-surface">open_in_new</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Latency Tail Distribution & Bottleneck Evidence Chart -->
+<div class="grid grid-cols-12 gap-space-md">
+<!-- Visual Chart Inset (8 cols) -->
+<div class="col-span-8 border border-outline-variant rounded-DEFAULT bg-surface-container-lowest p-space-sm flex flex-col justify-between">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="font-headline-sm text-headline-sm text-on-surface">p99 Latency Histogram Profile</span>
+<span class="font-code-sm text-[10px] text-secondary">Bin: 0.5ns | Window: cyc 180k-310k</span>
+</div>
+<div class="flex items-center gap-3 font-code-sm text-[11px]">
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-1 bg-primary inline-block"></span>
+<span class="text-on-surface-variant">Distribution</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2.5 h-0.5 bg-error inline-block border-t border-dashed border-error"></span>
+<span class="text-error font-medium">Bound (25.0 ns)</span>
+</div>
+</div>
+</div>
+<!-- Inline Vector Chart: Latency tail breakdown -->
+<div class="w-full h-40 relative bg-surface-container-low rounded-DEFAULT p-2 flex items-end">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 500 120">
+<!-- Grid Lines -->
+<line stroke="#c0c7d0" stroke-dasharray="2,2" stroke-width="0.5" x1="0" x2="500" y1="30" y2="30"></line>
+<line stroke="#c0c7d0" stroke-dasharray="2,2" stroke-width="0.5" x1="0" x2="500" y1="70" y2="70"></line>
+<line stroke="#c0c7d0" stroke-width="0.5" x1="0" x2="500" y1="110" y2="110"></line>
+<!-- REQ Threshold vertical line @ x = 360 (25.0ns) -->
+<line stroke="#ba1a1a" stroke-dasharray="3,3" stroke-width="1.5" x1="360" x2="360" y1="10" y2="110"></line>
+<text fill="#ba1a1a" font-family="JetBrains Mono" font-size="9" font-weight="600" x="365" y="24">REQ-LAT-04: 25.0ns</text>
+<!-- Observed p99 vertical mark @ x = 420 (28.6ns) -->
+<line stroke="#00537c" stroke-width="1.5" x1="420" x2="420" y1="10" y2="110"></line>
+<circle cx="420" cy="18" fill="#00537c" r="3"></circle>
+<text fill="#00537c" font-family="JetBrains Mono" font-size="9" font-weight="600" x="426" y="20">p99: 28.6ns</text>
+<!-- Histogram Path (Log normal with heavy burst tail) -->
+<path d="M 10 110 
+                         Q 50 108 90 98 
+                         Q 140 80 180 32 
+                         Q 210 12 240 28 
+                         Q 280 60 320 86 
+                         Q 370 94 420 98 
+                         Q 460 106 490 109 L 490 110 Z" fill="#0f6c9e" fill-opacity="0.18" stroke="#00537c" stroke-width="1.5"></path>
+</svg>
+</div>
+<div class="flex items-center justify-between pt-2 border-t border-outline-variant font-code-sm text-[10px] text-secondary">
+<span>0.0 ns</span>
+<span>10.0 ns</span>
+<span>20.0 ns</span>
+<span class="text-error font-medium">25.0 ns (Spec)</span>
+<span class="text-primary font-medium">28.6 ns (Obs)</span>
+<span>35.0 ns</span>
+</div>
+</div>
+<!-- Epistemic & Engineering Discipline Card (4 cols) -->
+<div class="col-span-4 border border-outline-variant rounded-DEFAULT bg-surface-container-low p-space-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-1.5 text-secondary mb-1">
+<span class="material-symbols-outlined text-[15px]">straighten</span>
+<span class="font-label-md text-label-md uppercase tracking-wider">Numerical Discipline Note</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                Link Capacity: <span class="font-code-sm font-semibold text-on-surface">128-bit @ 1.4 GHz = 22.4 GB/s</span> per direction. High VC occupancy indicates backpressure but does <span class="font-medium text-on-surface">NOT</span> prove deadlock or causal head-of-line blocking.
+              </p>
+</div>
+<div class="mt-space-md p-space-xs bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-code-sm text-[11px] space-y-1">
+<div class="flex justify-between text-secondary">
+<span>Selected Focus:</span>
+<span class="text-primary font-semibold">Router_1_2 [VC1]</span>
+</div>
+<div class="flex justify-between text-secondary">
+<span>Sample Size:</span>
+<span class="text-on-surface">142,880 Packets</span>
+</div>
+<div class="flex justify-between text-secondary">
+<span>Confidence:</span>
+<span class="text-on-surface">&gt; 99.998% (Tail)</span>
+</div>
+</div>
+<div class="mt-2 text-right">
+<span class="font-code-sm text-[10px] text-outline uppercase tracking-wider">Illustrative sample data</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- RESIZABLE RIGHT PANEL: CONTEXTUAL ASSISTANT (ACTIVE & RIGOROUS) -->
+<aside class="w-[440px] bg-surface-container-lowest border-l border-outline-variant flex flex-col shrink-0 z-30 shadow-sm">
+<!-- Panel Header with Connection State & Controls -->
+<div class="h-9 px-space-md border-b border-outline-variant bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-primary">smart_toy</span>
+<span class="font-headline-sm text-[13px] text-on-surface font-semibold tracking-tight">EDA Assistant — Contextual</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="w-6 h-6 flex items-center justify-center rounded text-secondary hover:text-on-surface hover:bg-surface-container" title="Scope Filter" type="button">
+<span class="material-symbols-outlined text-[15px]">filter_alt</span>
+</button>
+<button class="w-6 h-6 flex items-center justify-center rounded text-secondary hover:text-on-surface hover:bg-surface-container" title="Detach Context" type="button">
+<span class="material-symbols-outlined text-[15px]">link_off</span>
+</button>
+<div class="h-3 w-px bg-outline-variant mx-0.5"></div>
+<button class="w-6 h-6 flex items-center justify-center rounded text-secondary hover:text-on-surface hover:bg-surface-container" title="Collapse Drawer" type="button">
+<span class="material-symbols-outlined text-[15px]">dock_to_right</span>
+</button>
+</div>
+</div>
+<!-- Attachment & Bounds Ribbon -->
+<div class="px-space-md py-1.5 border-b border-outline-variant bg-surface-container-lowest flex flex-wrap items-center gap-1.5">
+<div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-DEFAULT bg-primary-fixed text-on-primary-fixed font-code-sm text-[10px] font-semibold">
+<span class="material-symbols-outlined text-[11px]">adjust</span>
+<span>Selected: REQ-LAT-04</span>
+</div>
+<div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-DEFAULT bg-surface-container text-on-surface-variant font-code-sm text-[10px]">
+<span>Run: SIM-402 (d7a4e9b)</span>
+</div>
+<div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-DEFAULT bg-surface-container text-secondary font-code-sm text-[10px]">
+<span class="material-symbols-outlined text-[11px]">attach_file</span>
+<span>2 Artifacts (hist_lat, vc_alloc)</span>
+</div>
+</div>
+<!-- Privacy & Transmission Policy Box -->
+<div class="px-space-md py-2 border-b border-outline-variant bg-surface-container-low">
+<div class="flex items-center gap-1 text-secondary mb-1">
+<span class="material-symbols-outlined text-[13px] text-primary">verified_user</span>
+<span class="font-label-md text-[10px] uppercase font-semibold text-on-surface">Data Transmission Scope (Bounded Local)</span>
+</div>
+<p class="font-body-sm text-[11px] leading-tight text-on-surface-variant">
+          Local daemon process <code class="font-code-sm text-[10px] text-on-surface">acp/v1.4.2</code> active. Confidential chip geometry &amp; RTL synthesis ASTs are <strong class="text-on-surface">EXCLUDED</strong>. Only extracted histogram aggregates (64 KB) and port identifiers are shared.
+        </p>
+</div>
+<!-- Assistant Execution Body: 4-Part Rigorous Breakdown -->
+<div class="flex-1 overflow-y-auto p-space-md space-y-space-md font-body-sm text-body-sm">
+<!-- PART 1: SCOPED OBSERVATION -->
+<div class="border-l-2 border-primary pl-space-sm space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-[11px] uppercase font-bold tracking-wider text-primary">1. Scoped Observation (Fact)</span>
+</div>
+<p class="text-on-surface text-[12px] leading-snug">
+            Run <strong class="font-code-sm">SIM-402</strong> observed packet latency p99 at <strong class="text-error font-code-sm">28.6 ns</strong> between <code class="font-code-sm bg-surface-container px-1 py-0.2 rounded">PE_0,0</code> and <code class="font-code-sm bg-surface-container px-1 py-0.2 rounded">HBM_CTRL_0</code>, violating requirement <span class="font-semibold text-primary">REQ-LAT-04</span> (25.0 ns) during execution cycles 180,000–310,000.
+          </p>
+<div class="font-code-sm text-[11px] text-secondary flex items-center gap-1 pt-0.5">
+<span class="material-symbols-outlined text-[12px]">verified</span>
+<span>Artifact: <code class="text-on-surface">sim402_hist_lat.json</code> (bin: 0.5ns, 142k flits)</span>
+</div>
+</div>
+<!-- PART 2: INTERPRETATION & HYPOTHESIS -->
+<div class="border-l-2 border-secondary pl-space-sm space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-[11px] uppercase font-bold tracking-wider text-secondary">2. Hypothesis &amp; Correlation (Non-Causal)</span>
+</div>
+<p class="text-on-surface text-[12px] leading-snug">
+            North-facing egress VC1 on switch <code class="font-code-sm bg-surface-container px-1 py-0.2 rounded">Router_1_2</code> reached <strong class="text-error font-code-sm">94.2%</strong> peak buffer occupancy during the identical burst window. Congestion correlates strongly with concurrent AXI5 flit streams injected by <code class="font-code-sm bg-surface-container px-1 py-0.2 rounded">PE_0,1</code> traversing crossbar switch port 4.
+          </p>
+</div>
+<!-- PART 3: UNKNOWNS & EPISTEMIC BOUNDARIES -->
+<div class="border-l-2 border-outline pl-space-sm space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-[11px] uppercase font-bold tracking-wider text-outline">3. Epistemic Boundaries &amp; Unknowns</span>
+</div>
+<ul class="list-disc list-inside text-on-surface-variant text-[11px] space-y-0.5">
+<li>Absence of full flit trace prevents validating head-of-line blocking vs. switch crossbar arbitration starvation.</li>
+<li>Physical wire flight latencies (N7 interconnect parasitics) are analytical RC estimates, not post-route extraction.</li>
+</ul>
+</div>
+<!-- PART 4: REVIEWABLE CHANGE PROPOSAL -->
+<div class="border border-outline-variant rounded-DEFAULT bg-surface-container-low p-space-sm space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-[11px] uppercase font-bold tracking-wider text-primary">4. Structured Proposal</span>
+<span class="font-code-sm text-[10px] px-1 py-0.2 rounded bg-surface-container-lowest text-on-surface border border-outline-variant">falcon8_noc_cfg.json</span>
+</div>
+<p class="text-[12px] text-on-surface font-medium leading-tight">
+            Increase VC depth on Router_1_2 from 16 to 24 flits OR re-route PE_0,1 ingress to virtual channel VC2.
+          </p>
+<!-- Unified Code Diff Card -->
+<div class="rounded-DEFAULT bg-surface-container-lowest border border-outline-variant font-code-sm text-[11px] overflow-hidden my-1">
+<div class="bg-surface-container px-2 py-1 text-[10px] text-secondary flex justify-between border-b border-outline-variant">
+<span>Target: R_1_2.ports.north.vc_depth</span>
+<span>d7a4e9b → agent-a1</span>
+</div>
+<div class="p-2 space-y-0.5 leading-none">
+<div class="text-error bg-error-container/20 px-1 py-0.5 rounded-DEFAULT font-mono">-   "vc_depth": 16,</div>
+<div class="text-primary bg-primary-fixed/20 px-1 py-0.5 rounded-DEFAULT font-mono font-semibold">+   "vc_depth": 24,</div>
+<div class="text-secondary pl-3">// Est: +128 FFs (~0.04% N7 cell area)</div>
+</div>
+</div>
+<!-- Validation State Badge -->
+<div class="flex items-center justify-between text-[11px] font-code-sm text-secondary pt-0.5">
+<span class="flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[13px] text-primary">task_alt</span>
+              Synthesizable / Schema Validated
+            </span>
+<span>Target: candidate-a1</span>
+</div>
+<!-- Strict Human Review Actions (Zero direct auto-write) -->
+<div class="grid grid-cols-2 gap-space-xs pt-1">
+<button class="h-6 px-2 flex items-center justify-center gap-1 rounded-DEFAULT border border-outline-variant bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-[11px] transition-colors" type="button">
+<span class="material-symbols-outlined text-[13px]">visibility</span>
+<span>Review Diff</span>
+</button>
+<button class="h-6 px-2 flex items-center justify-center gap-1 rounded-DEFAULT bg-primary text-on-primary hover:bg-primary/90 font-body-sm text-[11px] font-medium transition-colors" type="button">
+<span class="material-symbols-outlined text-[13px]">fork_right</span>
+<span>Adopt to Branch</span>
+</button>
+</div>
+</div>
+</div>
+<!-- State Variant Navigation / Drawer Modes -->
+<div class="px-space-md py-1 border-t border-outline-variant bg-surface-container-low flex items-center justify-between">
+<span class="font-label-md text-[10px] uppercase text-secondary">Inspector Mode</span>
+<div class="flex items-center gap-1">
+<button class="px-1.5 py-0.5 rounded-DEFAULT bg-surface-container-highest text-primary font-code-sm text-[10px] font-semibold" type="button">Active</button>
+<button class="px-1.5 py-0.5 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container font-code-sm text-[10px]" type="button">Offline</button>
+<button class="px-1.5 py-0.5 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container font-code-sm text-[10px]" type="button">Restricted</button>
+</div>
+</div>
+<!-- Prompt Suggestion Chips & Query Terminal -->
+<div class="p-space-sm border-t border-outline-variant bg-surface-container-lowest space-y-1.5">
+<div class="flex items-center gap-1 overflow-x-auto pb-0.5">
+<button class="whitespace-nowrap px-1.5 py-0.5 rounded-DEFAULT bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-code-sm text-[10px] transition-colors" type="button">
+            Explain Latency Tail
+          </button>
+<button class="whitespace-nowrap px-1.5 py-0.5 rounded-DEFAULT bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-code-sm text-[10px] transition-colors" type="button">
+            Check Evidence Gaps
+          </button>
+<button class="whitespace-nowrap px-1.5 py-0.5 rounded-DEFAULT bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface font-code-sm text-[10px] transition-colors" type="button">
+            Draft Sim Config
+          </button>
+</div>
+<div class="relative flex items-center">
+<input class="w-full h-7 pl-2 pr-7 text-code-sm font-code-sm bg-surface-container-low border border-outline-variant rounded-DEFAULT focus:outline-none focus:border-primary text-on-surface placeholder:text-outline" placeholder="Query simulation state, router arbitration, flit traces..." type="text"/>
+<button class="absolute right-1 text-primary hover:text-primary-container" title="Send Query" type="button">
+<span class="material-symbols-outlined text-[16px]">arrow_upward</span>
+</button>
+</div>
+</div>
+</aside>
+</div>
+<!-- Industrial Engineering Status Dock (Lower Anchor) -->
+<div class="w-full h-6 bg-surface-container-low border-t border-outline-variant px-space-md flex items-center justify-between select-none text-code-sm text-code-sm text-on-surface-variant">
+<div class="flex items-center gap-space-lg">
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="text-on-surface font-medium">ACP Daemon v1.4.2 Connected</span>
+</div>
+<span class="text-outline-variant">|</span>
+<span>Latency Tail Bound: <span class="text-error font-medium">+3.6 ns Violation</span></span>
+<span class="text-outline-variant">|</span>
+<span>Engine: <span class="text-on-surface font-medium">BookSim2 Cycle-Accurate</span></span>
+</div>
+<div class="flex items-center gap-space-md">
+<span class="text-secondary">Artifacts: <span class="text-on-surface">2 Loaded (64 KB cached)</span></span>
+<span class="text-outline-variant">|</span>
+<span class="text-secondary font-mono">HASH: 3bf8...01ec</span>
+</div>
+</div>
+</div></main></div><aside class="fixed right-0 top-14 bottom-6 w-80 bg-surface-container-lowest border-l border-outline-variant z-40 flex flex-col"><div class="h-8 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-low"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[15px] text-primary">smart_toy</span><span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Contextual Copilot</span></div><div class="flex items-center gap-space-xs"><button class="text-secondary hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[15px]">unfold_more</span></button><button class="text-secondary hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[15px]">close</span></button></div></div><div class="flex-1 p-space-md overflow-y-auto space-y-space-md text-body-sm font-body-sm"><div class="bg-surface-container-low p-space-sm rounded-DEFAULT border border-outline-variant"><span class="font-label-md text-label-md uppercase text-secondary block mb-1">Interconnect Observation</span><p class="text-on-surface-variant font-body-sm text-body-sm leading-tight">High contention detected on Router (3,4) local port. Switch arbitration delays may induce head-of-line blocking under Burst 64B traffic.</p></div><div class="bg-surface-container-lowest border border-outline-variant p-space-sm rounded-DEFAULT"><span class="font-code-sm text-code-sm text-primary font-medium block mb-1">&gt; Suggested Remediation:</span><p class="font-code-sm text-[11px] text-on-surface-variant">Reallocate 2 VC buffers from North ingress channel to Local-0 packet sink.</p></div></div><div class="p-space-sm border-t border-outline-variant bg-surface-container-low"><div class="relative flex items-center"><input class="w-full h-7 pl-2 pr-7 text-code-sm font-code-sm bg-surface-container-lowest border border-outline-variant rounded-DEFAULT focus:outline-none focus:border-primary text-on-surface placeholder:text-outline" placeholder="Query synthesis trace, routing, flit state..." type="text"/><button class="absolute right-1 text-primary hover:text-primary-container" type="button"><span class="material-symbols-outlined text-[16px]">send</span></button></div></div></aside><footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-low border-t border-outline-variant z-50 flex items-center justify-between px-space-md select-none"><div class="flex items-center gap-space-lg text-code-sm font-code-sm text-on-surface-variant"><div class="flex items-center gap-space-xs"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="text-on-surface font-medium">Radix-8 Torus</span></div><span class="text-outline-variant">|</span><span>CLK: <span class="text-on-surface">1.40GHz</span></span><span class="text-outline-variant">|</span><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[13px] text-secondary">check_circle</span><span>0 Errors</span></div><span class="text-outline-variant">|</span><div class="flex items-center gap-space-xs text-error"><span class="material-symbols-outlined text-[13px]">assignment_late</span><span>2 Obligations Pending</span></div></div><div class="flex items-center gap-space-lg text-code-sm font-code-sm text-on-surface-variant"><div class="flex items-center gap-space-xs"><span class="text-secondary">SIM-403:</span><div class="w-16 h-1.5 bg-surface-container-high rounded-full overflow-hidden"><div class="bg-primary h-full w-[42%]"></div></div><span class="text-on-surface">42%</span></div><span class="text-outline-variant">|</span><span>Generation: <span class="text-on-surface font-medium">GEN-881 Complete</span></span><span class="text-outline-variant">|</span><div class="flex items-center gap-space-xs text-secondary"><span class="material-symbols-outlined text-[13px]">lock</span><span>Verification State Locked</span></div></div></footer></body></html>

@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface-bright":"#f7f9ff","on-tertiary-fixed":"#121d27","on-surface-variant":"#40484f","outline":"#707880","on-surface":"#151c24","surface-container-lowest":"#ffffff","on-background":"#151c24","primary-fixed-dim":"#8fcdff","secondary":"#4e616a","on-primary-fixed-variant":"#004b71","primary-fixed":"#cbe6ff","on-secondary-container":"#546770","tertiary":"#444f5a","inverse-on-surface":"#eaf1fc","surface-container-high":"#e2e9f4","background":"#f7f9ff","secondary-fixed":"#d2e6f1","on-primary-fixed":"#001e30","on-tertiary-fixed-variant":"#3d4853","on-error":"#ffffff","tertiary-container":"#5c6773","on-primary":"#ffffff","inverse-primary":"#8fcdff","on-secondary":"#ffffff","on-secondary-fixed":"#0a1e26","error-container":"#ffdad6","surface-tint":"#006494","outline-variant":"#c0c7d0","surface-container":"#e8eef9","on-tertiary":"#ffffff","inverse-surface":"#2a3139","secondary-fixed-dim":"#b6c9d4","error":"#ba1a1a","secondary-container":"#d2e6f1","on-primary-container":"#d0e8ff","tertiary-fixed-dim":"#bcc8d5","primary":"#00537c","surface-container-low":"#eef4ff","surface-container-highest":"#dce3ee","on-tertiary-container":"#dae6f4","surface":"#f7f9ff","on-error-container":"#93000a","surface-dim":"#d4dae5","tertiary-fixed":"#d8e4f2","surface-variant":"#dce3ee","on-secondary-fixed-variant":"#374952","primary-container":"#0f6c9e"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"space-xl":"1.5rem","space-md":"0.75rem","space-sm":"0.5rem","margin":"0.5rem","gutter":"0.5rem","space-lg":"1rem","space-xs":"0.25rem"},"fontFamily":{"headline-sm":["Inter"],"headline-lg":["Inter"],"code-md":["JetBrains Mono"],"code-sm":["JetBrains Mono"],"label-md":["Inter"],"body-sm":["Inter"],"headline-md":["Inter"],"code-table":["JetBrains Mono"],"body-md":["Inter"]},"fontSize":{"headline-sm":["14px",{"lineHeight":"20px","letterSpacing":"-0.005em","fontWeight":"600"}],"headline-lg":["20px",{"lineHeight":"28px","letterSpacing":"-0.015em","fontWeight":"600"}],"code-md":["12px",{"lineHeight":"16px","fontWeight":"400"}],"code-sm":["11px",{"lineHeight":"14px","fontWeight":"400"}],"label-md":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"600"}],"body-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"headline-md":["16px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"600"}],"code-table":["11px",{"lineHeight":"14px","letterSpacing":"-0.02em","fontWeight":"500"}],"body-md":["13px",{"lineHeight":"18px","fontWeight":"400"}]}}}};</script></head><body class="bg-surface font-body-sm text-body-sm text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant"><div class="h-10 px-space-md flex items-center justify-between border-b border-surface-container-high"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">memory</span><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface uppercase">VERITX</span><span class="font-code-sm text-code-sm px-space-xs py-0.5 bg-surface-container text-on-surface-variant rounded">SROTA</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-tertiary">folder_open</span><span class="text-on-surface font-code-table text-code-table">Falcon8_NoC_Gen2</span><span class="text-outline">[rev: d7a4e9b-draft*]</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm"><span class="text-outline">CLK:</span><span class="text-on-surface font-code-table text-code-table">1.4 GHz</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-0.5 bg-surface-container-low border border-outline-variant rounded"><span class="material-symbols-outlined text-[14px] text-outline">search</span><span class="font-code-sm text-code-sm text-outline">Cmd + K</span></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span><span>1 Active Job (SIM-403)</span></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-tertiary"><span class="material-symbols-outlined text-[14px] text-primary">verified</span><span>DRC Clean</span></div><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-outline"><span class="material-symbols-outlined text-[14px] text-secondary">bolt</span><span>Daemon: Active</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="h-9 px-space-md flex items-center justify-between bg-surface-container-lowest"><nav class="flex items-center gap-space-xs" data-active-classes="bg-primary text-on-primary font-headline-sm text-headline-sm"><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="design" href="#">Design</a><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="analysis" href="#">Analysis</a><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="explore" href="#">Explore</a><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="verify" href="#">Verify</a><a class="px-space-md py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-label-md text-label-md transition-colors" data-path="deliver" href="#">Deliver</a></nav><div class="flex items-center gap-space-sm font-code-sm text-code-sm text-tertiary"><span class="material-symbols-outlined text-[14px]">lan</span><span>Mesh 4x4 Grid</span><span class="text-outline">|</span><span>Router Radix: 5</span></div></div><div class="h-8 px-space-md flex items-center gap-space-sm bg-surface-container-low border-t border-outline-variant"><span class="font-label-md text-label-md uppercase tracking-wider text-outline px-space-xs">Suite</span><div class="h-3 w-[1px] bg-outline-variant"></div><nav class="flex items-center gap-space-xs" data-active-classes="bg-surface-container-lowest text-primary font-code-table text-code-table border border-outline-variant"><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-code-sm text-code-sm transition-colors" data-path="output-readiness" href="#">Output Readiness</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-code-sm text-code-sm transition-colors" data-path="output-configuration" href="#">Output Configuration</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-code-sm text-code-sm transition-colors" data-path="generation-jobs" href="#">Generation Jobs</a><a class="px-space-sm py-0.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-code-sm text-code-sm transition-colors" data-path="package-review-and-manifest" href="#">Package Review &amp; Manifest</a></nav></div></header><aside class="fixed left-0 top-[108px] bottom-7 w-64 bg-surface-container-lowest border-r border-outline-variant z-30 flex flex-col justify-between"><div class="flex flex-col"><div class="h-7 px-space-sm flex items-center justify-between bg-surface-container-low border-b border-outline-variant"><span class="font-label-md text-label-md uppercase tracking-wider text-outline">Project Explorer</span><span class="material-symbols-outlined text-[14px] text-tertiary">unfold_less</span></div><nav class="p-space-xs flex flex-col gap-0.5" data-active-classes="bg-secondary-container text-on-secondary-container font-code-table text-code-table"><a class="flex items-center gap-space-xs px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-code-sm text-code-sm" data-path="package-review-and-manifest" href="#"><span class="material-symbols-outlined text-[14px] text-tertiary">inventory_2</span><span>delivery_manifest.json</span></a><a class="flex items-center gap-space-xs px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-code-sm text-code-sm" data-path="output-configuration" href="#"><span class="material-symbols-outlined text-[14px] text-tertiary">tune</span><span>noc_fabric_cfg.sv</span></a><a class="flex items-center gap-space-xs px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-code-sm text-code-sm" data-path="output-readiness" href="#"><span class="material-symbols-outlined text-[14px] text-tertiary">fact_check</span><span>gate_readiness.rpt</span></a><a class="flex items-center gap-space-xs px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface font-code-sm text-code-sm" data-path="generation-jobs" href="#"><span class="material-symbols-outlined text-[14px] text-tertiary">flowsheet</span><span>rtl_gen_pipeline.log</span></a></nav></div><div class="border-t border-outline-variant p-space-xs bg-surface-container-lowest"><div class="h-6 px-space-xs flex items-center justify-between font-label-md text-label-md uppercase text-outline"><span>Fabric State</span><span class="text-primary font-code-sm text-code-sm">ACTIVE</span></div><div class="font-code-sm text-code-sm text-on-surface-variant px-space-xs py-1 flex justify-between"><span>Virtual Channels:</span><span class="font-code-table text-code-table text-on-surface">4 / Port</span></div><div class="font-code-sm text-code-sm text-on-surface-variant px-space-xs py-1 flex justify-between"><span>Flit Width:</span><span class="font-code-table text-code-table text-on-surface">128-bit</span></div></div></aside><div class="pl-64"><main class="relative pt-[108px] pb-7 min-h-screen bg-surface"><div class="flex flex-col w-full">
+<!-- Advisory Banner / Session Trace Bar -->
+<div class="bg-surface-container-high px-space-md py-1 flex items-center justify-between text-on-surface">
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="px-1.5 py-0.2 bg-secondary-container text-on-secondary-container rounded font-label-md text-label-md uppercase tracking-wider">Demo / Sample Mode</span>
+<span class="text-tertiary">Session Daemon:</span>
+<span class="font-code-table text-code-table text-on-surface">veritx_lic_daemon:r-219 [socket 9104]</span>
+<span class="text-outline">|</span>
+<span class="text-tertiary">Staged Export Directory:</span>
+<span class="font-code-table text-code-table text-primary">/eda/projects/falcon8/deliverables/pkg_n5_rev_d7a4e9b/</span>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-tertiary">
+<span class="flex items-center gap-1 text-outline">
+<span class="material-symbols-outlined text-[13px] text-tertiary">lock</span> Snapshot d7a4e9b
+      </span>
+<span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant rounded">24/24 Staged Artifacts</span>
+</div>
+</div>
+<!-- Deliver Workspace Sub-Header / Profile Selection -->
+<div class="bg-surface-container-lowest p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<span class="font-code-sm text-code-sm text-outline uppercase tracking-wider">Workspace:</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Deliver</span>
+<span class="material-symbols-outlined text-[14px] text-outline">chevron_right</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Package Manifest</span>
+<span class="material-symbols-outlined text-[14px] text-outline">chevron_right</span>
+<span class="font-headline-sm text-headline-sm text-primary flex items-center gap-1">
+          PKG-N5-882
+          <span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-secondary-fixed text-on-secondary-fixed rounded font-normal">Interconnect &amp; Wrappers Netlist</span>
+</span>
+</div>
+<!-- Action Palette -->
+<div class="flex items-center gap-space-xs">
+<button class="px-space-sm py-1 bg-surface-container text-on-surface rounded font-code-sm text-code-sm hover:bg-surface-container-highest transition-colors flex items-center gap-1" id="btnValidateChecksums">
+<span class="material-symbols-outlined text-[14px] text-primary">verified_user</span>
+          Validate All Checksums
+        </button>
+<button class="px-space-sm py-1 bg-surface-container text-on-surface rounded font-code-sm text-code-sm hover:bg-surface-container-highest transition-colors flex items-center gap-1" id="btnExportJson">
+<span class="material-symbols-outlined text-[14px] text-tertiary">data_object</span>
+          Export Manifest (.json)
+        </button>
+<button class="px-space-md py-1 bg-primary text-on-primary rounded font-label-md text-label-md hover:bg-primary-container transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-on-primary">inventory</span>
+          Prepare Tarball (.tar.gz)
+        </button>
+</div>
+</div>
+<!-- Profile Selector Strip & Disclaimers -->
+<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-space-sm pt-space-xs">
+<div class="flex items-center gap-1 bg-surface-container p-0.5 rounded">
+<button class="px-space-sm py-0.5 bg-surface-container-lowest text-primary font-code-table text-code-table rounded shadow-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+          TSMC N5 Tapeout Eval [PKG-N5-882]
+        </button>
+<button class="px-space-sm py-0.5 text-on-surface-variant hover:text-on-surface font-code-sm text-code-sm rounded transition-colors flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+          FPGA Prototyping Archive [PKG-FPGA-014]
+        </button>
+<button class="px-space-sm py-0.5 text-on-surface-variant hover:text-on-surface font-code-sm text-code-sm rounded transition-colors flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+          Architecture C++ Trace Engine [PKG-ARCH-002]
+        </button>
+</div>
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm bg-surface-container-low px-space-sm py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px] text-error">warning</span>
+<span class="text-on-surface font-code-table text-code-table uppercase">Handoff Advisory:</span>
+<span class="truncate max-w-xl">Package contains unresolved proprietary IP dependencies (Synopsys DW) &amp; non-physical model stubs. Not certified for silicon release.</span>
+</div>
+</div>
+</div>
+<!-- Main 3-Column EDA Splitter Canvas -->
+<div class="grid grid-cols-12 gap-gutter p-space-sm min-h-[calc(100vh-220px)]">
+<!-- LEFT PANEL: Boundary Filters & Interactive Package Hierarchy Tree (col-span-3) -->
+<section class="col-span-12 lg:col-span-3 flex flex-col gap-space-xs bg-surface-container-lowest p-space-sm rounded">
+<!-- Boundary Categorization Metric Cards -->
+<div class="flex items-center justify-between pb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider text-outline">Package Scope &amp; Partitions</span>
+<span class="font-code-table text-code-table text-tertiary">14.8 MB Total</span>
+</div>
+<div class="flex flex-col gap-1">
+<button class="flex items-center justify-between px-space-xs py-1 rounded bg-secondary-container text-on-secondary-container font-code-table text-code-table text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">inventory_2</span>
+            All Staged Artifacts
+          </span>
+<span class="px-1 py-0.2 bg-surface-container-lowest text-on-surface rounded text-code-sm">24</span>
+</button>
+<button class="flex items-center justify-between px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container font-code-sm text-code-sm text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary">memory</span>
+            Generated RTL (Srota v2.3)
+          </span>
+<span class="text-tertiary">8 (4.2 MB)</span>
+</button>
+<button class="flex items-center justify-between px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container font-code-sm text-code-sm text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-error">gavel</span>
+            Supplied IP &amp; Shims
+          </span>
+<span class="px-1 py-0.2 bg-error-container text-on-error-container rounded font-code-table text-code-table">1 Flagged</span>
+</button>
+<button class="flex items-center justify-between px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container font-code-sm text-code-sm text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-tertiary">developer_board</span>
+            Model-Only Compute Stubs
+          </span>
+<span class="text-tertiary">4</span>
+</button>
+<button class="flex items-center justify-between px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container font-code-sm text-code-sm text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-secondary">tune</span>
+            SDC Constraints &amp; Slices
+          </span>
+<span class="text-tertiary">5</span>
+</button>
+<button class="flex items-center justify-between px-space-xs py-1 rounded text-on-surface-variant hover:bg-surface-container font-code-sm text-code-sm text-left">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-outline">description</span>
+            Manifests &amp; Checksums
+          </span>
+<span class="text-tertiary">4</span>
+</button>
+</div>
+<!-- Tree View Header -->
+<div class="mt-space-sm pt-space-xs flex items-center justify-between text-outline font-label-md text-label-md uppercase tracking-wider">
+<span>Staged Directory Layout</span>
+<span class="material-symbols-outlined text-[14px]">account_tree</span>
+</div>
+<!-- Interactive Directory Tree -->
+<div class="flex flex-col gap-0.5 overflow-y-auto max-h-[520px] font-code-sm text-code-sm select-none">
+<!-- Root -->
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface font-code-table text-code-table bg-surface-container-low rounded">
+<span class="material-symbols-outlined text-[14px] text-primary">folder_open</span>
+<span>pkg_falcon8_n5_eval/</span>
+</div>
+<!-- rtl/generated/ -->
+<div class="pl-3 flex flex-col gap-0.5">
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-secondary">expand_more</span>
+<span class="material-symbols-outlined text-[14px] text-primary">folder</span>
+<span>rtl/generated/</span>
+</div>
+<div class="pl-5 flex flex-col gap-0.5">
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">article</span>
+                srota_mesh4x4_top.sv
+              </span>
+<span class="text-[10px] text-tertiary">1.4 MB</span>
+</div>
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">article</span>
+                srota_router_r1_2.sv
+              </span>
+<span class="text-[10px] text-tertiary">820 KB</span>
+</div>
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-primary">article</span>
+                srota_crossbar_arbiter.sv
+              </span>
+<span class="text-[10px] text-tertiary">310 KB</span>
+</div>
+</div>
+</div>
+<!-- ip/supplied/ -->
+<div class="pl-3 flex flex-col gap-0.5">
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-secondary">expand_more</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">folder</span>
+<span>ip/supplied/</span>
+</div>
+<div class="pl-5 flex flex-col gap-0.5">
+<!-- Active Selected Node in Tree -->
+<div class="flex items-center justify-between px-1.5 py-0.5 bg-primary-fixed text-on-primary-fixed font-code-table text-code-table rounded cursor-pointer">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-error">priority_high</span>
+                hbm_ctrl_axi_shim_v2.sv
+              </span>
+<span class="text-[10px] text-on-primary-fixed-variant">BLOCKED</span>
+</div>
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface-variant">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-tertiary">article</span>
+                pcie_gen5_bridge_wrap.sv
+              </span>
+<span class="text-[10px] text-tertiary">STUB</span>
+</div>
+</div>
+</div>
+<!-- compute_datapaths/ -->
+<div class="pl-3 flex flex-col gap-0.5">
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-secondary">expand_more</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">folder</span>
+<span>compute_datapaths/</span>
+</div>
+<div class="pl-5 flex flex-col gap-0.5">
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface-variant">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-tertiary">view_in_ar</span>
+                npu_core_model_stub.sv
+              </span>
+<span class="text-[10px] text-tertiary">MODEL</span>
+</div>
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface-variant">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-tertiary">view_in_ar</span>
+                vector_engine_sink.sv
+              </span>
+<span class="text-[10px] text-tertiary">MODEL</span>
+</div>
+</div>
+</div>
+<!-- constraints/ -->
+<div class="pl-3 flex flex-col gap-0.5">
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-secondary">expand_more</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">folder</span>
+<span>constraints/</span>
+</div>
+<div class="pl-5 flex flex-col gap-0.5">
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-secondary">tune</span>
+                falcon8_tsmc_n5_clocks.sdc
+              </span>
+<span class="text-[10px] text-tertiary">14 KB</span>
+</div>
+</div>
+</div>
+<!-- manifests/ -->
+<div class="pl-3 flex flex-col gap-0.5">
+<div class="flex items-center gap-1 px-1 py-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-secondary">expand_more</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">folder</span>
+<span>manifests/</span>
+</div>
+<div class="pl-5 flex flex-col gap-0.5">
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-tertiary">receipt_long</span>
+                sha256_checksums.manifest
+              </span>
+<span class="text-[10px] text-tertiary">4 KB</span>
+</div>
+<div class="flex items-center justify-between px-1.5 py-0.5 hover:bg-surface-container rounded cursor-pointer text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-tertiary">menu_book</span>
+                delivery_scope_limitations.md
+              </span>
+<span class="text-[10px] text-tertiary">12 KB</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Hash Validation Status Strip -->
+<div class="mt-auto bg-surface-container p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center justify-between font-label-md text-label-md text-on-surface">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">verified</span>
+            Digest Parity
+          </span>
+<span class="font-code-table text-code-table text-primary">24 / 24 MATCH</span>
+</div>
+<p class="font-code-sm text-code-sm text-on-surface-variant">All tree artifacts synchronized with evaluation build SIM-402.</p>
+</div>
+</section>
+<!-- CENTER PANEL: Dominant Detailed Manifest Table (col-span-6) -->
+<section class="col-span-12 lg:col-span-6 flex flex-col bg-surface-container-lowest p-space-sm rounded">
+<!-- Table Controls & Search Filter Strip -->
+<div class="flex flex-wrap items-center justify-between gap-space-xs pb-space-sm">
+<div class="flex items-center gap-space-xs flex-1 max-w-sm">
+<div class="flex items-center gap-1 bg-surface-container-low px-space-xs py-0.5 rounded w-full">
+<span class="material-symbols-outlined text-[14px] text-outline">search</span>
+<input class="bg-transparent font-code-sm text-code-sm text-on-surface focus:outline-none w-full" placeholder="Filter module name, path, producer..." type="text" value=""/>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<!-- Category Filter dropdown simulator -->
+<div class="flex items-center gap-1 bg-surface-container px-space-xs py-0.5 rounded text-on-surface font-code-sm text-code-sm">
+<span class="text-tertiary">Scope:</span>
+<span class="font-code-table text-code-table">All Partitions</span>
+<span class="material-symbols-outlined text-[14px] text-outline">arrow_drop_down</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container px-space-xs py-0.5 rounded text-on-surface font-code-sm text-code-sm">
+<span class="text-tertiary">Status:</span>
+<span class="font-code-table text-code-table">All (1 Flagged)</span>
+<span class="material-symbols-outlined text-[14px] text-outline">arrow_drop_down</span>
+</div>
+</div>
+</div>
+<!-- Manifest Grid View -->
+<div class="overflow-x-auto flex-1">
+<table class="w-full text-left font-body-sm text-body-sm">
+<thead>
+<tr class="bg-surface-container-high text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">
+<th class="py-1 px-space-xs">Artifact Path &amp; Module</th>
+<th class="py-1 px-space-xs">Role</th>
+<th class="py-1 px-space-xs">Producer</th>
+<th class="py-1 px-space-xs">Inclusion State</th>
+<th class="py-1 px-space-xs text-right">Size / Hash</th>
+<th class="py-1 px-space-xs">Licensing / Entitlement</th>
+</tr>
+</thead>
+<tbody class="divide-y-0 font-code-sm text-code-sm">
+<!-- Row 1: Top Netlist (Normal Included) -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span class="font-semibold text-primary">srota_mesh4x4_top.sv</span>
+<span class="text-[10px] text-outline">rtl/generated/srota_mesh4x4_top.sv</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-secondary-fixed text-on-secondary-fixed rounded text-[10px]">Synth RTL</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Srota RTL v2.3</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-primary font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>1.4 MB</span>
+<span class="text-tertiary text-[10px]" title="9a4b2...8f3c">9a4b28..8f3c</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Internal / Free</td>
+</tr>
+<!-- Row 2: Selected Flagged Row (HBM Shim) -->
+<tr class="bg-secondary-container text-on-secondary-container cursor-pointer">
+<td class="py-1.5 px-space-xs font-code-table text-code-table">
+<div class="flex flex-col">
+<span class="font-bold text-error flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">report</span>
+                    hbm_ctrl_axi_shim_v2.sv
+                  </span>
+<span class="text-[10px] text-tertiary">ip/supplied/hbm_ctrl_axi_shim_v2.sv</span>
+</div>
+</td>
+<td class="py-1.5 px-space-xs">
+<span class="px-1 py-0.2 bg-surface-container-lowest text-on-surface rounded text-[10px]">Wrapper / IP</span>
+</td>
+<td class="py-1.5 px-space-xs">Synopsys DW</td>
+<td class="py-1.5 px-space-xs">
+<span class="px-1.5 py-0.5 bg-error-container text-on-error-container font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span> LIC BLOCKED
+                </span>
+</td>
+<td class="py-1.5 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>248 KB</span>
+<span class="text-error text-[10px]" title="e8f4c91a02b4d1c988e09f518ab72d415b801a6d448123e7f601b0d24e65ac19">e8f4c9..ac19</span>
+</div>
+</td>
+<td class="py-1.5 px-space-xs font-code-table text-code-table text-error">
+                Missing FlexLM Token
+              </td>
+</tr>
+<!-- Row 3: Router R1_2 -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span>srota_router_r1_2.sv</span>
+<span class="text-[10px] text-outline">rtl/generated/srota_router_r1_2.sv</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-secondary-fixed text-on-secondary-fixed rounded text-[10px]">Synth RTL</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Srota RTL v2.3</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-primary font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>820 KB</span>
+<span class="text-tertiary text-[10px]">c3182b..04d9</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Internal / Free</td>
+</tr>
+<!-- Row 4: NPU Core Model Stub -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span class="text-secondary">npu_core_model_stub.sv</span>
+<span class="text-[10px] text-outline">compute_datapaths/npu_core_model_stub.sv</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed rounded text-[10px]">Model Stub</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Hand-authored</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-secondary-fixed-dim text-on-secondary-fixed font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> BEHAVIORAL
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>94 KB</span>
+<span class="text-tertiary text-[10px]">f701aa..31e2</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Sim-Only Stub (No Tapeout)</td>
+</tr>
+<!-- Row 5: PCIe Bridge Wrapper -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span>pcie_gen5_bridge_wrap.sv</span>
+<span class="text-[10px] text-outline">ip/supplied/pcie_gen5_bridge_wrap.sv</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed rounded text-[10px]">Model Stub</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Synopsys DW (Stub)</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-on-surface font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED (M)
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>142 KB</span>
+<span class="text-tertiary text-[10px]">4a99d1..772b</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Eval License Bound</td>
+</tr>
+<!-- Row 6: SDC Timing Constraints -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span>falcon8_tsmc_n5_clocks.sdc</span>
+<span class="text-[10px] text-outline">constraints/falcon8_tsmc_n5_clocks.sdc</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-secondary-fixed text-on-secondary-fixed rounded text-[10px]">Constraint</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Srota RTL v2.3</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-primary font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>14 KB</span>
+<span class="text-tertiary text-[10px]">bb82c1..904a</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Generated Intent</td>
+</tr>
+<!-- Row 7: Crossbar Arbiter -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span>srota_crossbar_arbiter.sv</span>
+<span class="text-[10px] text-outline">rtl/generated/srota_crossbar_arbiter.sv</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-secondary-fixed text-on-secondary-fixed rounded text-[10px]">Synth RTL</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Srota RTL v2.3</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-primary font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>310 KB</span>
+<span class="text-tertiary text-[10px]">dd2431..01bf</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Internal / Free</td>
+</tr>
+<!-- Row 8: Checksums Manifest -->
+<tr class="hover:bg-surface-container cursor-pointer transition-colors">
+<td class="py-1 px-space-xs font-code-table text-code-table text-on-surface">
+<div class="flex flex-col">
+<span>sha256_checksums.manifest</span>
+<span class="text-[10px] text-outline">manifests/sha256_checksums.manifest</span>
+</div>
+</td>
+<td class="py-1 px-space-xs">
+<span class="px-1 py-0.2 bg-surface-container-high text-on-surface-variant rounded text-[10px]">Manifest</span>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Veritx Daemon</td>
+<td class="py-1 px-space-xs">
+<span class="px-1.5 py-0.5 bg-surface-container text-primary font-code-table text-[10px] rounded flex items-center gap-1 w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> INCLUDED
+                </span>
+</td>
+<td class="py-1 px-space-xs text-right font-code-table text-code-table">
+<div class="flex flex-col items-end">
+<span>4 KB</span>
+<span class="text-tertiary text-[10px]">22b11f..900e</span>
+</div>
+</td>
+<td class="py-1 px-space-xs text-on-surface-variant">Signed Automation</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Quick Manifest Metrics Footer -->
+<div class="pt-space-sm mt-auto flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm bg-surface-container-low px-space-sm py-1 rounded">
+<span>Displaying 8 of 24 staged deliverables</span>
+<div class="flex items-center gap-space-md">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary"></span> 22 Eligible</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-error"></span> 1 Missing License</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-tertiary"></span> 1 Policy Excluded</span>
+</div>
+</div>
+</section>
+<!-- RIGHT PANEL: Artifact & Qualification Inspector (col-span-3) -->
+<section class="col-span-12 lg:col-span-3 flex flex-col gap-space-sm bg-surface-container-lowest p-space-sm rounded">
+<!-- Inspector Header -->
+<div class="flex items-center justify-between pb-space-xs">
+<span class="font-label-md text-label-md uppercase tracking-wider text-outline">Selected Artifact Inspector</span>
+<span class="px-1.5 py-0.2 bg-error-container text-on-error-container font-code-table text-code-table rounded">BLOCKING SIGN-OFF</span>
+</div>
+<!-- File Identity Card -->
+<div class="bg-surface-container-low p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center gap-1.5 text-on-surface font-code-table text-code-table font-semibold">
+<span class="material-symbols-outlined text-[16px] text-error">folder_managed</span>
+          hbm_ctrl_axi_shim_v2.sv
+        </div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">
+          Target Role: AXI5-to-NoC Bridge Wrapper (TSMC N5 Subsystem)
+        </div>
+<div class="flex justify-between font-code-sm text-code-sm text-tertiary pt-0.5">
+<span>Format: SystemVerilog 2017</span>
+<span class="font-code-table text-code-table">248,192 bytes</span>
+</div>
+</div>
+<!-- Provenance & Lineage -->
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md uppercase tracking-wider text-outline">Lineage &amp; Origin</span>
+<div class="p-space-xs bg-surface-container rounded font-code-sm text-code-sm flex flex-col gap-1">
+<div class="flex justify-between">
+<span class="text-tertiary">Producer:</span>
+<span class="font-code-table text-code-table text-on-surface">Synopsys DesignWare AXI5</span>
+</div>
+<div class="flex justify-between">
+<span class="text-tertiary">Srota Synthesis:</span>
+<span class="font-code-table text-code-table text-error">EXTERNAL PASS-THROUGH</span>
+</div>
+<div class="flex justify-between">
+<span class="text-tertiary">Bound Ports:</span>
+<span class="font-code-table text-code-table text-on-surface">Port N[0,1] → HBM2E-PHY</span>
+</div>
+</div>
+</div>
+<!-- Critical Licensing Callout -->
+<div class="bg-error-container p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center gap-1 font-label-md text-label-md text-on-error-container">
+<span class="material-symbols-outlined text-[16px] text-error">shield_lock</span>
+          MISSING SITE LICENSE PREREQUISITE
+        </div>
+<p class="font-code-sm text-code-sm text-on-error-container leading-tight">
+          Module <span class="font-code-table text-code-table">DW_axi5_noc_bridge_r2p1</span> expects runtime FlexLM token <span class="font-code-table text-code-table">syn_dw_axi5</span> on host <span class="font-code-table text-code-table">lic-eda-04:27000</span>.
+        </p>
+<p class="font-code-sm text-code-sm text-on-error-container opacity-90">
+          Redistribution in tarball blocked by Project IP Guard.
+        </p>
+<div class="flex items-center gap-1 pt-1">
+<button class="px-space-xs py-0.5 bg-on-error-container text-on-error rounded font-code-sm text-code-sm hover:opacity-95 transition-opacity">
+            Bind Local Token
+          </button>
+<button class="px-space-xs py-0.5 bg-surface-container-lowest text-on-surface rounded font-code-sm text-code-sm hover:bg-surface-container transition-colors">
+            Swap for Open Stub
+          </button>
+</div>
+</div>
+<!-- Non-Silicon Qualification Disclaimer -->
+<div class="bg-surface-container p-space-xs rounded flex flex-col gap-1">
+<div class="flex items-center gap-1 font-label-md text-label-md text-primary">
+<span class="material-symbols-outlined text-[14px]">policy</span>
+          Silicon Qualification Disclaimer
+        </div>
+<p class="font-code-sm text-code-sm text-on-surface-variant leading-tight">
+          Delivery of this wrapper does NOT constitute tapeout physical timing closure or formal verification sign-off.
+        </p>
+<div class="flex flex-col gap-0.5 pt-0.5 font-code-sm text-code-sm">
+<span class="text-error font-code-table text-code-table">• V-OBL-102: Deadlock Proof on Radix-5 Ports [Pending]</span>
+<span class="text-error font-code-table text-code-table">• V-OBL-110: Asynchronous CDC MTBF Check [Unresolved]</span>
+</div>
+</div>
+<!-- Checksum & Cryptographic Integrity Section -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between font-label-md text-label-md text-outline uppercase tracking-wider">
+<span>Cryptographic Hash (SHA-256)</span>
+<button class="text-primary hover:underline font-code-sm text-code-sm flex items-center gap-0.5" id="btnCopyHash">
+<span class="material-symbols-outlined text-[12px]">content_copy</span>
+            Copy
+          </button>
+</div>
+<div class="p-space-xs bg-surface-container-high rounded break-all font-code-sm text-code-sm text-on-surface select-all">
+<code id="selectedSha256">e8f4c91a02b4d1c988e09f518ab72d415b801a6d448123e7f601b0d24e65ac19</code>
+</div>
+<span class="font-code-sm text-code-sm text-tertiary">
+          Calculated at build SIM-402 commit <span class="font-code-table text-code-table">d7a4e9b</span>. Byte exact match.
+        </span>
+</div>
+<!-- Target Export Action Controls -->
+<div class="mt-auto pt-space-xs flex flex-col gap-1">
+<button class="w-full py-1 bg-surface-container text-on-surface rounded font-code-sm text-code-sm hover:bg-surface-container-highest transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary">code</span>
+          Inspect SystemVerilog Source
+        </button>
+<button class="w-full py-1 bg-surface-container text-on-surface rounded font-code-sm text-code-sm hover:bg-surface-container-highest transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary">download</span>
+          Export Single Artifact (.sv)
+        </button>
+<button class="w-full py-1 bg-error-container text-on-error-container rounded font-label-md text-label-md hover:opacity-90 transition-opacity flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[14px]">block</span>
+          Exclude From Archive
+        </button>
+</div>
+</section>
+</div>
+<!-- Interactive Modal / Notification Toast (Hidden by default, triggered via JS) -->
+<div class="fixed top-14 right-4 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-200 bg-surface-container-lowest p-space-sm rounded shadow-lg flex items-center gap-space-sm" id="toastNotification">
+<span class="material-symbols-outlined text-primary text-[18px]">info</span>
+<span class="font-code-sm text-code-sm text-on-surface" id="toastMessage">Hash copied to clipboard.</span>
+</div>
+</div>
+<script>
+  (function initDeliverManifest() {
+    const copyBtn = document.getElementById('btnCopyHash');
+    const toast = document.getElementById('toastNotification');
+    const toastMsg = document.getElementById('toastMessage');
+
+    function showToast(msg) {
+      if (!toast || !toastMsg) return;
+      toastMsg.textContent = msg;
+      toast.classList.remove('translate-y-[-100px]', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.add('translate-y-[-100px]', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2500);
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const hashText = document.getElementById('selectedSha256')?.innerText || 'e8f4c91a02b4d1c988e09f518ab72d415b801a6d448123e7f601b0d24e65ac19';
+        navigator.clipboard?.writeText(hashText).then(() => {
+          showToast('Copied SHA-256 hash to system clipboard.');
+        }).catch(() => {
+          showToast('Hash ready: ' + hashText.substring(0, 16) + '...');
+        });
+      });
+    }
+
+    const validateBtn = document.getElementById('btnValidateChecksums');
+    if (validateBtn) {
+      validateBtn.addEventListener('click', () => {
+        showToast('All 24 staged digests confirmed authentic against SIM-402 ledger.');
+      });
+    }
+
+    const exportBtn = document.getElementById('btnExportJson');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        showToast('Generated delivery_manifest_PKG-N5-882.json in /eda/projects/falcon8/deliverables/');
+      });
+    }
+  })();
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 h-7 bg-surface-container-lowest border-t border-outline-variant z-40 px-space-md flex items-center justify-between"><div class="flex items-center gap-space-md"><button class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[14px] text-tertiary">terminal</span><span>Jobs &amp; Logs (1)</span></button><div class="h-3 w-[1px] bg-outline-variant"></div><button class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[14px] text-secondary">error_outline</span><span>Problems (0)</span></button><div class="h-3 w-[1px] bg-outline-variant"></div><button class="flex items-center gap-space-xs font-code-sm text-code-sm text-primary hover:text-on-surface font-code-table text-code-table"><span class="material-symbols-outlined text-[14px] text-primary">assignment_late</span><span>Obligations (3 Pending)</span></button></div><div class="flex items-center gap-space-md font-code-sm text-code-sm text-tertiary"><div class="flex items-center gap-space-xs"><span class="text-outline">Cycles:</span><span class="font-code-table text-code-table text-on-surface">2,840,119</span></div><div class="flex items-center gap-space-xs"><span class="text-outline">Throughput:</span><span class="font-code-table text-code-table text-on-surface">98.4%</span></div><div class="flex items-center gap-space-xs"><span class="text-outline">Mem:</span><span class="font-code-table text-code-table text-on-surface">3.14 GB</span></div></div></footer></body></html>

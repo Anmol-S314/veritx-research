@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_dashboard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary-container": "#0f6c9e",
+            "inverse-primary": "#8fcdff",
+            "tertiary-fixed-dim": "#bcc8d5",
+            "primary-fixed": "#cbe6ff",
+            "primary": "#00537c",
+            "surface-container-high": "#e2e9f4",
+            "on-error": "#ffffff",
+            "on-tertiary-container": "#dae6f4",
+            "on-secondary-fixed-variant": "#374952",
+            "surface-variant": "#dce3ee",
+            "on-background": "#151c24",
+            "on-error-container": "#93000a",
+            "on-secondary": "#ffffff",
+            "secondary": "#4e616a",
+            "on-primary": "#ffffff",
+            "surface-dim": "#d4dae5",
+            "surface-tint": "#006494",
+            "on-surface": "#151c24",
+            "tertiary-container": "#5c6773",
+            "on-tertiary": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "on-primary-container": "#d0e8ff",
+            "error": "#ba1a1a",
+            "secondary-fixed-dim": "#b6c9d4",
+            "error-container": "#ffdad6",
+            "surface": "#f7f9ff",
+            "on-tertiary-fixed-variant": "#3d4853",
+            "tertiary-fixed": "#d8e4f2",
+            "background": "#f7f9ff",
+            "inverse-surface": "#2a3139",
+            "outline-variant": "#c0c7d0",
+            "surface-bright": "#f7f9ff",
+            "secondary-container": "#d2e6f1",
+            "surface-container-low": "#eef4ff",
+            "surface-container": "#e8eef9",
+            "on-secondary-fixed": "#0a1e26",
+            "primary-fixed-dim": "#8fcdff",
+            "on-secondary-container": "#546770",
+            "secondary-fixed": "#d2e6f1",
+            "on-surface-variant": "#40484f",
+            "on-primary-fixed": "#001e30",
+            "on-tertiary-fixed": "#121d27",
+            "surface-container-highest": "#dce3ee",
+            "tertiary": "#444f5a",
+            "outline": "#707880",
+            "on-primary-fixed-variant": "#004b71",
+            "inverse-on-surface": "#eaf1fc"
+          },
+          borderRadius: {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          spacing: {
+            "space-xs": "0.25rem",
+            "gutter": "0.5rem",
+            "space-lg": "1rem",
+            "space-sm": "0.5rem",
+            "space-md": "0.75rem",
+            "space-xl": "1.5rem",
+            "margin": "0.5rem"
+          },
+          fontFamily: {
+            "headline-sm": ["Inter", "sans-serif"],
+            "code-sm": ["JetBrains Mono", "monospace"],
+            "headline-lg": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "code-md": ["JetBrains Mono", "monospace"],
+            "label-md": ["Inter", "sans-serif"],
+            "body-sm": ["Inter", "sans-serif"],
+            "headline-md": ["Inter", "sans-serif"],
+            "code-table": ["JetBrains Mono", "monospace"]
+          },
+          fontSize: {
+            "headline-sm": ["14px", { lineHeight: "20px", letterSpacing: "-0.005em", fontWeight: "600" }],
+            "code-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+            "headline-lg": ["20px", { lineHeight: "28px", letterSpacing: "-0.015em", fontWeight: "600" }],
+            "body-md": ["13px", { lineHeight: "18px", fontWeight: "400" }],
+            "code-md": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+            "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }],
+            "body-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+            "headline-md": ["16px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600" }],
+            "code-table": ["12px", { lineHeight: "16px", letterSpacing: "-0.01em", fontWeight: "500" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased">
+<!-- Fixed Top Header & Global Navigation Bar -->
+<header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant">
+<!-- Top Utility Bar (36px / h-9) -->
+<div class="h-9 px-space-md flex items-center justify-between border-b border-surface-container text-on-surface">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-table text-code-table font-bold tracking-tight text-primary bg-secondary-container px-space-xs py-0.5 rounded">VERITX</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-secondary">/ SROTA STUDIO</span>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-space-xs">
+<button class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-on-surface font-code-sm text-code-sm" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">developer_board</span>
+<span class="font-medium">Falcon8_NoC_Gen2</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">arrow_drop_down</span>
+</button>
+<span class="font-code-sm text-code-sm text-secondary bg-surface-container px-space-xs py-0.5 rounded border border-outline-variant">[rev: d7a4e9b-mod1* • draft]</span>
+<span class="font-label-md text-label-md text-primary bg-primary-fixed px-space-xs py-0.5 rounded border border-primary/20">[Sample Design: Illustrative Data]</span>
+</div>
+</div>
+<div class="hidden xl:flex items-center gap-space-lg text-secondary font-code-sm text-code-sm">
+<span>Target: <strong class="text-on-surface font-medium">TSMC N5 StdCell Architecture Model</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Configured Clock: <strong class="text-on-surface font-medium">1.4 GHz</strong> (Achieved timing not evaluated)</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container-low border border-outline-variant rounded font-code-sm text-code-sm text-secondary">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>1 Active Job (Sim #403: Bert_Large 18%)</span>
+<span class="text-outline-variant">•</span>
+<span>DRC: Not Evaluated</span>
+</div>
+<button class="flex items-center gap-space-xs px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-secondary hover:text-on-surface font-code-sm text-code-sm" type="button">
+<span class="material-symbols-outlined text-[13px]">terminal</span>
+<span>Cmd+K</span>
+</button>
+<div class="flex items-center gap-space-xs text-secondary font-code-sm text-code-sm px-space-xs">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Local Daemon v2.4.1</span>
+</div>
+<button class="p-1 text-secondary hover:text-on-surface rounded hover:bg-surface-container" title="Settings" type="button">
+<span class="material-symbols-outlined text-[16px]">settings</span>
+</button>
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[14px]">person</span>
+</div>
+</div>
+</div>
+<!-- Global Workspace Nav Bar (28px / h-7) -->
+<div class="h-7 px-space-md flex items-center justify-between bg-surface-container-low">
+<nav class="flex items-center h-full gap-0.5 font-label-md text-label-md">
+<a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="design" href="#">Design</a>
+<a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="workloads-and-requirements" href="#">Workloads &amp; Requirements</a>
+<!-- Analysis marked as ACTIVE global workspace tab -->
+<a class="h-full px-space-md inline-flex items-center bg-surface-container-lowest text-primary border-b-2 border-primary font-semibold transition-colors" data-path="analysis" href="#">Analysis</a>
+<a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="explore" href="#">Explore</a>
+<a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="verify" href="#">Verify</a>
+<a class="h-full px-space-md inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" data-path="deliver" href="#">Deliver</a>
+</nav>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-secondary">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">history</span>
+<span>Run Context: <span class="text-error font-medium">SIM-402 (Completed, Violated)</span></span>
+</div>
+<div class="h-3 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-space-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>Sub-view: Traffic Matrix</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Layout (no pl-56, single full-width wrapper positioned below header) -->
+<main class="relative pt-16 pb-6 w-full min-h-screen bg-surface flex flex-col">
+<!-- Sub-navigation Context Bar for Analysis -->
+<div class="h-8 px-space-md bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between text-on-surface shrink-0">
+<div class="flex items-center h-full gap-space-xs">
+<span class="font-label-md text-label-md text-secondary uppercase tracking-wider mr-space-xs">Analysis Scope:</span>
+<nav class="flex items-center h-full gap-0.5 font-label-md text-label-md">
+<a class="h-full px-space-sm inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" href="#">Summary</a>
+<a class="h-full px-space-sm inline-flex items-center text-primary font-semibold border-b-2 border-primary bg-surface-container-low/60" href="#">Traffic Matrix</a>
+<a class="h-full px-space-sm inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" href="#">Topology Overlay</a>
+<a class="h-full px-space-sm inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" href="#">Metrics</a>
+<a class="h-full px-space-sm inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" href="#">Trace</a>
+<a class="h-full px-space-sm inline-flex items-center text-secondary hover:text-on-surface border-b-2 border-transparent transition-colors" href="#">Logs &amp; Artifacts</a>
+</nav>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<button class="px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-on-surface flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[13px] text-secondary">compare_arrows</span>
+<span>Compare Runs</span>
+</button>
+<button class="px-space-xs py-0.5 bg-surface-container hover:bg-surface-container-high rounded border border-outline-variant text-on-surface flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[13px] text-secondary">download</span>
+<span>Export Artifacts</span>
+</button>
+<button class="px-space-xs py-0.5 bg-primary text-on-primary hover:bg-primary-container rounded border border-primary flex items-center gap-1 font-medium shadow-sm" type="button">
+<span class="material-symbols-outlined text-[13px]">add</span>
+<span>+ New Evaluation</span>
+</button>
+</div>
+</div>
+<!-- Historical Run Provenance Strip -->
+<div class="bg-surface-container-low border-b border-outline-variant px-space-md py-1.5 flex items-center justify-between text-secondary font-code-sm text-code-sm shrink-0">
+<div class="flex items-center gap-space-sm">
+<span class="flex items-center gap-1 text-primary font-medium">
+<span class="material-symbols-outlined text-[14px]">info</span>
+<span>Historical Run Provenance:</span>
+</span>
+<span class="px-1.5 py-0.5 bg-error-container text-on-error-container rounded font-medium border border-error/20">SIM-402 (Violated)</span>
+<span class="text-outline-variant">•</span>
+<span>Workload: <strong class="text-on-surface font-mono">ResNet50_Burst [w12]</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Design Snapshot: <strong class="text-on-surface font-mono">rev: d7a4e9b</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Engine: <strong class="text-on-surface font-mono">BookSim-v2.1</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Window: <span class="text-on-surface">Phase 2 Burst (400k-850k cyc)</span></span>
+<span class="text-outline-variant">•</span>
+<span>Wall Time: <span class="text-on-surface">12m 44s</span></span>
+</div>
+<div class="flex items-center gap-space-xs text-secondary font-mono">
+<span>HASH: 7f8a91c0e3b922a1</span>
+</div>
+</div>
+<!-- Draft Workspace Discrepancy Banner -->
+<div class="bg-surface-container-high/60 border-b border-outline-variant px-space-md py-1.5 flex items-center justify-between shrink-0">
+<div class="flex items-center gap-space-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-tertiary">difference</span>
+<span class="font-body-sm text-body-sm text-on-surface">
+<strong class="font-semibold text-on-surface">Current draft not evaluated by this run.</strong>
+          The active workspace draft contains uncommitted modifications [<span class="font-mono text-primary font-medium">rev: d7a4e9b-mod1*</span>] not evaluated in this matrix.
+        </span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="px-space-xs py-0.5 bg-surface-container-lowest hover:bg-surface-container rounded border border-outline-variant text-on-surface font-code-sm text-code-sm flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[13px] text-secondary">sync_alt</span>
+<span>Compare with Current Draft</span>
+</button>
+<button class="px-space-xs py-0.5 bg-surface-container-lowest hover:bg-surface-container rounded border border-outline-variant text-primary hover:text-on-primary-container font-code-sm text-code-sm flex items-center gap-1 font-medium" type="button">
+<span class="material-symbols-outlined text-[13px]">play_circle</span>
+<span>Configure Evaluation for Draft</span>
+</button>
+</div>
+</div>
+<!-- Three-Pane EDA Analysis Workplace (Left: Run Browser, Center: Matrix Canvas, Right: Inspector) -->
+<div class="flex flex-1 w-full" style="min-height: calc(100vh - 156px);">
+<!-- Left Pane: Run Browser (Sole left pane, w-68 / ~272px) directly beneath top navigation -->
+<aside class="w-68 bg-surface-container-lowest border-r border-outline-variant flex flex-col justify-between shrink-0">
+<div class="flex flex-col">
+<div class="h-8 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between font-label-md text-label-md uppercase text-secondary tracking-wider">
+<span class="flex items-center gap-1.5 font-semibold">
+<span class="material-symbols-outlined text-[15px]">dataset</span>
+<span>Run History</span>
+</span>
+<span class="text-code-sm font-mono text-outline">4 runs</span>
+</div>
+<!-- Run Items List -->
+<div class="p-space-xs flex flex-col gap-1.5">
+<!-- SIM-403 Running -->
+<div class="p-2 rounded bg-surface-container-low/50 border border-outline-variant/60 flex flex-col gap-1.5 hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-semibold text-primary flex items-center gap-1.5">
+<span class="inline-block w-2 h-2 rounded-full bg-primary"></span>
+<span>SIM-403</span>
+</span>
+<span class="font-code-sm text-code-sm text-primary font-medium">Running 18%</span>
+</div>
+<div class="text-[12px] text-secondary truncate">Bert_Large [w14] • rev: d7a4e9b-mod1</div>
+<div class="w-full bg-surface-container h-1.5 rounded overflow-hidden">
+<div class="bg-primary h-full w-[18%]"></div>
+</div>
+</div>
+<!-- SIM-402 (Active Selection - Historical Run) -->
+<div class="p-2 rounded bg-secondary-container/40 border-l-4 border-primary border-t border-r border-b border-outline-variant flex flex-col gap-1.5 shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-bold text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-error">cancel</span>
+<span>SIM-402</span>
+</span>
+<span class="font-code-sm text-code-sm text-error bg-error-container/60 px-1.5 py-0.5 rounded font-medium">1 Violated</span>
+</div>
+<div class="text-[12px] font-medium text-on-surface truncate">ResNet50_Burst [w12]</div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-secondary pt-1 border-t border-outline-variant/50">
+<span class="font-mono">d7a4e9b</span>
+<span>12m 44s</span>
+</div>
+</div>
+<!-- SIM-401 (Completed) -->
+<div class="p-2 rounded bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/60 flex flex-col gap-1.5 cursor-pointer transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-medium text-secondary flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary">check_circle</span>
+<span>SIM-401</span>
+</span>
+<span class="font-code-sm text-code-sm text-secondary">All Met (4/4)</span>
+</div>
+<div class="text-[12px] text-secondary truncate">Synthetic_Uniform [w08]</div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-outline pt-1">
+<span class="font-mono">c3e8092</span>
+<span>8m 10s</span>
+</div>
+</div>
+<!-- SIM-398 (Aborted) -->
+<div class="p-2 rounded bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/60 flex flex-col gap-1.5 cursor-pointer opacity-80 transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm font-medium text-secondary flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-error">report</span>
+<span>SIM-398</span>
+</span>
+<span class="font-code-sm text-code-sm text-error font-medium">Aborted (DRC)</span>
+</div>
+<div class="text-[12px] text-secondary truncate">ResNet50_Burst [w12]</div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-outline pt-1">
+<span class="font-mono">b2201d4</span>
+<span>1m 02s</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Left Pane Footer: Verified Simulation Configuration -->
+<div class="p-space-sm bg-surface-container-low border-t border-outline-variant font-code-sm text-code-sm text-secondary flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span>Engine Backend:</span>
+<span class="font-mono text-on-surface">BookSim v2.1</span>
+</div>
+<div class="flex items-center justify-between">
+<span>Routing Algorithm:</span>
+<span class="font-mono text-on-surface">Dimension Order (XY)</span>
+</div>
+<div class="flex items-center justify-between">
+<span>Virtual Channels:</span>
+<span class="font-mono text-on-surface">4 VC / Port</span>
+</div>
+</div>
+</aside>
+<!-- Central Pane: Technical Evidence Workplace -->
+<main class="flex-1 flex flex-col bg-surface min-w-0 overflow-y-auto">
+<!-- Traffic Matrix Canvas Control Strip -->
+<div class="h-10 px-space-md bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between shrink-0">
+<!-- Basis Selectors -->
+<div class="flex items-center gap-space-sm">
+<span class="font-label-md text-label-md uppercase text-secondary tracking-wider">Data Basis:</span>
+<div class="inline-flex rounded border border-outline-variant p-0.5 bg-surface-container-low">
+<button class="px-space-xs py-0.5 text-secondary hover:text-on-surface font-code-sm text-code-sm rounded flex items-center gap-1 transition-colors" type="button">
+<span>Requested Demand</span>
+<span class="bg-surface-container text-secondary px-1 py-0.2 text-[10px] rounded font-mono">Avail [w12]</span>
+</button>
+<button class="px-space-xs py-0.5 text-outline font-code-sm text-code-sm rounded flex items-center gap-1 cursor-not-allowed" disabled="" type="button">
+<span>Observed Injection</span>
+<span class="bg-surface-container-high/60 text-outline px-1 py-0.2 text-[10px] rounded font-mono">Not Recorded</span>
+</button>
+<button class="px-space-xs py-0.5 bg-surface-container-lowest font-code-sm text-code-sm text-primary font-semibold rounded shadow-sm flex items-center gap-1 border border-outline-variant/60" type="button">
+<span>Observed Delivery</span>
+<!-- Neutral badge styling for unrecorded status -->
+<span class="bg-surface-container-highest text-secondary px-1.5 py-0.2 text-[10px] rounded font-mono font-medium">Not Recorded</span>
+</button>
+</div>
+</div>
+<!-- Metric and Window Dropdowns -->
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<div class="flex items-center gap-1 text-secondary">
+<span>Metric:</span>
+<div class="px-space-xs py-0.5 bg-surface-container border border-outline-variant rounded text-on-surface flex items-center gap-1 font-medium">
+<span>Flit Count (Total)</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">arrow_drop_down</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-secondary">
+<span>Window:</span>
+<div class="px-space-xs py-0.5 bg-surface-container border border-outline-variant rounded text-on-surface flex items-center gap-1 font-medium">
+<span>Phase 2 Burst (400k-850k cyc)</span>
+<span class="material-symbols-outlined text-[14px] text-secondary">arrow_drop_down</span>
+</div>
+</div>
+<button class="p-1 text-secondary hover:text-on-surface hover:bg-surface-container rounded border border-outline-variant" title="View Options" type="button">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+</button>
+</div>
+</div>
+<!-- Scope Subtitle Indicator -->
+<div class="px-space-md py-1.5 bg-surface border-b border-outline-variant text-[12px] font-code-sm text-secondary flex items-center justify-between">
+<span>Requested Matrix Scope: <strong class="text-on-surface">8 Initiators × 8 Targets</strong> (64 endpoint pairs)</span>
+<!-- Neutral unavailable badge (slate/gray badge, not critical-error red) -->
+<span class="bg-surface-container-highest text-secondary px-2 py-0.5 rounded text-[11px] font-medium border border-outline-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-secondary">help_outline</span>
+<span>Capture State: Not Recorded in Historical Run Artifact</span>
+</span>
+</div>
+<!-- Primary Content Area -->
+<div class="p-space-md flex-1 flex flex-col gap-space-md max-w-5xl mx-auto w-full">
+<!-- Primary Missing-Evidence Header Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-space-lg flex flex-col gap-space-md shadow-sm">
+<div class="flex items-start justify-between">
+<div class="flex items-start gap-space-md">
+<div class="w-9 h-9 rounded bg-secondary-container flex items-center justify-center text-primary shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[22px]">info</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight">Observed Delivery Matrix Unavailable</h2>
+<span class="bg-surface-container-highest text-secondary px-2 py-0.5 rounded text-[11px] font-code-sm font-medium border border-outline-variant uppercase">Evidence Limitation • Not Recorded</span>
+</div>
+<p class="font-body-md text-body-md text-secondary mt-1">
+                    Simulation run <span class="font-mono text-on-surface font-semibold">SIM-402</span> did not capture delivered flit counts segmented by individual source–destination endpoint pairs. Endpoint-pair delivery counters were not recorded. The reason is not available in this run's metadata. This matrix cannot be reconstructed from aggregate simulation counters.
+                  </p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low/80 rounded p-space-sm border border-outline-variant/60 text-secondary font-body-sm text-body-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary shrink-0">check_circle</span>
+<span>
+                Execution completed successfully (<span class="font-mono font-medium text-on-surface">Exit code 0</span>). Aggregate delivered throughput across all destination endpoints, directed-link utilization, configuration manifest, and raw execution logs remain valid and inspectable below.
+              </span>
+</div>
+<!-- Structured Technical Diagnostic Block (Strictly truthful, no invented flags or filenames) -->
+<div class="border border-outline-variant rounded overflow-hidden">
+<div class="bg-surface-container-low px-space-sm py-1.5 border-b border-outline-variant text-label-md font-label-md uppercase tracking-wider text-secondary flex items-center justify-between">
+<span>Artifact Diagnostic Summary</span>
+<span class="font-mono text-[11px] text-secondary">Run Context: SIM-402</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 text-code-sm font-code-sm bg-surface-container-lowest divide-y md:divide-y-0 md:divide-x divide-outline-variant">
+<div class="p-space-sm flex flex-col gap-2">
+<div class="flex justify-between">
+<span class="text-secondary">Requested Analysis:</span>
+<span class="font-medium text-on-surface text-right">Observed delivery by endpoint pair (Src → Dst)</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Requested Metric:</span>
+<span class="font-medium text-on-surface text-right">Delivered Flit Count (128-bit, Phase 2 Window)</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Endpoint-Pair Delivery Capture:</span>
+<span class="text-secondary text-right">Support must be checked for selected backend/config</span>
+</div>
+</div>
+<div class="p-space-sm flex flex-col gap-2">
+<div class="flex justify-between">
+<span class="text-secondary">Required Evidence:</span>
+<span class="font-medium text-on-surface text-right">Delivered flit counts by source–destination pair</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Capture State:</span>
+<span class="font-medium text-secondary text-right bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant">Not Recorded</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Design Provenance:</span>
+<span class="text-on-surface text-right font-mono">rev: d7a4e9b (Workload: ResNet50_Burst [w12])</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section: Available Results & Alternative Evidence -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-space-sm flex flex-col gap-space-xs shadow-sm">
+<div class="flex items-center justify-between px-space-xs py-1.5">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[17px] text-primary">analytics</span>
+<span class="font-label-md text-label-md uppercase font-semibold text-on-surface tracking-wider">Available Results &amp; Alternative Evidence for SIM-402</span>
+</div>
+<span class="font-code-sm text-code-sm text-secondary">5 Recorded Datasets Ready</span>
+</div>
+<!-- Structured Dense Engineering Table -->
+<div class="border border-outline-variant rounded overflow-hidden">
+<table class="w-full text-left font-body-sm text-body-sm border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-secondary border-b border-outline-variant font-label-md text-label-md uppercase tracking-wider">
+<th class="py-2 px-space-sm font-semibold">Available Result</th>
+<th class="py-2 px-space-sm font-semibold">Recorded Scope</th>
+<th class="py-2 px-space-sm font-semibold">What It Answers</th>
+<th class="py-2 px-space-sm text-right font-semibold">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant text-on-surface font-code-sm text-code-sm">
+<!-- Row 1: Aggregate Delivered Throughput -->
+<tr class="hover:bg-surface-container-low/50">
+<td class="py-2.5 px-space-sm font-medium">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">speed</span>
+<span class="font-mono font-semibold">Aggregate Delivered Throughput</span>
+</div>
+</td>
+<td class="py-2.5 px-space-sm text-secondary">All destination endpoints (whole NoC), Phase 2 (400k-850k cyc)</td>
+<td class="py-2.5 px-space-sm text-on-surface-variant font-body-sm">
+                      Aggregate delivered throughput across all destination endpoints (whole NoC), during Phase 2 burst window (400k–850k cyc): <strong class="font-mono text-on-surface">43.8 GB/s</strong>. Delivered flits within Phase 2 window relative to injected flits: 98.6% delivered (accounts for window boundary traversals).
+                    </td>
+<td class="py-2.5 px-space-sm text-right whitespace-nowrap">
+<button class="px-space-xs py-1 bg-surface-container hover:bg-surface-container-high text-primary font-medium rounded border border-outline-variant hover:border-primary text-code-sm" type="button">
+                        Open in Metrics →
+                      </button>
+</td>
+</tr>
+<!-- Row 2: Link Utilization -->
+<tr class="hover:bg-surface-container-low/50">
+<td class="py-2.5 px-space-sm font-medium">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">alt_route</span>
+<span class="font-mono font-semibold">Directed-Link Utilization</span>
+</div>
+</td>
+<td class="py-2.5 px-space-sm text-secondary">All 48 directional mesh links, Phase 2 window</td>
+<td class="py-2.5 px-space-sm text-on-surface-variant font-body-sm">
+                      Shows directed-link utilization (directed links, Phase 2 burst window, max <span class="font-mono text-on-surface font-medium">R_1_2 → R_0_2 at 92%</span>). Note: High link utilization alone does not establish buffer exhaustion, starvation, or head-of-line blocking.
+                    </td>
+<td class="py-2.5 px-space-sm text-right whitespace-nowrap">
+<button class="px-space-xs py-1 bg-surface-container hover:bg-surface-container-high text-primary font-medium rounded border border-outline-variant hover:border-primary text-code-sm" type="button">
+                        Open Topology Overlay →
+                      </button>
+</td>
+</tr>
+<!-- Row 3: Buffer Occupancy Summary -->
+<tr class="hover:bg-surface-container-low/50">
+<td class="py-2.5 px-space-sm font-medium">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">memory</span>
+<span class="font-mono font-semibold">Buffer Occupancy Summary</span>
+</div>
+</td>
+<td class="py-2.5 px-space-sm text-secondary">16 Routers, Phase 2 window</td>
+<td class="py-2.5 px-space-sm text-on-surface-variant font-body-sm">
+                      Shows recorded buffer occupancy (16 routers, Phase 2 window; mean 78% occupancy). Note: Mean occupancy alone does not establish buffer exhaustion or virtual channel starvation.
+                    </td>
+<td class="py-2.5 px-space-sm text-right whitespace-nowrap">
+<button class="px-space-xs py-1 bg-surface-container hover:bg-surface-container-high text-primary font-medium rounded border border-outline-variant hover:border-primary text-code-sm" type="button">
+                        Inspect in Metrics →
+                      </button>
+</td>
+</tr>
+<!-- Row 4: Execution Logs -->
+<tr class="hover:bg-surface-container-low/50">
+<td class="py-2.5 px-space-sm font-medium">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">terminal</span>
+<span class="font-mono font-semibold">Execution &amp; Event Logs</span>
+</div>
+</td>
+<td class="py-2.5 px-space-sm text-secondary">Full simulation run (850k cycles)</td>
+<td class="py-2.5 px-space-sm text-on-surface-variant font-body-sm">
+                      Confirms simulator termination, clock assumptions, and non-fatal warnings.
+                    </td>
+<td class="py-2.5 px-space-sm text-right whitespace-nowrap">
+<button class="px-space-xs py-1 bg-surface-container hover:bg-surface-container-high text-primary font-medium rounded border border-outline-variant hover:border-primary text-code-sm" type="button">
+                        Open Logs &amp; Artifacts →
+                      </button>
+</td>
+</tr>
+<!-- Row 5: Resolved Input Snapshot -->
+<tr class="hover:bg-surface-container-low/50">
+<td class="py-2.5 px-space-sm font-medium">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-secondary">description</span>
+<span class="font-mono font-semibold">Resolved Input Snapshot</span>
+</div>
+</td>
+<td class="py-2.5 px-space-sm text-secondary">Design d7a4e9b + Workload w12</td>
+<td class="py-2.5 px-space-sm text-on-surface-variant font-body-sm">
+                      Complete parameter manifest, routing table configuration, and seed values.
+                    </td>
+<td class="py-2.5 px-space-sm text-right whitespace-nowrap">
+<button class="px-space-xs py-1 bg-surface-container hover:bg-surface-container-high text-primary font-medium rounded border border-outline-variant hover:border-primary text-code-sm" type="button">
+                        View Manifest →
+                      </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Call to Action Banner / Next Steps -->
+<div class="bg-surface-container-low border border-outline-variant rounded p-space-sm flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md uppercase font-semibold text-on-surface">Evaluation Actions</span>
+<span class="font-body-sm text-body-sm text-secondary">Configure a new evaluation run to obtain pair delivery accounting, or inspect available demand representations.</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="px-space-sm py-1 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded font-code-sm text-code-sm text-on-surface flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[14px]">dataset</span>
+<span>View Requested Demand Matrix</span>
+</button>
+<button class="px-space-sm py-1 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant rounded font-code-sm text-code-sm text-on-surface flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[14px]">analytics</span>
+<span>Open Available Metrics</span>
+</button>
+<button class="px-space-sm py-1 bg-primary text-on-primary hover:bg-primary-container rounded border border-primary font-code-sm text-code-sm font-semibold flex items-center gap-1 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[14px]">rocket_launch</span>
+<span>Configure New Evaluation</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Pane: Selection & Verification Inspector (~320px) -->
+<aside class="w-80 bg-surface-container-lowest border-l border-outline-variant flex flex-col justify-between shrink-0 overflow-y-auto">
+<div class="flex flex-col">
+<!-- Inspector Title Header with neutral status badge -->
+<div class="h-8 px-space-sm bg-surface-container-low border-b border-outline-variant flex items-center justify-between font-label-md text-label-md uppercase text-secondary tracking-wider">
+<span class="flex items-center gap-1.5 font-semibold">
+<span class="material-symbols-outlined text-[15px]">troubleshoot</span>
+<span>Analysis Availability</span>
+</span>
+<span class="px-1.5 py-0.5 bg-surface-container-highest text-secondary rounded text-[10px] font-semibold border border-outline-variant">NOT RECORDED</span>
+</div>
+<!-- Inspector Properties -->
+<div class="p-space-sm flex flex-col gap-space-md">
+<!-- Inspection Context -->
+<div class="flex flex-col gap-1 border-b border-outline-variant pb-space-sm">
+<div class="text-label-md uppercase text-secondary font-semibold">Inspection Context</div>
+<div class="font-code-sm text-code-sm text-on-surface flex flex-col gap-1.5 mt-1">
+<div class="flex justify-between">
+<span class="text-secondary">Analysis:</span>
+<span class="font-medium">Traffic Matrix</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Data Basis:</span>
+<span class="font-medium text-secondary">Observed Delivery</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Selected Metric:</span>
+<span class="font-medium">Flit Count (128-bit)</span>
+</div>
+<div class="flex justify-between">
+<span class="text-secondary">Requested Matrix Scope:</span>
+<span class="font-mono text-right">8 Initiators × 8 Targets (64 endpoint pairs)</span>
+</div>
+</div>
+</div>
+<!-- Evidence Requirement Details -->
+<div class="flex flex-col gap-1 border-b border-outline-variant pb-space-sm">
+<div class="text-label-md uppercase text-secondary font-semibold">Evidence Requirement</div>
+<div class="p-2 bg-surface-container-low rounded border border-outline-variant/60 font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1.5">
+<p>
+                  Endpoint-pair delivery counters were not recorded. The reason is not available in this run's metadata.
+                </p>
+<div class="text-code-sm font-code-sm text-secondary border-t border-outline-variant/40 pt-1 flex flex-col gap-0.5">
+<div>Endpoint-pair delivery capture: support must be checked for the selected backend/configuration.</div>
+<div>Storage/runtime overhead: Not estimated.</div>
+</div>
+</div>
+</div>
+<!-- Impact on Verification Requirements -->
+<div class="flex flex-col gap-1.5 border-b border-outline-variant pb-space-sm">
+<div class="text-label-md uppercase text-secondary font-semibold">Impact on Requirements</div>
+<!-- REQ-LAT-04 with baseline rev: r5 and 25.0 ns threshold -->
+<div class="p-2 rounded bg-surface-container-low border border-outline-variant/60 flex flex-col gap-1">
+<div class="flex items-center justify-between text-code-sm font-code-sm">
+<span class="font-mono font-semibold text-on-surface">REQ-LAT-04 (P95 Latency)</span>
+<span class="text-error font-medium">VIOLATED</span>
+</div>
+<div class="text-[12px] text-secondary">
+                  Evaluated from transaction latency histogram (<span class="font-mono text-on-surface">sim_402_txn_latency_hist.json</span>, Phase 2 burst window, 142,850 txns). Measured at <span class="font-mono text-on-surface font-semibold">28.6 ns</span> (Limit: 25.0 ns, baseline rev: r5). Assessment unaffected.
+                </div>
+</div>
+<!-- REQ-THR-01 -->
+<div class="p-2 rounded bg-surface-container-low border border-outline-variant/60 flex flex-col gap-1">
+<div class="flex items-center justify-between text-code-sm font-code-sm">
+<span class="font-mono font-semibold text-on-surface">REQ-THR-01 (Throughput)</span>
+<span class="text-primary font-medium">MET</span>
+</div>
+<div class="text-[12px] text-secondary">
+                  Aggregate delivered throughput measured at <span class="font-mono text-on-surface font-semibold">43.8 GB/s</span> (Req: &gt;40 GB/s) across all destination endpoints during Phase 2 burst window.
+                </div>
+</div>
+<!-- Core Quota Limits -->
+<div class="p-2 rounded bg-surface-container border border-outline-variant flex flex-col gap-1">
+<div class="flex items-center justify-between text-code-sm font-code-sm">
+<span class="font-mono font-semibold text-on-surface">Core Quota Limits</span>
+<span class="text-secondary font-medium">INCONCLUSIVE</span>
+</div>
+<div class="text-[12px] text-secondary">
+                  Inconclusive — per-endpoint fair share guarantees require per-initiator delivery accounting not recorded in this run.
+                </div>
+</div>
+</div>
+<!-- Simplified Clean Evaluation Handoff Card -->
+<div class="flex flex-col gap-2">
+<div class="text-label-md uppercase text-secondary font-semibold">Evaluation Handoff</div>
+<div class="p-2.5 rounded bg-surface-container-low border border-outline-variant flex flex-col gap-2 font-code-sm text-code-sm">
+<span class="text-secondary font-medium">Target Provenance Options:</span>
+<ul class="list-disc pl-4 text-[12px] text-on-surface space-y-1">
+<li><strong>Re-evaluate SIM-402 inputs</strong> (<span class="font-mono text-secondary">immutable rev: d7a4e9b</span>)</li>
+<li><strong>Evaluate current workspace draft</strong> (<span class="font-mono text-secondary">rev: d7a4e9b-mod1*</span>)</li>
+</ul>
+<div class="text-[11px] text-secondary italic pt-1 border-t border-outline-variant/50">
+                  Neither option modifies historical run SIM-402. Capture configuration and execution limits are configured in the evaluation setup drawer.
+                </div>
+<button class="w-full mt-1 py-1.5 px-space-sm bg-primary text-on-primary hover:bg-primary-container rounded border border-primary font-code-sm text-code-sm font-medium flex items-center justify-center gap-1.5 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[15px]">tune</span>
+<span>Configure New Evaluation</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- Clean, Honest EDA Status Footer Bar -->
+<footer class="fixed bottom-0 left-0 right-0 h-6 bg-surface-container-lowest border-t border-outline-variant z-50 px-space-md flex items-center justify-between font-code-sm text-code-sm text-secondary">
+<div class="flex items-center gap-space-md">
+<button class="flex items-center gap-space-xs hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[13px] text-error">error</span>
+<span>Problems: <strong>0 Errors</strong>, <strong>1 Warning</strong></span>
+</button>
+<div class="h-3 w-px bg-outline-variant"></div>
+<button class="flex items-center gap-space-xs hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[13px] text-primary">sync</span>
+<span>Jobs: <strong>1 running</strong> (Sim #403)</span>
+</button>
+<div class="h-3 w-px bg-outline-variant"></div>
+<button class="flex items-center gap-space-xs hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[13px]">terminal</span>
+<span>Console &amp; Simulation Logs</span>
+</button>
+</div>
+<div class="flex items-center gap-space-md">
+<span class="text-on-surface-variant">Workspace: <strong class="text-on-surface">Analysis / Traffic Matrix</strong></span>
+<div class="h-3 w-px bg-outline-variant"></div>
+<span class="text-error font-medium">Run SIM-402 Violated</span>
+</div>
+</footer>
+</body></html>
