@@ -24,8 +24,10 @@ admission rework landed as `c3d360e9`:
   `docs/product/evidence/gec-mecs-row-rerun-aa66b4fe.json` (lint 0 warnings,
   13/13 scenarios, `final_implementation: true`); the full matrix has NOT
   been re-run at the reworked head and is not claimed here.
-- The full DSE unit suite remains un-run on the clean tree and is not claimed
-  green; the Studio Playwright measurement stands at 115/4/13 (none RTL).
+- A full DSE unit suite run is in flight at the time of writing
+  (`/home/datavex/veritx-tmp/basetemp2/` + `dse-full-suite.log`); its verdict
+  is not yet known and is not claimed. The Studio Playwright measurement
+  stands at 115/4/13 (none RTL).
 
 # Clean-tree split into owned commits + Scope B framing (2026-11-12)
 
@@ -86,9 +88,9 @@ this closeout line, measured not asserted:
   the committed tree measured **115 passed / 4 failed / 13 skipped** (three
   `app_repro` failures from the absent operator-owned gateway on :8099, one
   `native-sweep` UI-input failure — none RTL; `docs/product/REMAINING-WORK.md`
-  item 12); the full DSE unit suite has NOT been re-run on the clean tree
-  and is not claimed green; `runs/veritx-p2p7p11-evidence/` remains dated
-  2026-11-09 and is explicitly stale until re-derived.
+  item 12); a full DSE unit suite run is in flight (see above); the
+  `runs/veritx-p2p7p11-evidence/` report remains dated 2026-11-09 and is
+  explicitly stale until re-derived.
 
 Still open: the gec_mecs 2-warning fix must land and the row re-run for
 A2/12-of-14 to stand; Scope B multicast/AXI-CDC/physical rows; the 81-router
