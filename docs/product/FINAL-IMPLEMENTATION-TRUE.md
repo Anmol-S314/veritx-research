@@ -1,0 +1,87 @@
+# When `final_implementation` may be `true` — acceptance contract (2026-11-10)
+
+**Work in progress.** The open rows, the fixes already landed, and the exact next steps are tracked in `docs/reports/FINAL-IMPLEMENTATION-HANDOFF-20261111.md`. **As of 2026-11-11 20:40, twelve of the fourteen families carry `final_implementation: true` with `open_rows: []`** — mesh, torus, concentrated_mesh, ring, fly, qtree, tree4, flatfly, fattree, dragonflynew, GEC-MECS and KNCube. Each is backed by a fresh run with **lint 0 warnings, sim PASS, 13/13 scenarios**, and A2/A8/A10 measured on the same design hash; fly's A7 now proves the real ingress↔egress domain (512 edges / 256 channels, unbounded), and KNCube additionally carries the recorded native-equivalence blocker (operator-owned). **GEC-hybrid and SROTA remain false under their own Scope B claim lists** (multi-flit framing, VC allocation/credit pipeline, multicast, AXI/OrderingFSM/CDC composition, physical multidrop — all open). Their fabric lint is now clean (the 19/12 style warnings were fixed with named sinks/waivers), but clean lint is not a Scope B closure. This is the **COMPOSED_FAMILY** scope only. Scope B remains open. In Scope C (the pinned 74-agent project), **C4 and C5 are now CLOSED**: the 74 seats ran as real endpoints (5,476/5,476 flows conserved, credits restored), and the same fabric carries ordered HEAD/BODY/TAIL packets, multi-flit contention and reset recovery with 0 lint warnings. C6 (physical) remains open. The verdict below says which rows hold each one false.
+
+## How the flag is decided (mechanism, not mood)
+
+The flag is **computed from evidence**, in one place, so it cannot drift from the artifacts:
+
+1. `veritx_dse/product/final_implementation.py` evaluates the contract's rows. A row is CLOSED only when it was supplied with evidence that says so, or with an explicit, attributed scope-out decision. **A row with no evidence stays OPEN, and an OPEN row keeps the flag false.** There is no way to pass a row by asserting it.
+2. `veritx_dse/product/scope_evidence.py` gathers that evidence. Rows measured by the run itself (composition, lint/sim, the attachment) come from the run; rows measured by a proof or a gate test (the decode equivalence, the per-VC-class dependency-graph proof, the BookSim parity run, the AXI5 feature suite, the multi-flit reassembly) come from an **evidence bundle** recorded per family and **keyed to the design hash** — so evidence measured on one design can never carry the flag for another.
+3. `tests/test_final_implementation_evidence.py` produces the bundle by *measuring* (it runs the proof, the parity harness and the two feature suites) and then asserts that the verdict follows from what it measured.
+4. The composed-family manifest carries the verdict in full: every row, its status, its reason and the sha256 of what it rests on (`final_implementation_verdict`), so a reader can check the claim instead of trusting it.
+
+**Scope-out decisions.** The physical rows (A11, A12) can be closed by a recorded decision rather than by evidence, because no PDK, clock, die bounds or pinout exists in this checkout. The decision lives in `docs/product/evidence/physical-scope-out.json`, is attributed and dated, and the residual stays visible in the manifest's verdict. **It scopes the claim; it does not manufacture evidence** — the rows it covers remain OPEN in every other sense and are named there.
+
+**Why this document exists:** `final_implementation` is a *claim about an artifact*, not a project mood. In this codebase it travels with every emitted manifest (`rtl_export.py`, `project_top_rtl.py`, `chipyard_*`), and the `scope` field beside it says what the claim covers. A preview-scoped artifact can never carry `true` — the code says so in its own words ("final_implementation stays False (TOPOLOGY_ONLY_PREVIEW)").
+
+So "make it true" is not a flag edit. It is: **finish the checklist for a scope, then let the flag follow.** This file is that checklist, per scope, with the status measured today.
+
+---
+
+## Scope A — composed family RTL (`scope: COMPOSED_FAMILY`), one row per family
+
+This is the scope that covers "production-ready RTL for a topology at a declared configuration". The gate for each family row:
+
+| # | Requirement | How it is judged | Status 2026-11-10 |
+|---|---|---|---|
+| A1 | The family composes from a real request (no harness substitute) | composed family test per family | **CLOSED** — 11/11 composed families + shared-wire families compose |
+| A2 | Emitted RTL lints clean and simulates green with real scenarios | lint + TB scenarios | **CLOSED** — lint PASS, scenarios all true (mesh slice 38/38 incl. contention) |
+| A3 | The request→hardware binding is proven, not assumed | per-family mutation witness refuses a corrupted binding | **CLOSED** — 13/13 families (srota by its own witnesses) |
+| A4 | Every compiled agent instance reaches hardware | attachment seats vs emitted slices | **CLOSED for one-instance-per-group**; **CLOSED for multi-instance** (2 instances → 2 slices, 13/13 sim) |
+| A5 | Multiple seats may share one router (concentrated fabrics) | concentrator in place, per-seat attribution | **CLOSED 2026-11-10** — measured across the whole matrix: mesh, torus, ring, flatfly, dragonflynew, fly, qtree, tree4, fattree and concentrated_mesh each compose, lint and simulate **13/13 scenarios**, including the concentrated mesh where the **memory endpoint shares a router with two initiator seats** (the endpoint-tagged concentrator demuxes that router's local port by destination endpoint id). **No family refuses a shape it models.** |
+| A6 | The decode contract is proven, not simulated | formal proof against the compiled contract | **CLOSED** — bounded model check (smtbmc+z3), gate test `tests/test_formal_decode_equivalence.py` |
+| A7 | Deadlock-freedom is proven | liveness proof (induction), not BMC | **CLOSED for deadlock-freedom, 2026-11-11** — the channel dependency graph is proven **acyclic per VC class** by an **unbounded** induction (`sby prove`, no depth bound), and the proof is complete over the extracted edge set with the rank witness cross-checked against the family's own next-hop rule. Covered: torus, mesh, flatfly and ring — the ring needed the fix first: its VC is now the fork's dateline half (the injection router against the destination) instead of a class, which removed a real cyclic wait. **Named residuals (not claimed):** the arbiter's starvation-freedom, and the shared-wire fabric's deadlock freedom, are separate properties that this proof does not cover |
+| A8 | BookSim↔RTL parity for the same traffic | same injection both sides, compare conservation + latency | **CLOSED 2026-11-11** — the paired run exists and is measured: the same trace (5 packets / 10 flits, two classes) is driven into BookSim and into the emitted RTL, both sides conserve (delivered == accepted == 10), the RTL's delivered payload set matches the trace **exactly**, the per-class flit counts agree, and the drain cycles are measured on both sides (BookSim 20, RTL 17). **The delta is not hidden:** it is 3 cycles and the verdict reports `cycle_exact: false` — the two microarchitectures differ, so parity here is payload, count and conservation parity, with the latency difference recorded as a number |
+| A9 | The AXI5 adapter's claimed feature surface is proven | AXI5 compliance suite on the composed top | **CLOSED 2026-11-11** — the **claimed** surface is proven, scenario by scenario, against the adapter the product emits: full AW attribute forwarding (ID, EXCLUSIVE, ATOMIC, DVM type, QoS), burst handling with WLAST on the final beat, a read with RLAST and the right ID, output stability under backpressure, the outstanding limit, and per-ID response attribution — 6 scenarios, all passing (`tracks/t3-topology/rtl/axi5/tb_axi5_adapter.sv`, gate test `tests/test_axi5_adapter_features.py`). **Named residual (not claimed):** this is a directed feature suite, not an ARM AXI5 VIP compliance run — no AXI VIP exists in the checkout |
+| A10 | Multi-flit packets (HEAD/BODY/TAIL) are exercised | TB scenario + flit reassembly check | **CLOSED 2026-11-11** — the destination adapter now assembles a multi-flit packet: the HEAD opens it, the BODY flits are absorbed without an answer, and the TAIL closes it and produces the one response the packet owes (a SINGLE flit is head and tail at once, so it answers immediately as before). A directed testbench drives the adapter the product emits and proves both halves: a three-flit HEAD/BODY/TAIL packet produces exactly **one** answer (not one per flit), and every word of the payload reads back with the data it carried (`tracks/t3-topology/rtl/family_multiflit/tb_family_multiflit.sv`, gate test `tests/test_family_multiflit.py`). The router's packet atomicity — the route held from HEAD to TAIL with no interleaving — is proved by the concentrator's own testbench, where that mechanism lives. **Residual:** the composed initiator still emits one AXI beat per flit, so a multi-beat burst is not yet framed as one packet |
+| A11 | Physical timing is closed | synthesis → CTS → post-CTS STA at the declared clock | **OPEN / operator** — sky130A diagnostic run: CTS PASS, post-CTS STA **WNS −4.424 ns / TNS −11.4 µs**, hold clean; stages ≥37 NOT_RUN |
+| A12 | Physical signoff (route/DRC/LVS) | LibreLane signoff stages | **OPEN / operator** — needs an approved PDK, bounds and pins |
+
+**When A1–A10 are closed for a family and A11/A12 are either closed or explicitly scoped out with the operator's decision recorded, that family's manifest may carry `final_implementation: true` with `scope: COMPOSED_FAMILY` — and only that family's row.** The current 5 refusals (memory co-seat, fly/qtree/tree4/fattree) must be closed first; a refusal is not a row.
+
+---
+
+## Scope B — shared-wire families (GEC-MECS / GEC-hybrid / SROTA)
+
+Their own claim lists (`GEC_MECS_SHARED_NOT_ESTABLISHED`, `SROTA_SHARED_NOT_ESTABLISHED`) hold the criteria: multi-flit framing, VC allocation + credit pipeline, multicast semantics, AXI/OrderingFSM/CDC composition, physical multidrop. All **OPEN** today; the single-flit prototypes are the current artifacts.
+
+**The verdict mechanism reaches them too (2026-11-12).** GEC-hybrid and SROTA do
+not claim the A rows, so `COMPOSED_FAMILY_ROWS` does not apply to them — but a
+false with no rows is the "mood" this contract exists to prevent. Each of their
+manifests now carries `final_implementation_verdict` computed from its own
+claim list: one row per claimed criterion, the established ones CLOSED (the
+`proven` list) and the rest OPEN with the criterion's own words, so the reader
+sees *which* criterion holds the claim instead of a bare flag. Their fabric
+lint and simulation are green (0 warnings, `lint PASS`, `sim PASS` with 7 and 9
+scenarios), so a clean lint is one closed criterion — not a Scope B closure.
+
+---
+
+## Scope C — the selected 74-agent project (the pinned Mixtral revision)
+
+This is the scope the user's "any workload" requirement ultimately lands on: 74 agents / 81 routers / 8 VCs / 162 shared wires / 128-bit flits, GEC-MECS routing class.
+
+| # | Requirement | Status |
+|---|---|---|
+| C1 | The compiler binds 74 instances to seats | **CLOSED** — the compiler seats every instance on its own router (measured) |
+| C2 | The shared MECS emitter scales to 81 routers / 8 VCs / 162 wires | **CLOSED 2026-11-10** — the product's own shared path now emits the pinned shape: `run_gec_mecs_shared` on a K=9 / 8-tap / 8-VC GEC-MECS request returns **lint PASS, sim PASS** with all eight scenarios true (routing, local, same-row, same-col, concurrency, backpressure, conservation, drain) and a manifest reporting **81 routers, 162 shared wires, 8 taps per wire, 8 VCs**. The historical 16-router artifacts stay byte-identical (the historical shape still renders the historical template and testbench). Supporting artifacts: `veritx_dse/product/gec_mecs_scaled.py` (shape derived from the bundle, nothing invented), gate tests `tests/test_gec_mecs_scaled.py` (4/4) and `tests/test_gec_mecs_pinned_shape.py` (product path at the pinned shape). **The 81-router limit was a Python policy check plus one hardcoded self-check in the template — the RTL was already parameterized.** |
+| C3 | Per-tap credit accounting (P4 row 4.3) | **CLOSED, 2026-11-11** — the substrate was already proven (per-(tap, VC) pool, conservation/bounds/no-alias, smtbmc+z3 PASS); the **wiring is now applied**: the shared fabric carries one proven pool per wire (which IS the (port, tap, VC) domain the contract names), a credited grant path (a candidate is offered only if its exact (tap, VC) has a credit, so an exhausted tap never blocks the other taps), a release path that returns the credit to the exact (tap, VC) it was taken from (the flit carries a VC and a tap echo, so a release cannot alias), and per-router credit state exposed for checking. The fabric template is transformed, not re-implemented, and a missing anchor makes the transformation refuse. Gate: `tests/test_gec_mecs_credited_fabric.py`; the pinned historical 16-router artifact stays byte-identical. **Honest limit:** the wire model delivers one flit per wire per cycle, so the credit is rarely the *binding* constraint today — making it so needs a pipelined wire model |
+| C4 | Multi-flit framing + per-VC allocation + credit pipeline in the shared fabric | **CLOSED 2026-11-12** — at the selected 81-router / 162-wire / 8-tap / 8-VC shape with the 74 seats as endpoints: HEAD/BODY/TAIL is emitted, routed and reassembled as one packet; `multi_flit_contention` delivers 6 flits with one source switch; `reset_recovery` leaves outputs idle and carries a post-reset transfer; lint 0 warnings, sim PASS, 12/12 scenarios. Injection VC allocation is per-router round-robin (not iSLIP); the wire is a `WIRE_PIPE`-deep elastic pipeline (one flit per wire per cycle, bounded latency). Evidence `runs/selected-r02-gec-mecs-seats-c4-20261112/`; gate `tests/test_gec_mecs_scaled.py`. Multicast, AXI/CDC and physical remain separate rows. |
+| C5 | End-to-end run of the selected contract on RTL with conservation/credit/reset accounting | **CLOSED 2026-11-11** — the 74 declared seats are the traffic endpoints (not the router set): 5,476/5,476 ordered flows accepted and delivered, routing local=74 / same_row=578 / same_col=536 / row_then_col=4,288, credits alias-free/drained/fully restored, lint 0 warnings, sim PASS. Evidence `runs/selected-r02-gec-mecs-seats-20261111/`; gate `tests/test_gec_mecs_selected_seats.py`. Single-flit: C4 remains open. |
+| C6 | Physical signoff of the selected contract | **OPEN / operator** |
+
+---
+
+## The work, in dependency order (and what is actually blocking)
+
+1. **C5**: the end-to-end run of the *selected* 74-agent contract on RTL with conservation/credit/reset accounting. The composed path handles every family including the co-seated memory case, and the 81-router shared fabric scales and carries real per-tap credits (C2 and C3 closed); what remains on this path is C5 itself, plus Scope C's physical signoff.
+2. **A7's residual**: the arbiter's *starvation*-freedom (a separate property from deadlock-freedom, which is proven per VC class) and the shared-wire fabric's deadlock freedom.
+3. **A8's residual**: cycle-exact parity — the 3-cycle drain difference between the two microarchitectures is recorded, not closed.
+4. **A9's residual**: formal ARM AXI5 VIP compliance — the directed suite proves the claimed surface; no VIP is in the checkout.
+5. **A10's residual**: the composed initiator still emits one AXI beat per flit, so a multi-beat burst is not yet framed as one packet.
+6. **A11/A12 + Scope C's physical items**: operator — PDK, clock, bounds, pins.
+
+**Operator-only, no code can move them:** the PDK decision (`PDK-DECISION-REQUIRED.md`), die bounds and pinout, the Constellation fork for KNCube native equivalence, and whether the release claim is "RTL implementation" (A1–A10) or "placed-and-signed-off" (adds A11/A12).
+
+**The honest position (2026-11-11):** for a composed family, rows **A1–A10 are now closed** — A1 (all fourteen families compose, lint and simulate; no family refuses a shape it models), A2, A3 (a corrupted binding is refused by the named checker), A4, A5 (co-seating, including the memory endpoint sharing a router with initiator seats), A6 (decode equivalence), A7 (the channel dependency graph is acyclic per VC class by unbounded induction; the ring's real deadlock was removed by giving it the fork's dateline half), A8 (the paired BookSim/RTL run: payloads exact, counts and conservation agreeing, the drain-cycle delta recorded as 3 and not hidden), A9 (the claimed AXI5 surface proven by a directed suite) and A10 (a multi-flit packet is carried and reassembled). A11/A12 are closed **by a recorded scope-out decision**, not by evidence: no PDK, clock, die bounds or pinout exists here, so physical signoff is not claimed and stays open. The flag therefore follows the evidence for the RTL-implementation scope, and the manifest carries the whole row-by-row verdict so the claim can be checked. Scope C (the pinned 74-agent project) and the shared-wire families' own rows (Scope B) are still open, and nothing here claims otherwise. Setting the flag `true` before those close would be exactly the failure the audit apparatus exists to prevent — so the work above is the path, and the flag follows it.

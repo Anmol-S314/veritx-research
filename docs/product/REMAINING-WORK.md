@@ -130,8 +130,12 @@ coverage of every allowed rank/shape envelope before broadening the claim.
   `SROTA_PLANEC_XY`). `assert_traffic_classes_bound` and the evaluator's
   `_admit_traffic_classes` take the binding and check disjointness WITHIN a
   subnet only; the BookSim projection renders `class_subnet` from the same
-  binding, so renderer and admission cannot drift. Single-plane designs pass
-  no binding and keep the flat check unchanged. Evidence: the product path
+  binding, so renderer and admission cannot drift. Plane C class vocabulary
+  is the control/coherence namespace (`control`, `control:*`, `coherence`,
+  `coherence:*`; legacy `control_collective`), so a data class cannot take
+  the control plane by alphabet: see `PLANE-C-CLASS-VOCABULARY.md`.
+  Single-plane designs pass no binding and keep the flat check unchanged.
+  Evidence: the product path
   (`FabricEvaluator` -> `CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1`) reaches
   `EVALUATED` on `srota32_plane_c` with `flits_injected == flits_accepted`
   (62,496) across the two subnets (`tests/test_srota_plane_c.py`).
@@ -301,3 +305,51 @@ multi-round search without an operator, and no LLM-authored score anywhere.
   probes, prewarms once at startup, and re-probes on `?refresh=true`. Measured
   after the change: 4.16 s → 5 ms per request, and the Fabric topology
   selector is ready in ~90-100 ms on every visit.
+
+---
+
+## 2026-11-10 — consolidated remainder (post-audit, post-P8/P9 lanes)
+
+This section supersedes earlier snapshot estimates. Only items that remain are listed; anything finished is listed as evidence elsewhere in the repo. Effort scale: **S** = hours, **M** = days, **L** = weeks+. Owners in brackets.
+
+### Blocked on an operator decision
+1. **P0.8 PDK** [operator] — ASAP7 unobtainable via ciel/volare (only sky130 / gf180mcu / ihp-sg13g2). sky130A is the declared diagnostic; a 7-nm release needs ASAP7 or an approved equivalent; GF180MCU is the fallback for independent timing confirmation. See `PDK-DECISION-REQUIRED.md`.
+2. **Die bounds + pinout + CDC/plane for the network block** [operator] — none exist; §12 records the blocker; required before any route/DRC claim.
+3. **Constellation / KNCube native source** [operator] — agent cannot fetch; `KNCubeSourceSpec` equivalence checking stays open without it.
+4. **Scope of the release claim** [operator] — "network block placed/routed on sky130A" vs "full-chip signoff"; current repo supports neither as a signoff qualified claim.
+
+### Engineering (L–L+M)
+5. **P3 finish line — multi-instance/multi-seat compose path** [this repo] — **multi-instance emission LANDED 2026-11-10**: a group with `count=2` now compiles, emits two `initiator_slice` instances on two distinct routers with two distinct endpoint port sets, and the composed top lints PASS and simulates PASS 13/13 (both instances write/read/complete; ordering, decode-miss, SLVERR, backpressure, concurrent, conservation, drain all true). Zero regression measured (torus top + TB render byte-identical; torus family test green); regression tests 12/12. **Still open:** (a) the multi-seat concentrator **wiring** — the arbiter + response demux primitive is built and proven (`tracks/t3-topology/rtl/multi_seat/seat_concentrator.sv`, 5 scenarios PASS, gate test 3/3) but is not yet placed between the per-seat slices and the router local port, so the five multi-seat families keep their typed refusals; (b) the full-size 74-agent Mixtral run through the same multi-instance path (the compiler seats every instance on its own router for concentration-1 fabrics — measured); (c) KNCube native equivalence (item 19). M–L.
+6. **P9 — RTL prerequisite for timing close at 10 ns on sky130A** [this repo] — the grant-arbiter re-pipeline **landed** (registered grant stage, `esc_yield_q` priority state, 4-VC dwell extension; composed slice re-verified 38/38) and post-CTS STA still measures setup WNS **−4.424 ns / TNS −11.4 µs**, hold clean. Binding classes moved to **7,212 × async-reset fanout flop** and **1,470 × reg-reg/out** (debug-tap adders in `project_top.sv`); the arbiter is no longer binding. LibreLane resizer (`ResizerTimingPostCTS`, stages 37/38) was killed twice at iteration ~240 (~0.01 ns/iter, 23,570 violating endpoints; no metrics). Routing/DRC/signoff remain **NOT_RUN**. Remaining honest paths: reset-tree constraint review + a pipeline stage on the debug-tap adders, then a PDK decision; no clock tweak allowed. M–L; verify with the full top STA re-run.
+7. **Compute-architecture / STREAM / BIDIRECTIONAL / RCU materializers** [this repo] — the 9 honestly refused templates (npu-tensor-core, vector-coprocessor, rcu-collective, concentrated-router, streaming-dma-engine, telemetry-atb-trace-hub, cdc-async-fifo-bridge, pipeline-retiming-stage, ucie-d2d-chiplet). Each refusal names its missing artifact by blocker id in `ip_catalog.py ROADMAP`. L (per family).
+8. **P1.5 — attachment-side stable identity binding** [this repo] — v4 `Agent.group_name` substrate landed (hash-stable absent, every-group-must-declare, unique refusals, 11/11 browser exact pins, compile COMPILED with named groups); the attachment artifact (`AgentAttachmentArtifact`) still binds positionally; no `group_name → attachment` mapping artifact or the reorder-safety check exists yet. M.
+
+### Evidence / signoff (S–M)
+9. **`--release` matrix re-run after the 2026-11-10 kncube routing fix** — the row could never pass before (`make_family_request("kncube")` raised before the harness). Must be run and archived under `runs/`; the last recorded matrix is FAIL at the 300 s arm; mesh8x8 evidence was destroyed at the service restart and must be re-pinned from the re-run. S (machine-bound ~30 min).
+10. **Single-project smoke manifest (`complete_design.py --request fixture.json --out runs/…`)** — freeze/compile/hardware `PASS_WITH_NOT_RUN`; never claimed; must exist for P11. S (~5 min).
+11. **Backend DSE full unit suite (`sequential-gates.sh dse-pytest`)** — never completed this cycle (died at 41% at the service restart). Queued; must finish to validate the 207+ backend pins honestly. M (~30 min).
+12. **Full Playwright suite re-run** — the three specs that drifted on the FinalDelivery copy are fixed and individually verified; the 130-spec suite has not re-run end-to-end; must be green before any release claim. S (~10 min).
+13. **`runs/sequential-gates-*` logs archived into release evidence** — gate logs exist; the release claim may not cite ephemeral `/tmp` logs; pin sha256 of every cited log. S.
+14. **`sha256sum` pinning for fresh evidence** — mesh8x8 and sequential-gates logs get pinned; update `test_release_evidence_mixtral.py`-style pin test. S.
+15. **`runs/veritx-p2p7p11-evidence/` re-derivation** — report dated 2026-11-09; P2 pass-conditional and P7 partial are not valid 2026-11-10 evidence without re-runs. M.
+16. **Compiler toolchain pinning in gate logs** — verilator/yosys/openroad versions must be recorded in each log header; none are recorded today. S.
+
+### Backend defects found by formal proof (M)
+
+- ~~**Ring family deadlock (known defect, measured 2026-11-10).**~~ **CLOSED 2026-11-10 (late).** Root cause found by reading the BookSim fork's own `dor_next_torus`: the fork computes the dateline partition once, when the flow turns into the dimension, and keeps it — and the fork's law is *acyclic per VC class*. The composed RTL was not carrying that half: its VC was a class (free/escape), so every flow shared VC0 and the ring's dependency graph was cyclic. The ring's VC is now the fork's dateline half (`src_router > dst_router`), the escape engage is disabled for the ring so the VC never changes, and the dependency-graph proof is now **per VC class**. Measured: both classes acyclic, unbounded `sby prove` PASS, 64 routers, and the ring still lints and simulates 13/13. Pinned by `tests/test_composed_family_cdg_proof.py::test_composed_family_channel_dependency_graphs_are_acyclic[ring]` and the analysis tests in `tests/test_ring_vc_cdg_analysis.py`.
+- **Multi-seat memory co-seating (last typed refusal).** Co-seating the memory endpoint with initiator seats needs the composed fabric to be endpoint-addressed so the concentrator can demux by destination endpoint id.
+- ~~**Per-tap credits inside the multidrop wires (P4 4.3).**~~ **APPLIED 2026-11-11** — the shared fabric now carries per-(port, tap, VC) credit accounting: one proven `tap_credit_pool` per wire, a credited grant path (a credit is claimed when the flit actually moves onto the wire, and only for the exact (tap, VC)), a release path that returns the credit to the exact (tap, VC) it was taken from (the far end holds the return until the fabric takes it, and the fabric serves the holding destinations round robin per source), and a VC/tap-echo in the shared flit so the return cannot alias. The directed over-subscription scenario proves all of it at the full 81-router shape; the transformation is anchored and refuses rather than emitting a half-wired fabric; the pinned historical 16-router artifact stays byte-identical. Gate: `tests/test_gec_mecs_credited_fabric.py`. Wiring spec and the honest scope note: `docs/product/proposals/P4-4-3-credit-wiring-spec.md`. **Still open:** the wire model delivers one flit per wire per cycle, so the credit is rarely the binding constraint today — making it so needs a pipelined wire model.
+
+### Verification integrity (S)
+17. **`git status --porcelain` (508 untracked / 220 modified / 7 deleted entries)** — the tree is unvetted WIP; nothing can be tagged. Needs separate commits per lane (Constellation/fork/model; Studio; docs) and a clean-tree evidence pass before any release reference. M.
+18. **`final_implementation = false` everywhere** — must remain true of the tree until P9/P11 pass; no exception.
+19. **KNCUBE native equivalence** — **partly closed 2026-11-10**: the general intent exists and works (`StructuredTopologyIntent(family="kncube", params={radix, dimensions, wrap})` compiles COMPILED, composes to 9 routers, emits lint-clean RTL that simulates PASS 13/13; a mismatched wrap is refused by name; the runner's wrong kwargs and its false BLOCKED row are fixed). What remains is equivalence against the external Constellation KNCube source — `KNCUBE_GENERAL_INTENT_AND_NATIVE_EQUIVALENCE_CHECKER_MISSING` is raised by the new guard module by design rather than approximated; cannot close without the Constellation source (item 3).
+20. **Contention qualification scope** — S26/S27 pass only at AW-first ordering; outstanding-release under sink hold qualifies at that cadence; S28/S18/S19/HEAD-BODY-TAIL/credit-tap/credit-delay remain NOT_RUN (`SLICE_MULTI_DEST`, `SLICE_CREDIT_TAP`, `SLICE_CREDIT_DELAY` missing). M–L (per primitive).
+
+### Verification sweep state as of 2026-11-10 ~15:0x
+- Frontend 325/325, `agentMapExact` 11/11, backend address-range 12/12, IP catalog 63/63, frozen pins 11/11, endpoint-loss 4/4, slice TB suite 38/38 (contention-enhanced locked TB, 14.2 min), parameterized 12/12, shared 14/14, p8 contention invariants 5/5, source suites 32/32.
+- Backend DSE full unit suite: **NOT RUN (clean)** this cycle.
+- Release matrix: last recorded FAIL (300 s mesh timeout; dragonflynew pending re-run; kncube row fixed in runner but unverified).
+- LibreLane full top: CTS PASS; post-CTS STA FAIL (WNS −4.424 ns, TNS −11.4 µs, hold clean); stages ≥37 NOT_RUN effective (resizer dead, no metrics).
+- Gateway fresh (`stale:false`, `source_age_s:0`, pid 16846) as of 2026-11-10 14:0x; any further edit repeats the staleness rule.
+

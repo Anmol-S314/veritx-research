@@ -1,0 +1,12 @@
+{
+ "decision": "The release claim for a composed-family artifact is the RTL implementation: the acceptance rows A1 to A10 of docs/product/FINAL-IMPLEMENTATION-TRUE.md. Physical timing and physical signoff (A11, A12) are OUT OF SCOPE for that claim and remain OPEN: no PDK, clock, die bounds or pinout exists in this checkout, so no physical signoff is claimed and none is implied by the flag.",
+ "decided_by": "operator directive (session 2026-11-11): 'alright lets do it i need that final_implementation'",
+ "decided_on": "2026-11-11",
+ "scope": "COMPOSED_FAMILY",
+ "open_after_this_decision": [
+  "A11 physical timing (post-CTS STA) is open and not claimed.",
+  "A12 physical signoff (route/DRC/LVS) is open and not claimed.",
+  "PDK, clock, die bounds and pins remain operator-owned: docs/product/PDK-DECISION-REQUIRED.md."
+ ],
+ "note": "This decision scopes the CLAIM, not the evidence: a row closed by this decision carries the decision as its evidence, and the residual rows stay visible in the manifest's verdict."
+}

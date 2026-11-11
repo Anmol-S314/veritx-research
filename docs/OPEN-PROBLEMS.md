@@ -20,6 +20,47 @@ dangerous class).
 
 ---
 
+## Current status — 2026-11-11 (read this before the historical audit)
+
+The historical audit below (Part 1–3) is kept for lineage; several items are
+now closed. The live ledgers are `PROGRESS.md`,
+`docs/product/RTL-FINAL-CLOSEOUT-STATUS.md`, and
+`docs/reports/FINAL-IMPLEMENTATION-HANDOFF-20261111.md`.
+
+What closed on 2026-11-11:
+
+- The composed-family RTL scope is green for 12 of 14 families: mesh, torus,
+  concentrated_mesh, ring, fly, qtree, tree4, flatfly, fattree, dragonflynew,
+  GEC-MECS and KNCube. Each has lint 0 warnings, sim PASS, 13/13 scenarios and
+  `final_implementation: true` with `open_rows: []`.
+- The release matrix is **14/14 family rows PASS**; `PASS_WITH_NOT_RUN` remains
+  only for `physical: NOT_RUN` and the operator-owned KNCube native-equivalence
+  blocker.
+- A8 parity, the slice-template generate-shape refusal, the A2 lint defects,
+  the multi-flit test's missing `noc_pkg`, and fly's A7 proof-domain bug are
+  fixed and pinned by tests.
+
+What is still open:
+
+- **GEC-hybrid and SROTA** under their own Scope B claim lists: multi-flit
+  framing, VC allocation/credit pipeline, multicast, AXI/OrderingFSM/CDC
+  composition, physical multidrop. Their fabric lint is now clean (named
+  sinks/waivers), but that does not close the Scope B claims.
+- **Scope C** — the pinned 74-agent selected project: **C4 and C5 are CLOSED**.
+  The 74 seats ran as real endpoints (5,476/5,476 flows conserved, credits
+  restored; `runs/selected-r02-gec-mecs-seats-20261111/`), and the same fabric
+  carries ordered HEAD/BODY/TAIL packets, multi-flit contention and reset
+  recovery (`runs/selected-r02-gec-mecs-seats-c4-20261112/`). C6 (physical)
+  remains open. The 81-router Chisel credit-preview emit still OOMs.
+- **P9 physical**: approved PDK/clock/die bounds/pinout, route/DRC/signoff.
+- **Release hygiene**: the tree is still uncommitted/untracked; no clean-tree
+  reproduced release.
+- Historical audit items GATE-2 (semantic citation anchors), GATE-5/6/11
+  (release hermeticity/container digest), INT-1/NEW-PROV-1 (provenance
+  persistence), and the Studio live cancellation/calibration gaps remain.
+
+---
+
 ## Where the heterogeneous-link work stands
 
 Three original issues. Two are end-to-end; the third is simulator-only.
@@ -694,3 +735,35 @@ summarized in `capability-backlog.md`, `repair-reconciliation.md`, and
 - **CI provenance (GATE-6/8/11):** Ramulator nested FetchContent revisions are pinned and guarded in the current tree; schema-2 release manifests record the actual `RELEASE_CXX` identity and compare it to backend provenance. Toolchain-image digest enforcement, release-environment convergence, and clean-runner configure/build from a clean committed tree remain open acceptance gates.
 
 Current-tree tests and source status apply to HEAD `bf26286e` plus its remaining dirty working-tree changes; the mixed tree is not a clean release checkpoint. Earlier full DSE runs were contaminated by missing pytest basetemp and `/tmp` quota exhaustion. A later provisioned run used cache-backed `TMPDIR`/`--basetemp`: its single-process invocation timed out at 83% after 6,264 tests (6,232 passed, 32 skipped; no failures/errors printed). The remaining 1,225 collected node IDs were then run in two pytest shards: 1,222 passed / 2 skipped and 1 passed. Thus all 7,489 collected DSE node IDs have a passing or skipped result across the recorded invocation plus shards (aggregate 7,455 passed, 34 skipped); however, there is no completed single-process full-suite summary, so order-sensitive suite integration remains unproven. Logs: `/home/datavex/.cache/veritx-dse-full-20261011/full-suite.log` and `tail-suite.log`. Focused ASTRA/release-manifest tests: 27 passed; native BookSim source-build diagnostic mapping/refusal tests: 2 passed. The shared `scripts/ci_gate.sh`, clean release build, native build/replay, qualification and physical/hardware signoff remain separate gates; report each exact result rather than marking this ledger globally closed.
+
+---
+
+## 2026-11-11 gate closure (working tree, uncommitted)
+
+Measured at the start of this cycle: `make -C tracks/t3-topology product-gates`
+exited 2 with exactly two red gates.
+
+- `check_intent_ontology`: `WorkloadV3.traffic_profiles` and
+  `Agent.group_name` were declared fields with no ontology row. Added
+  `workload.traffic_profiles` (cite: the lowering read,
+  `workload/intent_lowering.py:198`) and `agent.group_name` (cite: the group
+  validation, `model/compile_request_v4.py:96`) to
+  `docs/product/intent-ontology.yaml`.
+- `check_capability_truth`: the `kncube` probe (auto-derived from every
+  `STRUCTURED_FAMILIES` entry) had no registry owner — UNGATED. Added the
+  `kncube` row to `docs/product/topology-family-registry.yaml` matching the
+  derived truth: AUTHORABLE/MATERIALIZABLE/ROUTABLE/VERIFIABLE YES;
+  PROJECTABLE/EXECUTABLE/QUALIFIED/WIRED NO, because the probe lowers to
+  `torus` and no certified profile accepts that artifact.
+
+Verification on this tree: `product-gates` exits 0 (all seven gates PASS);
+`check_topology_family_registry.py` exits 0 (21 families);
+`test_capability_truth.py` 34 passed; `test_product_registry_gates.py` 36
+passed; `git diff --check` clean. These are working-tree results, not a
+release checkpoint; `final_implementation` remains false.
+
+Still open and unchanged here: the prioritized remainder in
+`docs/product/REMAINING-WORK.md` — P0 commit separation and clean-tree
+evidence, the PDK/die-bounds/Constellation operator decisions, RTL C4–C6,
+the 81-router credit-preview emit, GATE-2 semantic citations, GATE-5/6/7/10/11
+release hermeticity, and INT-1/NEW-PROV-1 provenance persistence.

@@ -1,0 +1,177 @@
+{
+  "contract_version": 1,
+  "approval_id": "release-workloads-20261110",
+  "approved_on": "2026-11-10",
+  "approved_by": "operator directive: finish P0-P11 of docs/product/INTENT-TO-PLACED-RTL-COMPLETION-PLAN.md",
+  "selection_rule": "Only workloads already present in this checkout are approved. No workload is resized, sampled down or invented. The Mixtral selected revision is the full-size acceptance case; the small designs are debugging aids and never replace it.",
+  "full_size_acceptance": {
+    "revision_id": "p-fd7e5e31be77-r02",
+    "design_hash": "sha256:ab7bce8f71b5ed4fde4101ee80a60b6c69c16989d966f0f9096dd6d76ad392f0",
+    "agents": 74,
+    "routers": 81,
+    "vcs": 8,
+    "shared_links": 162,
+    "evidence": "docs/product/evidence/mixtral-74-81-8-162/"
+  },
+  "debug_designs": [
+    {
+      "name": "mesh-2x2 composed slice",
+      "scope": "4 routers, 2 initiators, 1 destination",
+      "purpose": "transaction, ordering, backpressure, conservation and burst regression"
+    },
+    {
+      "name": "mesh-4x4 composed slice",
+      "scope": "16 routers, width 32/64/128, VC 1/2/4, multi-clock",
+      "purpose": "parameterized composed-top regression"
+    },
+    {
+      "name": "torus-3x3 and ring-16 composed slices",
+      "scope": "family routing-law regression",
+      "purpose": "wrap, seam and escape checks"
+    }
+  ],
+  "approved_workloads": [
+    {
+      "id": "gr00t-n16-h100-measured",
+      "kind": "request",
+      "path": "tracks/t3-topology/examples/gr00t_n16_h100_measured-v4.json",
+      "sha256": "18eeaed2d18ea857b7db5b353f1301b6abd390ee90c2fb13bda3c5c38506654f",
+      "questions": ["network time", "topology sensitivity"],
+      "limits": "measured host capture; not an end-to-end application runtime"
+    },
+    {
+      "id": "gr00t-vla-robotics",
+      "kind": "request",
+      "path": "tracks/t3-topology/examples/gr00t_vla_robotics-v4.json",
+      "sha256": "bb7cc4078689d5433f79be0c5626e0b09b12a4b69bf17ee3e300de57640ac7f6",
+      "questions": ["network time", "topology sensitivity"],
+      "limits": "modeled request; no fabricated measured score"
+    },
+    {
+      "id": "qwen3-moe-tp2-ep4-16tiles",
+      "kind": "request",
+      "path": "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v4.json",
+      "sha256": "f7df8bc5a210cd2b63d844ab3d955ea21450a61e7a541e80bac8621f7f24ec05",
+      "questions": ["network time", "collective schedule exposure"],
+      "limits": "request only; measured kernel slowdowns live in the public-inference capture"
+    },
+    {
+      "id": "pi0-thor-modeled",
+      "kind": "request",
+      "path": "tracks/t3-topology/examples/pi0_thor_modeled-v4.json",
+      "sha256": "4d15960793ecbd85c97d51f6ad557c04335ef56bde7b61c1eab0951787dbdf70",
+      "questions": ["network time"],
+      "limits": "modeled request; not measured on Thor hardware"
+    },
+    {
+      "id": "switch-gen6-class",
+      "kind": "request",
+      "path": "tracks/t3-topology/examples/switch_gen6_class-v4.json",
+      "sha256": "c2e7658187f6a48457ee3c6a05c69090dfaea13ae821437591451250cd3a92fd",
+      "questions": ["network time", "topology sensitivity"],
+      "limits": "class-level request; no device measurement"
+    },
+    {
+      "id": "cal26-qwen3-30b-ep4-kernel-slowdowns",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/public-inference/cal26-qwen3-30b-ep4/inference-kernel-slowdowns.csv",
+      "sha256": "cf34869fb9cc26364c1821c35e30f2510d7120994fc84c4c9ffabb8126975960",
+      "questions": ["kernel slowdown distribution"],
+      "limits": "public capture; source attribution in adjacent README"
+    },
+    {
+      "id": "cal26-qwen3-30b-ep4-nvlink-counters",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/public-inference/cal26-qwen3-30b-ep4/nvlink-counter-samples.csv",
+      "sha256": "be275dec0c90b98c68a73e147dce2d1fad467254abd75ec5a62b3bb3030b7810",
+      "questions": ["link counter samples"],
+      "limits": "public capture; not a topology-specific measurement"
+    },
+    {
+      "id": "llama31-8b-tp4-collectives",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/public-inference/llama31-8b-tp4/collectives.json",
+      "sha256": "761dc54d764c360dcadccbc80c8a8c7624b1addeb140008bb177fc498446cef0",
+      "questions": ["collective size distribution"],
+      "limits": "public capture; projection method recorded in projection-results.md"
+    },
+    {
+      "id": "gr00t-g1-apple-to-plate-events",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/public-robotics/gr00t-g1-apple-to-plate/episode_000000.events.jsonl",
+      "sha256": "0e4001d4554ae9d0519b336e5bdf2085b571ce5a6f4039c66daa7c2b4c7d8a96",
+      "questions": ["episode event timing"],
+      "limits": "public capture; upstream requirements in requirements-source.txt"
+    },
+    {
+      "id": "lerobot-smolvla-trace",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/lerobot/smolvla_trace.jsonl",
+      "sha256": "5d91310c6fd84de191bb33ef7ca4cccf1b06d232033dd9733d88804af60052fa",
+      "questions": ["trace replay timing"],
+      "limits": "public capture; model notes in SMOLVLA.md"
+    },
+    {
+      "id": "lerobot-smolvla-vla-trace",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/lerobot/smolvla_vla_trace.jsonl",
+      "sha256": "eea4d4f59fbe6d63d3a508df2b31059c611ac790e0f88b50227f2b48de444a94",
+      "questions": ["trace replay timing"],
+      "limits": "public capture; model notes in SMOLVLA_VLA.md"
+    },
+    {
+      "id": "lerobot-act-pusht-trace",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/lerobot/act_pusht_trace.jsonl",
+      "sha256": "eb3f58a144796079b7d49f9613f816819b5935a3c9b64a81399bdee71bafb7ed",
+      "questions": ["trace replay timing"],
+      "limits": "public capture"
+    },
+    {
+      "id": "vla-perf-network-latency-kvcache",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/vla-perf/network_latency_bidirectional_kvcache.csv",
+      "sha256": "8c90e5c478235943b980d2b524b7250d1ed66f7c8a577e56b6807be2cca40a8f",
+      "questions": ["network latency"],
+      "limits": "public capture; license in LICENSE-vla-perf"
+    },
+    {
+      "id": "vla-perf-network-latency-images",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/vla-perf/network_latency_images.csv",
+      "sha256": "96ac194c1627de6541f342ad01d0e4379ecb4d18b2c5c25b0978b3588cafbf74",
+      "questions": ["network latency"],
+      "limits": "public capture; license in LICENSE-vla-perf"
+    },
+    {
+      "id": "vla-perf-validation",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/vla-perf/perf_validation_vs_realtime_vla.csv",
+      "sha256": "f807142651a81bea49b7fbb06fcf0fd3d6a9549b4fe9252b3dc02c6a6128f2d9",
+      "questions": ["validation against realtime VLA"],
+      "limits": "public capture; license in LICENSE-vla-perf"
+    },
+    {
+      "id": "vla-perf-pi0-denoising",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/vla-perf/pi0_denoising_steps_action_lengths.csv",
+      "sha256": "6addcecbbd4b88303fdede36ded833b4d0aaa8472c7b12c10ceb4ec2d6cdfb63",
+      "questions": ["denoising step shape"],
+      "limits": "public capture; license in LICENSE-vla-perf"
+    },
+    {
+      "id": "vla-perf-pi0-family",
+      "kind": "capture",
+      "path": "tracks/t3-topology/data/vla-perf/pi0_family_e2e_perf.csv",
+      "sha256": "68e70df3ca4c7f1b8a5cb62acaa6e4d9f1b85a48c2ab1cd47b823561e2286206",
+      "questions": ["family end-to-end performance"],
+      "limits": "public capture; license in LICENSE-vla-perf"
+    }
+  ],
+  "excluded": [
+    {
+      "path": "tracks/t3-topology/runs/workload-ablation/20261026-baseline/traces/mixtral-8x7b-64tiles_n64.trace",
+      "reason": "run output, not a checked-in input; the pinned Mixtral revision carries its declared workload instead"
+    }
+  ]
+}

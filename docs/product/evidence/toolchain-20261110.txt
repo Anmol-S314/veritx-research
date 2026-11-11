@@ -1,0 +1,10 @@
+# Toolchain pins — 2026-11-10
+date: 2026-11-10T09:13:05Z
+verilator: Verilator 5.032 2025-01-01 rev (Debian 5.032-1)
+yosys: Yosys 0.52 (git sha1 fee39a3284c90249e1d9684cf6944ffbbcbb8f90)
+openroad: /bin/bash: line 1: openroad: command not found
+podman: podman version 5.7.0
+python3: Python 3.14.4
+node: v22.22.1
+npm: 9.2.0
+git: git version 2.53.0
