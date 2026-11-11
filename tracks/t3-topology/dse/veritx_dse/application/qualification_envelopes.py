@@ -33,8 +33,8 @@ DIAGNOSTIC_PROFILE_PREFIX = "DIAGNOSTIC_"
 _ENVELOPES: dict[str, tuple[str, str, str]] = {
     "BOOKSIM_STANDALONE": (
         ESTABLISHED, NOT_ESTABLISHED,
-        "certified mesh-DOR-xy envelope (conservation + route proof); "
-        "within the certified profile only"),
+        "certified per-profile network envelope (conservation + route proof); "
+        "within the selected certified profile only"),
     "ASTRA2_EMBEDDED_BOOKSIM": (
         LIMITED, NOT_ESTABLISHED,
         "internally qualified under model M; ABSOLUTE LATENCY "

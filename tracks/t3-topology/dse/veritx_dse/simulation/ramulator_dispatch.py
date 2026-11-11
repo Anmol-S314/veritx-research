@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.simulation.ramulator import (
-    FIDELITY, SUPPORTED_PAIRS, MemoryEvidence, RamulatorBackend,
+    DISPATCH_EVENT_LIMIT, FIDELITY, SUPPORTED_PAIRS, MemoryEvidence, RamulatorBackend,
     RamulatorError, _metric, _sha256_hex,
 )
 
@@ -527,8 +527,8 @@ def execute_dispatch(artifact, manifest: dict[str, Any], *,
             metrics[key] = _metric(aggregate_stats[key], "requests")
     controller_cycles = [item["native_stats"].get("cycles")
                          for item in per_controller]
-    if not all(isinstance(c, int) and not isinstance(c, bool)
-               for c in controller_cycles):
+    if not controller_cycles or not all(isinstance(c, int) and not isinstance(c, bool)
+                                       for c in controller_cycles):
         # Never fall back to elapsed time here: that would present a shared
         # clock as a per-controller cycle count.
         failure = failure or (

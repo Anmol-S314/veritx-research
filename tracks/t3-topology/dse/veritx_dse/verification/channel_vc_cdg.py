@@ -21,6 +21,9 @@ from veritx_dse.model.vc_assignment import VCAssignmentArtifact, VCAssignmentErr
 CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
 
 DATELINE_RESTRICTED_EXPANSION = "dateline_restricted"
+DATELINE_RESTRICTED_1D_EXPANSION = "dateline_restricted_1d"
+TREE4_DESTINATION_EXPANSION = "tree4_destination_indexed"
+FLY_DESTINATION_EXPANSION = "fly_destination_indexed"
 GENERIC_EXPANSION = "generic"
 
 DEADLOCK_PROOF_METHODS = (
@@ -139,6 +142,127 @@ def dateline_partition(a: int, b: int) -> int:
     direction — midpoint ties take the same half whichever way the fork
     resolves them. (Pinned by test over all coordinate pairs.)"""
     return 1 if a > b else 0
+
+def _ring_dateline_request(
+        topology: TopologyArtifact,
+        router_route: RouteArtifact,
+        vc_assignment: VCAssignmentArtifact,
+) -> tuple:
+    """Whether the 1-D dateline expansion applies to this fabric."""
+    from veritx_dse.core.route_artifact import RING_DATELINE
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    declared = {d.id for d in router_route.routing_classes}
+    if declared != {RING_DATELINE}:
+        return False, "routing classes are not exactly RING_DATELINE"
+    if tuple(vc_assignment.vc_ids) != (0, 1):
+        return False, "VC set is not exactly (0, 1)"
+    if tuple(vc_assignment.allowed_transitions) != ((0, 0), (1, 1)):
+        return False, "transitions are not identity"
+    bound = set(dict(vc_assignment.vc_to_routing_class).values())
+    if bound != {RING_DATELINE}:
+        return False, "VCs are not all bound to RING_DATELINE"
+    if getattr(topology, "family", None) is not MaterializedFamily.RING_NATIVE:
+        return False, "topology family is not RING_NATIVE"
+    return True, "RING_DATELINE dateline partition over exact 2 VCs"
+
+
+def _ring_dateline_edges(
+        topology: TopologyArtifact,
+        table: dict,
+        n: int,
+        envelope: tuple,
+) -> tuple:
+    """Expand the TRUE executed (channel, VC) dependencies of a 1-D ring.
+
+    A hop's half is ``dateline_partition(flow source, destination)``: the
+    fork sets ``ph`` once, at the routing decision that turns into the ring
+    dimension, and then keeps it for every later hop of that packet (the
+    in-dimension branch only flips the output port). The half is therefore a
+    property of the FLOW, not of the hop, and the transitions stay identity —
+    verified against the fork's own executed dumps, not assumed.
+
+    Both minimal directions are expanded when a flow is diametral: the
+    midpoint tie is a coin the hardware may land either way, and a proof over
+    one face of it would not cover the fabric.
+    """
+    channel_by_id = {c.channel_id: c for c in topology.channels}
+    channel_by_pair: dict[tuple[int, int], int] = {}
+    for ch in topology.channels:
+        key = (ch.src_router, ch.dst_router)
+        if key in channel_by_pair:
+            raise CDGError(
+                f"parallel ring channels {key} — a ring hop is not a bundle")
+        channel_by_pair[key] = ch.channel_id
+    edges: set[tuple[ChannelVC, ChannelVC]] = set()
+    tie_mirrors = 0
+    crossings = 0
+
+    def _table_run(s: int, d: int) -> list[int]:
+        channels: list[int] = []
+        cur, seen = s, {s}
+        while cur != d:
+            ch_id = table.get((cur, d))
+            if ch_id is None:
+                raise CDGError(
+                    f"RING_DATELINE route has no entry for ({cur},{d}) on "
+                    f"flow ({s},{d}) — the table is incomplete")
+            ch = channel_by_id.get(ch_id)
+            if ch is None or ch.src_router != cur:
+                raise CDGError(
+                    f"RING_DATELINE route ({cur},{d}) names channel "
+                    f"{ch_id!r}, which does not leave router {cur}")
+            channels.append(ch_id)
+            cur = ch.dst_router
+            if cur in seen:
+                raise CDGError(
+                    f"RING_DATELINE route revisits router {cur} on flow "
+                    f"({s},{d}) — not a minimal ring path")
+            seen.add(cur)
+        return channels
+
+    def _add(channels: list[int], s: int, d: int) -> None:
+        nonlocal crossings
+        path = [s]
+        for ch_id in channels:
+            path.append(channel_by_id[ch_id].dst_router)
+        if path[-1] != d:
+            raise CDGError(
+                f"flow ({s},{d}) run does not reach its destination")
+        shortest = min((d - s) % n, (s - d) % n)
+        if len(channels) != shortest:
+            raise CDGError(
+                f"flow ({s},{d}) run takes {len(channels)} hops, not the "
+                f"{shortest} of a minimal ring traversal")
+        halves = [dateline_partition(s, d)] * len(channels)
+        for i in range(len(channels) - 1):
+            transition = (halves[i], halves[i + 1])
+            if transition not in envelope:
+                raise CDGError(
+                    f"flow ({s},{d}) hop {path[i]}->{path[i + 1]} crosses "
+                    f"VC {transition[0]}->{transition[1]}, which the ring "
+                    f"dateline envelope {list(envelope)} does not declare")
+            if halves[i] != halves[i + 1]:
+                crossings += 1
+            edges.add(((channels[i], halves[i]),
+                       (channels[i + 1], halves[i + 1])))
+
+    for s in range(n):
+        for d in range(n):
+            if s == d:
+                continue
+            _add(_table_run(s, d), s, d)
+            if n % 2 == 0 and (d - s) % n == n // 2:
+                mirror_head = (s - 1) % n
+                ch_id = channel_by_pair.get((s, mirror_head))
+                if ch_id is None:
+                    raise CDGError(
+                        f"tie-mirror run for flow ({s},{d}) has no channel "
+                        f"{s}->{mirror_head}")
+                _add([ch_id] + _table_run(mirror_head, d), s, d)
+                tie_mirrors += 1
+    diag = {"tie_mirrors": tie_mirrors, "turn_crosses": crossings}
+    return edges, diag
+
 
 def _dateline_restricted_request(
         topology: TopologyArtifact,
@@ -336,6 +460,174 @@ Rationale: docs/decisions/modules/verification.md
     diag = {"tie_mirrors": tie_mirrors, "turn_crosses": turn_crosses}
     return edges, diag
 
+def _tree4_request(
+        topology: TopologyArtifact,
+        router_route: RouteArtifact,
+        vc_assignment: VCAssignmentArtifact,
+) -> tuple:
+    """Whether the native Tree4 destination-indexed expansion applies."""
+    from veritx_dse.core.route_artifact import TREE4_NCA
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    declared = {d.id for d in router_route.routing_classes}
+    if declared != {TREE4_NCA}:
+        return False, f"routing classes are {sorted(declared)}, not TREE4_NCA"
+    if getattr(topology, "family", None) is not MaterializedFamily.TREE4_NATIVE:
+        return False, "topology family is not TREE4_NATIVE"
+    bound = set(dict(vc_assignment.vc_to_routing_class).values())
+    if bound != {TREE4_NCA}:
+        return False, "VCs are not all bound to TREE4_NCA"
+    return True, "TREE4_NCA destination-indexed union"
+
+
+def _fly_request(
+        topology: TopologyArtifact,
+        router_route: RouteArtifact,
+        vc_assignment: VCAssignmentArtifact,
+) -> tuple:
+    """Whether the native fly destination-indexed expansion applies."""
+    from veritx_dse.core.route_artifact import FLY_DEST_TAG
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    declared = {d.id for d in router_route.routing_classes}
+    if declared != {FLY_DEST_TAG}:
+        return False, f"routing classes are {sorted(declared)}, not FLY_DEST_TAG"
+    if getattr(topology, "family", None) is not MaterializedFamily.FLY_NATIVE:
+        return False, "topology family is not FLY_NATIVE"
+    bound = set(dict(vc_assignment.vc_to_routing_class).values())
+    if bound != {FLY_DEST_TAG}:
+        return False, "VCs are not all bound to FLY_DEST_TAG"
+    return True, "FLY_DEST_TAG destination-indexed chain"
+
+
+def _fly_edges(
+        topology: TopologyArtifact,
+        transitions: tuple,
+        terminals: int,
+) -> tuple[tuple[ChannelVC, ChannelVC], ...]:
+    """Exact dependencies of the native fly's destination-tag law.
+
+    Destinations are TERMINALS, and a terminal injects at one stage-0 router
+    and ejects at one stage-2 router. The channel chain of a terminal is
+    therefore a single deterministic path, and a channel may be followed by
+    another only when they are consecutive links of that SAME terminal's
+    path (which two terminals sharing an egress router also share, exactly as
+    the hardware does). Every hop strictly advances the stage, so acyclicity
+    is a property of the construction rather than an assumption about it.
+    """
+    from veritx_dse.model.fly_net import (
+        LEVELS, egress_port, next_router, router_stage,
+        terminal_egress_location, terminal_ingress_location,
+    )
+    channel_id = {(c.src_router, c.dst_router): c.channel_id
+                  for c in topology.channels}
+    if len(channel_id) != len(topology.channels):
+        raise CDGError(
+            "the native fly has parallel channels between one router pair; "
+            "the destination-indexed expansion cannot name them")
+    edges: set[tuple[ChannelVC, ChannelVC]] = set()
+    for terminal in range(terminals):
+        ingress, _ = terminal_ingress_location(terminal)
+        egress, _ = terminal_egress_location(terminal)
+        chain: list[int] = []
+        router = ingress
+        for _ in range(LEVELS - 1):
+            port = egress_port(router, egress)
+            if port is None:
+                raise CDGError(
+                    f"terminal {terminal} has no forward hop at router "
+                    f"{router}")
+            following = next_router(router, port)
+            if following is None:
+                raise CDGError(
+                    f"terminal {terminal} ejects before its last stage")
+            ch = channel_id.get((router, following))
+            if ch is None:
+                raise CDGError(
+                    f"fly hop {router}->{following} for terminal {terminal} "
+                    "names no directed channel")
+            chain.append(ch)
+            router = following
+        if router != egress:
+            raise CDGError(
+                f"terminal {terminal} ends at router {router}, not its "
+                f"ejection router {egress}")
+        if [router_stage(channel_dst(topology, c)) for c in chain] != \
+                sorted(router_stage(channel_dst(topology, c)) for c in chain):
+            raise CDGError(
+                f"terminal {terminal} hops do not advance stage")
+        for a, b in zip(chain, chain[1:]):
+            for vc_in, vc_out in transitions:
+                edges.add(((a, vc_in), (b, vc_out)))
+    return tuple(sorted(edges))
+
+
+def channel_dst(topology: TopologyArtifact, channel_id: int) -> int:
+    for channel in topology.channels:
+        if channel.channel_id == channel_id:
+            return channel.dst_router
+    raise CDGError(f"channel {channel_id} is not in the topology")
+
+
+def _tree4_edges(
+        topology: TopologyArtifact,
+        transitions: tuple,
+        terminals: int,
+) -> tuple[tuple[ChannelVC, ChannelVC], ...]:
+    """Exact dependencies of the native Tree4's choice-valued NCA law.
+
+    A coarse (channel -> any-next-channel) graph would report a cycle that
+    no flit can take: `middle -> leaf` is only chosen when the leaf IS the
+    destination, and a flit at its destination ejects. The graph is
+    therefore built PER DESTINATION: channel `a` may be followed by channel
+    `b` only when both carry the SAME terminal, which is exactly the routing
+    the hardware executes. Upward links never follow a downward one, so the
+    up*/down* discipline is a consequence of the law rather than an
+    assumption about it.
+    """
+    from veritx_dse.model.tree4_net import (
+        tree4_legal_ports, tree4_next_router,
+    )
+    channel_id = {(c.src_router, c.dst_router): c.channel_id
+                  for c in topology.channels}
+    if len(channel_id) != len(topology.channels):
+        raise CDGError(
+            "the native Tree4 has parallel channels between one router "
+            "pair; the destination-indexed expansion cannot name them")
+    edges: set[tuple[ChannelVC, ChannelVC]] = set()
+    routers = range(len(topology.routers))
+    for terminal in range(terminals):
+        usable: list[int] = []
+        for router in routers:
+            for port in tree4_legal_ports(router, terminal):
+                following = tree4_next_router(router, port)
+                if following is None:
+                    continue
+                ch = channel_id.get((router, following))
+                if ch is None:
+                    raise CDGError(
+                        f"TREE4_NCA hop {router}->{following} for terminal "
+                        f"{terminal} names no directed channel")
+                usable.append(ch)
+        for a in usable:
+            dst_router = None
+            for channel in topology.channels:
+                if channel.channel_id == a:
+                    dst_router = channel.dst_router
+                    break
+            if dst_router is None:
+                raise CDGError(f"channel {a} is not in the topology")
+            for b in usable:
+                src = None
+                for channel in topology.channels:
+                    if channel.channel_id == b:
+                        src = channel.src_router
+                        break
+                if src != dst_router:
+                    continue
+                for vc_in, vc_out in transitions:
+                    edges.add(((a, vc_in), (b, vc_out)))
+    return tuple(sorted(edges))
+
+
 def build_channel_vc_cdg(
         topology: TopologyArtifact,
         router_route: RouteArtifact,
@@ -379,6 +671,58 @@ def build_channel_vc_cdg(
                 raise CDGError(
                     f"{cid} route ({s},{d}) names channel {ch_id!r}, which "
                     f"is not in the topology")
+
+    ring, ring_why = _ring_dateline_request(
+        topology, router_route, vc_assignment)
+    if ring:
+        from veritx_dse.core.route_artifact import RING_DATELINE
+        n = len(topology.routers)
+        redges, diag = _ring_dateline_edges(
+            topology, per_class[RING_DATELINE], n,
+            tuple(vc_assignment.allowed_transitions))
+        nodes = tuple(
+            (ch.channel_id, vc)
+            for ch in topology.channels
+            for vc in vc_assignment.vc_ids
+        )
+        return ChannelVCCDG(
+            nodes=nodes, edges=tuple(sorted(redges)),
+            cdg_route_classes=tuple(sorted(declared)),
+            expansion=DATELINE_RESTRICTED_1D_EXPANSION,
+            dateline_k=n,
+            dateline_tie_mirrors=diag["tie_mirrors"],
+            dateline_turn_crosses=diag["turn_crosses"])
+
+    tree4, tree4_why = _tree4_request(
+        topology, router_route, vc_assignment)
+    if tree4:
+        seats = sum(r.seat_capacity for r in topology.routers)
+        edges = _tree4_edges(
+            topology, tuple(vc_assignment.allowed_transitions), seats)
+        nodes = tuple(
+            (ch.channel_id, vc)
+            for ch in topology.channels
+            for vc in vc_assignment.vc_ids
+        )
+        return ChannelVCCDG(
+            nodes=nodes, edges=edges,
+            cdg_route_classes=tuple(sorted(declared)),
+            expansion=TREE4_DESTINATION_EXPANSION)
+
+    fly, fly_why = _fly_request(topology, router_route, vc_assignment)
+    if fly:
+        seats = sum(r.seat_capacity for r in topology.routers)
+        edges = _fly_edges(
+            topology, tuple(vc_assignment.allowed_transitions), seats)
+        nodes = tuple(
+            (ch.channel_id, vc)
+            for ch in topology.channels
+            for vc in vc_assignment.vc_ids
+        )
+        return ChannelVCCDG(
+            nodes=nodes, edges=edges,
+            cdg_route_classes=tuple(sorted(declared)),
+            expansion=FLY_DESTINATION_EXPANSION)
 
     restricted, restricted_why = _dateline_restricted_request(
         topology, router_route, vc_assignment)
@@ -605,7 +949,8 @@ def certify_channel_vc_deadlock(
     evidence["route_realization"] = "v2_channel_id"
     evidence["cdg_route_classes"] = list(cdg.cdg_route_classes)
     evidence["expansion"] = cdg.expansion
-    if cdg.expansion == DATELINE_RESTRICTED_EXPANSION:
+    if cdg.expansion in (DATELINE_RESTRICTED_EXPANSION,
+                         DATELINE_RESTRICTED_1D_EXPANSION):
         evidence["dateline_k"] = cdg.dateline_k
         evidence["dateline_tie_mirrors"] = cdg.dateline_tie_mirrors
         evidence["dateline_turn_crosses"] = cdg.dateline_turn_crosses

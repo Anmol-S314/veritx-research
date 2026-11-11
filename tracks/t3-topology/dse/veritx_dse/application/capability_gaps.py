@@ -19,7 +19,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from veritx_dse.core.errors import MissingCapability, require_capability
+from veritx_dse.core.errors import (
+    MissingCapability as MissingCapability,  # re-exported for callers/tests
+    require_capability,
+)
 
 #: Compatibility semantic token for resolved-fabric capability refusals.
 RESOLVED_FABRIC_STAGE = "RESOLVED_FABRIC"

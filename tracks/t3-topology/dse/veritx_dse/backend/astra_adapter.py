@@ -103,6 +103,102 @@ def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
              tuple(tuple(pair) for pair in evidence.rank_to_endpoint),
              tuple(tuple(pair) for pair in native.rank_to_endpoint))
 
+
+def _validate_canonical_class_evidence(evidence: Any, native: Any) -> None:
+    """Fail closed on anything less than per-class canonical attribution.
+
+    Multi-class evidence must prove every canonical class separately. A
+    projection-derived binding id is not runtime proof; empty per-class
+    counters, a non-injective class mapping, a class envelope mismatch, or
+    a swapped binding is a refusal, never ``EVALUATED``.
+    """
+    from veritx_dse.backend.astra_execution import AstraExecutionError
+
+    projection = native.workload_projection
+    machine = native.machine
+    classes = tuple(projection.traffic_classes())
+    raw_mapping = getattr(projection, "canonical_class_index", None)
+    mapping = (tuple(raw_mapping()) if callable(raw_mapping)
+               else tuple((cls, index) for index, cls in enumerate(classes)))
+    names = [name for name, _index in mapping]
+    indices = [index for _name, index in mapping]
+    if len(set(names)) != len(names) or len(set(indices)) != len(indices):
+        raise AstraExecutionError(
+            f"canonical traffic-class mapping is not injective: {mapping}; "
+            "refusing a collapsed class envelope")
+    if set(names) != set(classes):
+        raise AstraExecutionError(
+            f"canonical traffic-class mapping {mapping} does not cover the "
+            f"projected classes {list(classes)}")
+    embedded_count = getattr(machine, "embedded_class_count", 0)
+    if not embedded_count and len(classes) == 1:
+        # Legacy single-class preparations predate the canonical envelope.
+        embedded_count = 1
+    if embedded_count < 1 or any(
+            not 0 <= index < embedded_count for index in indices):
+        raise AstraExecutionError(
+            f"canonical class indices {indices} fall outside the prepared "
+            f"embedded class envelope {embedded_count}: refusing a "
+            "non-injective class mapping")
+    if len(classes) > 1:
+        expected_binding = projection.class_binding_id()
+        if evidence.class_binding_id != expected_binding:
+            raise AstraExecutionError(
+                f"ASTRA evidence class binding "
+                f"{evidence.class_binding_id!r} does not match the "
+                f"prepared {expected_binding!r}: refusing a "
+                "class-swapped or collapsed normalization")
+        if evidence.embedded_network_class_abi_version < 1:
+            raise AstraExecutionError(
+                "multi-class evidence from a class-blind runtime "
+                f"(class ABI "
+                f"{evidence.embedded_network_class_abi_version}): "
+                "refusing unattributable classes")
+        if evidence.embedded_traffic_class_abi_version < 1:
+            raise AstraExecutionError(
+                "multi-class evidence from a producer that forwards "
+                "collective kinds instead of canonical traffic classes "
+                f"(traffic-class ABI "
+                f"{evidence.embedded_traffic_class_abi_version}): "
+                "refusing kind identity as a class substitute")
+        if evidence.embedded_class_count != embedded_count:
+            raise AstraExecutionError(
+                f"ASTRA evidence class envelope "
+                f"{evidence.embedded_class_count!r} does not match the "
+                f"prepared {embedded_count!r}: refusing a cross-generation "
+                "or wrapped class envelope")
+        if not evidence.per_class_injected \
+                or not evidence.per_class_completed:
+            raise AstraExecutionError(
+                "multi-class ASTRA evidence carries no per-class "
+                "conservation counters (per_class_injected="
+                f"{list(evidence.per_class_injected)}, "
+                "per_class_completed="
+                f"{list(evidence.per_class_completed)}): refusing to "
+                "normalize projection-only class attribution")
+    if not evidence.per_class_injected and not evidence.per_class_completed:
+        return
+    injected = dict(evidence.per_class_injected)
+    completed = dict(evidence.per_class_completed)
+    expected = set(classes)
+    if set(injected) != expected or set(completed) != expected:
+        raise AstraExecutionError(
+            "per-class counters do not cover exactly the projected classes "
+            f"(injected={sorted(injected)}, completed={sorted(completed)}, "
+            f"expected={sorted(expected)}): refusing unattributable classes")
+    if any(injected[c] <= 0 for c in expected):
+        raise AstraExecutionError(
+            f"per-class injected flits must be positive for every "
+            f"canonical class, got {sorted(injected.items())}: refusing a "
+            "class that carried no traffic")
+    if any(injected[c] != completed[c] for c in expected):
+        raise AstraExecutionError(
+            f"per-class conservation violated "
+            f"(injected={sorted(injected.items())} vs completed="
+            f"{sorted(completed.items())}): refusing a lossy "
+            "normalization")
+
+
 class Astra2Adapter:
     """Orchestrates workload → machine → execution → runtime evidence.
 
@@ -131,9 +227,10 @@ Rationale: docs/decisions/modules/backend.md
                     "(et_granularity=collectives); SEND/RECV message-mode "
                     "operations refuse rather than execute unqualified",
                     "multi-class collective communication (V3 artifact) "
-                    "only where the embedded runtime proves class-aware "
-                    "injection; otherwise explicit refusal, never "
-                    "flattening",
+                    "only where the embedded runtime proves per-class "
+                    "injection AND completion for every canonical class; "
+                    "empty or partial per-class counters refuse, never "
+                    "flatten or infer from the class binding",
                     "no compute/communication overlap: the emitted Chakra "
                     "ET is a chain per rank (every collective depends on "
                     "that rank's preceding node), so a collective always "
@@ -515,7 +612,9 @@ Rationale: docs/decisions/modules/backend.md
             native.workload_projection.class_binding_id(),
             expected_collective_kinds=tuple(
                 kind for _, kind, _, _
-                in native.workload_projection.collective_operations))
+                in native.workload_projection.collective_operations),
+            canonical_class_index=tuple(
+                native.workload_projection.canonical_class_index()))
 
     def normalize(
         self,
@@ -601,33 +700,7 @@ Rationale: docs/decisions/modules/backend.md
                 "not match the prepared machine "
                 f"{native.machine.embedded_network_class_abi_version!r}: "
                 "refusing a cross-generation transplant")
-        _projection_classes = \
-            native.workload_projection.traffic_classes()
-        if len(_projection_classes) > 1:
-            _expected_binding = \
-                native.workload_projection.class_binding_id()
-            if evidence.class_binding_id != _expected_binding:
-                raise AstraExecutionError(
-                    f"ASTRA evidence class binding "
-                    f"{evidence.class_binding_id!r} does not match the "
-                    f"prepared {_expected_binding!r}: refusing a "
-                    "class-swapped or collapsed normalization")
-            if evidence.embedded_network_class_abi_version < 1:
-                raise AstraExecutionError(
-                    "multi-class evidence from a class-blind runtime "
-                    f"(class ABI "
-                    f"{evidence.embedded_network_class_abi_version}): "
-                    "refusing unattributable classes")
-        if evidence.per_class_injected or evidence.per_class_completed:
-            _inj = dict(evidence.per_class_injected)
-            _done = dict(evidence.per_class_completed)
-            if set(_inj) != set(_done) or any(
-                    _inj[c] != _done[c] for c in _inj):
-                raise AstraExecutionError(
-                    f"per-class conservation violated "
-                    f"(injected={sorted(_inj.items())} vs completed="
-                    f"{sorted(_done.items())}): refusing a lossy "
-                    "normalization")
+        _validate_canonical_class_evidence(evidence, native)
         metrics: list[MetricValue] = []
         if question is EvaluationQuestion.SYSTEM_MAKESPAN:
             metrics.append(MetricValue(

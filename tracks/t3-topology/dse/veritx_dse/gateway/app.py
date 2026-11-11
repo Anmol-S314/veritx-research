@@ -272,12 +272,12 @@ class StampIpTemplateBody(BaseModel):
     expected_draft_design_hash: str
     template_id: str
     instance_id: str
-    address_base: int
-    address_size: int
+    address_base: int | None = None
+    address_size: int | None = None
     clock_domain: str
     power_domain: str
-    initiator_group_index: int
-    access_permission: str
+    initiator_group_index: int | None = None
+    access_permission: str | None = None
 
 class DesignPreviewBody(BaseModel):
     model_config = {"extra": "forbid"}
@@ -316,6 +316,26 @@ class ServingBody(BaseModel):
     timeout_s: int | None = None
     profile_overrides: dict[str, Any] | None = None
 
+class DeploymentPreviewBody(BaseModel):
+    """Deployment builder preview: model -> hardware -> serving policy."""
+
+    model_config = {"extra": "forbid"}
+    name: str | None = None
+    model_name: str = Field(min_length=1)
+    hardware: str = Field(min_length=1)
+    tp_size: int = Field(ge=1)
+    pp_size: int = Field(default=1, ge=1)
+    ep_size: int | None = Field(default=None, ge=1)
+    dp_instances: int = Field(default=1, ge=1)
+    max_num_seqs: int | None = None
+    max_num_batched_tokens: int | None = None
+    trace: str = Field(min_length=1)
+    num_reqs: int | None = None
+    topology: dict[str, Any]
+    link_width_bits: int = Field(default=128, ge=1)
+    hbm_controllers_per_rank: int = Field(default=0, ge=0)
+
+
 class ServingBindingBody(BaseModel):
     """Bind one cluster×trace serving experiment to a project."""
     cluster_config: str | None = None
@@ -352,6 +372,15 @@ Rationale: docs/decisions/modules/gateway.md
 class PinnedDraftBody(BaseModel):
     model_config = {"extra": "forbid"}
     expected_draft_design_hash: str
+
+class CatalogEvaluationBody(PinnedDraftBody):
+    topology_ids: list[str] | None = None
+
+class CatalogSelectionBody(PinnedDraftBody):
+    acknowledge_incomplete_backends: bool = False
+
+class RtlPreviewBody(PinnedDraftBody):
+    acknowledge_preview: bool = False
 
 class EvaluateBody(BaseModel):
     revision_id: str | None = None
@@ -872,6 +901,43 @@ Rationale: docs/decisions/modules/gateway.md
         """The authorable knob surface, derived from the engine model."""
         return product.knob_inventory()
 
+    @app.get("/api/v1/catalog/rtl-sources", tags=["product"])
+    def v1_rtl_sources() -> dict[str, Any]:
+        from veritx_dse.product.chipyard_sources import source_inventory
+        return source_inventory()
+
+    @app.get("/api/v1/catalog/rtl-sources/archive", tags=["product"])
+    def v1_rtl_sources_archive():
+        from veritx_dse.product.chipyard_sources import ChipyardSourceError, source_archive
+        try:
+            data = source_archive()
+        except (ChipyardSourceError, OSError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return Response(data, media_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="chipyard-all-14-sources.zip"',
+            "Cache-Control": "no-store",
+        })
+
+    @app.get("/api/v1/catalog/rtl-prototypes", tags=["product"])
+    def v1_rtl_prototypes() -> dict[str, Any]:
+        """Current research RTL filesystem evidence; not product RTL."""
+        return product.catalog_rtl_prototypes()
+
+    @app.get("/api/v1/catalog/rtl-prototypes/{topology_id}/artifacts/{name}", tags=["product"])
+    def v1_rtl_prototype_artifact(topology_id: str, name: str, version: str = "") -> StreamingResponse:
+        """Stream one server-allowlisted research artifact by opaque catalog ID."""
+        from veritx_dse.product.rtl_prototypes import stream_artifact
+        try:
+            chunks, size = stream_artifact(topology_id, name, version)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown research artifact") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Research artifact unavailable or stale") from exc
+        return StreamingResponse(chunks, media_type="application/octet-stream", headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Content-Length": str(size), "X-Content-Type-Options": "nosniff",
+        })
+
     @app.get("/api/v1/ablations/catalog", tags=["product"])
     def v1_ablation_catalog() -> dict[str, Any]:
         return ablation_catalog()
@@ -923,6 +989,45 @@ Rationale: docs/decisions/modules/gateway.md
         geometry and asset names, install-fact readiness per entry, and
         explicit gaps for model configs no cluster file references."""
         return product.serving_experiment_catalog()
+
+    @app.get("/api/v1/catalog/deployment-models", tags=["product"])
+    def v1_deployment_models() -> dict[str, Any]:
+        """Selectable LLMServingSim model configs with derived geometry."""
+        from veritx_dse.application.deployment_builder import (
+            deployment_model_catalog,
+        )
+        return deployment_model_catalog(product.config.repo_root)
+
+    @app.get("/api/v1/catalog/deployment-hardware", tags=["product"])
+    def v1_deployment_hardware() -> dict[str, Any]:
+        """Serving hardware profiles merged with declared datasheet facts."""
+        from veritx_dse.application.deployment_builder import (
+            deployment_hardware_catalog,
+        )
+        return deployment_hardware_catalog(product.config.repo_root)
+
+    @app.post("/api/v1/deployment-intent/preview", tags=["product"])
+    def v1_deployment_preview(
+            body: DeploymentPreviewBody) -> dict[str, Any]:
+        """Preview a deployment as a schema-4 intent and compile verdict.
+
+        Refusals are reported in the body (status REFUSED), not as HTTP
+        errors: the client renders the typed issues and disables creation.
+        """
+        from veritx_dse.application.deployment_builder import (
+            preview_deployment_intent,
+        )
+        serving = product.serving_config_catalog()
+        experiments = product.serving_experiment_catalog()
+        trace_entries = list(serving["traces"]) + [
+            {"source": entry["trace_source"],
+             "trace_digest": entry["trace_digest"],
+             "trace_id": entry["trace_id"]}
+            for entry in experiments["experiments"]]
+        return preview_deployment_intent(
+            body=body.model_dump(),
+            repo_root=product.config.repo_root,
+            trace_entries=trace_entries)
 
     @app.post("/api/v1/projects", tags=["product"])
     def v1_create_project(body: CreateProjectBody) -> dict[str, Any]:
@@ -1188,6 +1293,51 @@ Rationale: docs/decisions/modules/gateway.md
                     body: OptimizeBodyV1) -> dict[str, Any]:
         return product.submit_optimization(revision_id, body.model_dump())
 
+    @app.get("/api/v1/revisions/{revision_id}/chipyard-source/archive", tags=["product"])
+    def v1_revision_chipyard_source_archive(revision_id: str):
+        return Response(product.revision_chipyard_source_archive(revision_id),
+                        media_type="application/zip", headers={
+                            "Content-Disposition": 'attachment; filename="compiled-fabric-chipyard-source.zip"',
+                            "Cache-Control": "no-store",
+                        })
+
+    @app.get("/api/v1/projects/{project_id}/rtl-readiness", tags=["product"])
+    def v1_rtl_readiness(project_id: str) -> dict[str, Any]:
+        return product.rtl_readiness(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/rtl-previews", tags=["product"], status_code=202)
+    def v1_rtl_preview(project_id: str, body: RtlPreviewBody) -> dict[str, Any]:
+        return product.submit_rtl_preview(project_id, body.expected_draft_design_hash, body.acknowledge_preview)
+
+    @app.get("/api/v1/projects/{project_id}/rtl-previews/{job_id}", tags=["product"])
+    def v1_rtl_preview_view(project_id: str, job_id: str) -> dict[str, Any]:
+        return product.rtl_preview_view(project_id, job_id)
+
+    @app.get("/api/v1/projects/{project_id}/rtl-previews/{job_id}/archive", tags=["product"])
+    def v1_rtl_preview_archive(project_id: str, job_id: str):
+        return FileResponse(product.rtl_preview_archive(project_id, job_id), media_type="application/zip", filename="topology-rtl-preview.zip")
+
+    @app.get("/api/v1/projects/{project_id}/catalog-evaluation-plan", tags=["product"])
+    def v1_catalog_plan(project_id: str) -> dict[str, Any]:
+        return product.catalog_plan(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/catalog-evaluations", tags=["product"], status_code=202)
+    def v1_catalog_submit(project_id: str, body: CatalogEvaluationBody) -> dict[str, Any]:
+        return product.submit_catalog_evaluation(project_id, body.expected_draft_design_hash, body.topology_ids)
+
+    @app.get("/api/v1/projects/{project_id}/catalog-evaluations/{job_id}", tags=["product"])
+    def v1_catalog_view(project_id: str, job_id: str) -> dict[str, Any]:
+        return product.catalog_evaluation_view(project_id, job_id)
+
+    @app.post("/api/v1/projects/{project_id}/catalog-evaluations/{job_id}/candidates/{candidate_id}/select", tags=["product"])
+    def v1_catalog_select(project_id: str, job_id: str, candidate_id: str, body: CatalogSelectionBody) -> dict[str, Any]:
+        return product.select_catalog_fabric(project_id, job_id, candidate_id, body.expected_draft_design_hash, body.acknowledge_incomplete_backends)
+
+    @app.get("/api/v1/projects/{project_id}/catalog-evaluations/{job_id}/artifact", tags=["product"])
+    def v1_catalog_artifact(project_id: str, job_id: str, path: str):
+        file = product.catalog_artifact(project_id, job_id, path)
+        return FileResponse(file, media_type="application/octet-stream", filename=file.name)
+
     @app.get("/api/v1/agents/capabilities", tags=["product"])
     def v1_agent_capabilities() -> dict[str, Any]:
         from veritx_dse.product.agent_runtime import capabilities
@@ -1227,12 +1377,16 @@ Rationale: docs/decisions/modules/gateway.md
         return product.submit_compile(project_id, body.expected_draft_design_hash)
 
     @app.get("/api/v1/projects/{project_id}/jobs", tags=["product"])
-    def v1_project_jobs(project_id: str, kind: str) -> dict[str, Any]:
+    def v1_project_jobs(project_id: str, kind: str | None = None) -> dict[str, Any]:
         return product.list_project_jobs(project_id, kind)
 
     @app.post("/api/v1/projects/{project_id}/ai-topology-search", tags=["product"], status_code=202)
     def v1_ai_search(project_id: str, body: PinnedDraftBody) -> dict[str, Any]:
         return product.submit_ai_search(project_id, body.expected_draft_design_hash)
+
+    @app.post("/api/v1/projects/{project_id}/ai-parameter-search", tags=["product"], status_code=202)
+    def v1_parameter_search(project_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.submit_ai_search(project_id, body.expected_draft_design_hash, parameters_only=True)
 
     @app.get("/api/v1/projects/{project_id}/ai-topology-search/{job_id}", tags=["product"])
     def v1_ai_search_view(project_id: str, job_id: str) -> dict[str, Any]:

@@ -1,0 +1,10 @@
+{"input_toks": 10, "output_toks": 60, "arrival_time_ns": 0}
+{"input_toks": 12, "output_toks": 70, "arrival_time_ns": 100000}
+{"input_toks": 14, "output_toks": 80, "arrival_time_ns": 200000}
+{"input_toks": 16, "output_toks": 90, "arrival_time_ns": 300000}
+{"input_toks": 8, "output_toks": 50, "arrival_time_ns": 400000}
+{"input_toks": 6, "output_toks": 40, "arrival_time_ns": 500000}
+{"input_toks": 18, "output_toks": 100, "arrival_time_ns": 600000}
+{"input_toks": 10, "output_toks": 60, "arrival_time_ns": 700000}
+{"input_toks": 14, "output_toks": 70, "arrival_time_ns": 800000}
+{"input_toks": 12, "output_toks": 70, "arrival_time_ns": 1234567}

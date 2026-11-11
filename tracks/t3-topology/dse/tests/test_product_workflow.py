@@ -1022,6 +1022,8 @@ def test_traffic_matrix_distinguishes_unproduced_trace_from_read_failure(tmp_pat
     assert measured.json()["availability"] == "MEASURED"
     assert measured.json()["packets"] == 2
     assert measured.json()["flits"] == 12
+    assert measured.json()["class_matrices"]["0"]["matrix"][0][1] == 1
+    assert measured.json()["class_matrices"]["0"]["flit_matrix"][1][0] == 8
 
     unplanned = client.get("/api/v1/runs/run-stray-trace/traffic-matrix")
     assert unplanned.status_code != 200
@@ -1262,35 +1264,37 @@ def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
 def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     """A workload the certified chain cannot execute is refused honestly,
     with the REAL gate named and the refusal domain typed. Multi-class
-    traffic now has a certified profile (Phase 3), so the pinning case is
-    a workload whose fabric itself leaves the certified envelope: changing
-    concentration to 2 on a 36-terminal example leaves a partially occupied
-    non-CMesh fabric, and the mesh-DOR/AnyNet fallbacks still refuse
-    concentration. The refusal is derived by the backend-independent
+    traffic now has a certified profile (Phase 3) and sparse CMesh is
+    supported, so the pinning case is a fabric that still leaves the
+    certified envelope: a 2x2 native torus (an even side length) has
+    midpoint tie flows, and the mesh-DOR/AnyNet fallbacks refuse the torus
+    family outright. The refusal is derived by the backend-independent
     assessment, so it holds with no binary present.
     """
     from veritx_dse.core.paths import REPO
     doc = json.loads(
         (REPO / "tracks/t3-topology/examples/"
-         "dense_4b_32tiles_conc4-v3.json").read_text())
+         "dense_tp2dp2_4tiles-v3.json").read_text())
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
+    doc["agents"] = [agent for agent in doc["agents"]
+                     if agent["kind"] == "compute_tile"]
     doc["noc_config"] = dict(doc["noc_config"])
-    doc["noc_config"]["concentration"] = 2
+    doc["noc_config"]["topology_family"] = "torus"
+    doc["noc_config"]["concentration"] = 1
     from veritx_dse.model.compile_model import CompileRequestV3
     from veritx_dse.application.fabric_compiler import FabricCompiler
     from veritx_dse.product.service import ProductConfig, ProductService
     request = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(request)
     if compilation.status != "COMPILED" or compilation.bundle is None:
-        pytest.skip(f"concentration=2 does not compile: {compilation.error}")
+        pytest.skip(f"2x2 torus does not compile: {compilation.error}")
     svc = ProductService(ProductConfig(projects_root=tmp_path))
     assessment = svc._assess_compilation(request, compilation)
     assert assessment["support"] == "UNSUPPORTED", assessment
     assert assessment["readiness"] == "BLOCKED", assessment
     assert assessment["domain"] == "backend"
-    assert "concentration has no native representation" in (assessment["reason"] or "") \
-        or "seat_capacity" in (assessment["reason"] or ""), \
+    assert "torus" in (assessment["reason"] or "").lower(), \
         assessment["reason"]
 
     client = _client(tmp_path, with_backend=False)

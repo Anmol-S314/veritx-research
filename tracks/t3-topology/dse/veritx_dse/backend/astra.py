@@ -104,12 +104,13 @@ VERITX_CLASS_IDS = {
 }
 
 def class_ids_for_kinds(kinds: Any) -> list[int]:
-    """Embedded class ids for canonical collective kinds.
+    """LEGACY embedded kind ids (not canonical traffic classes).
 
-    A kind without a VeritXClassId (today BROADCAST) is a typed
-    refusal: executing it unattributed would flatten it into class 0
-    silently. Never derive class from endpoint, rank, size or arrival
-    order — the authority is this table plus the runtime enum.
+    The qualified ASTRA path uses ``AstraWorkloadProjection``'s dense
+    canonical class index instead; this table remains only for callers that
+    intentionally request the older kind-keyed envelope. A kind without a
+    VeritXClassId (today BROADCAST) is a typed refusal here. Never derive a
+    class from endpoint, rank, size or arrival order.
     """
     ids: list[int] = []
     for kind in kinds or ():
@@ -392,6 +393,31 @@ class AstraWorkloadProjection:
         """Sorted distinct traffic classes across messages."""
         return tuple(sorted({m.traffic_class for m in self.messages}))
 
+    def canonical_class_index(self) -> tuple[tuple[str, int], ...]:
+        """Canonical traffic-class name -> dense embedded class index.
+
+        The mapping is the *same* dense order the standalone BookSim
+        projection uses (``trace_class_map``: sorted canonical names), so a
+        class keeps one identity in both producers. The mapping is derived
+        from the workload itself, never from collective kinds: two classes
+        that share a collective kind still get distinct indices.
+        """
+        mapping = tuple((cls, index) for index, cls in
+                        enumerate(self.traffic_classes()))
+        indices = [index for _cls, index in mapping]
+        if len(set(indices)) != len(indices):
+            raise AstraError(
+                "canonical traffic-class mapping is not injective: "
+                f"{mapping}")
+        return mapping
+
+    def class_index_by_name(self) -> dict[str, int]:
+        return dict(self.canonical_class_index())
+
+    def embedded_class_count(self) -> int:
+        """The canonical embedded ``classes=`` envelope for this workload."""
+        return max(1, len(self.traffic_classes()))
+
     def ranks(self) -> tuple[int, ...]:
         return tuple(range(self.participant_count))
 
@@ -481,6 +507,10 @@ Rationale: docs/decisions/modules/backend.md
             "mtu_bytes": self.mtu_bytes,
             "comm_attr_abi": self.comm_attr_abi,
             "et_granularity": self.et_granularity,
+            "embedded_class_count": self.embedded_class_count(),
+            "canonical_class_index": [
+                [cls, index]
+                for cls, index in self.canonical_class_index()],
             **({"logical_artifact_variant": self.logical_artifact_variant,
                 "class_binding_id": self.class_binding_id(),
                 "traffic_classes": list(self.traffic_classes())}
@@ -595,13 +625,18 @@ Rationale: docs/decisions/modules/backend.md
             next_id += 1
         if self.et_granularity == "collectives":
             op_classes = self.operation_traffic_classes()
+            class_index = self.class_index_by_name()
             for op_id, kind, payload_bytes, participants in \
                     self.collective_operations:
+                op_class = op_classes.get(op_id)
                 plan.append((next_id, "COLL", {
                     "operation_id": op_id, "collective_kind": kind,
                     "payload_bytes": payload_bytes,
                     "participants": participants,
-                    "traffic_class": op_classes.get(op_id)}))
+                    "traffic_class": op_class,
+                    "traffic_class_index": (class_index[op_class]
+                                            if op_class is not None
+                                            else None)}))
                 next_id += 1
         for message in self.messages:
             if self.et_granularity == "collectives" \
@@ -710,6 +745,17 @@ Rationale: docs/decisions/modules/backend.md
                     class_attr = node.attr.add()
                     class_attr.name = "veritx_traffic_class"
                     class_attr.string_val = op_class
+                    class_index = payload.get("traffic_class_index")
+                    if type(class_index) is not int \
+                            or not 0 <= class_index <= 0xFFFFFFFF:
+                        raise AstraError(
+                            f"collective node {node_id} "
+                            f"({payload.get('operation_id')!r}) has no "
+                            "dense canonical class index: refusing an "
+                            "unattributable class envelope")
+                    index_attr = node.attr.add()
+                    index_attr.name = "veritx_traffic_class_index"
+                    index_attr.uint32_val = class_index
                     dim = node.attr.add()
                     dim.name = "involved_dim"
                     dim.bool_list.values.append(True)
@@ -956,6 +1002,10 @@ def run_astra(*, binary: str | os.PathLike[str], projection: AstraWorkloadProjec
     if logging_folder is not None:
         command += ["--logging-configuration", "empty",
                     "--logging-folder", str(logging_folder)]
+    # The canonical embedded fabric refuses injection until its host flit
+    # limit is positive. This path has no machine projection to carry the
+    # derived limit, so use the same uncapped default the machine renders.
+    command += [f"--booksim2-host-flit-limit={1 << 40}"]
     command += ["--booksim2-extra=injection_rate=0.0", *extra_args]
 
     if runner is None:

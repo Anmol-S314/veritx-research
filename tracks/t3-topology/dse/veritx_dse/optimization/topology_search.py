@@ -101,6 +101,45 @@ def make_proposal(base: CompileRequestV4, proposal: dict[str, Any]) -> TopologyP
     return TopologyProposal(cid, base.design_hash(), request, proposal["rationale"])
 
 
+def make_parameter_proposal(base: CompileRequestV4, proposal: dict[str, Any]) -> TopologyProposal:
+    """Refine only the selected fabric's declared knobs; never its workload or family."""
+    from veritx_dse.model.noc_controls import noc_controls_from_dict
+    if not isinstance(proposal, dict) or not {'base_design_hash', 'noc_controls', 'rationale'} <= set(proposal) or set(proposal) - {'base_design_hash', 'noc_controls', 'topology', 'rationale'}:
+        raise ProposalRefused('Parameter proposals take only base_design_hash, noc_controls, optional topology knobs and rationale.')
+    if proposal['base_design_hash'] != base.design_hash():
+        raise ProposalRefused('stale base_design_hash')
+    if not isinstance(proposal['rationale'], str) or not proposal['rationale'].strip():
+        raise ProposalRefused('Explain the proposed parameter changes.')
+    controls = proposal['noc_controls']
+    allowed = {'link_width', 'arbitration', 'input_buffer_depth_flits_per_vc', 'credit_return_latency_cycles', 'allocator_iterations', 'route_compute_cycles', 'vc_alloc_cycles', 'switch_alloc_cycles', 'switch_traversal_cycles'}
+    if not isinstance(controls, dict) or set(controls) - allowed:
+        raise ProposalRefused('The proposal names a locked or unsupported router control.')
+    noc = noc_controls_from_dict({**base.noc_controls.to_dict(), **controls})
+    if noc.link_width is not None and noc.link_width > 1024:
+        raise ProposalRefused('Link width exceeds the 1024-bit refinement budget.')
+    raw = proposal.get('topology', {})
+    current = base.topology.to_dict()
+    if not isinstance(raw, dict) or ('kind' in raw and raw['kind'] != current['kind']):
+        raise ProposalRefused('Parameter refinement cannot replace the selected fabric family.')
+    editable = {'kind', 'side_length', 'concentration', 'radix_per_dimension', 'dimension_count', 'switch_radix', 'level_count', 'grid_side_length', 'mode', 'express_channel_groups_per_dimension', 'destinations_per_express_channel', 'mecs_row', 'mecs_col', 'drop_latency', 'path_shapes', 'vc_policy', 'sidebuf_enable', 'sidebuf_watermark', 'tel_period', 'tel_latency', 'island_columns', 'planes', 'router_count'}
+    if set(raw) - (set(current) & editable):
+        raise ProposalRefused('Only existing parameters of the selected fabric may change.')
+    for key in ('side_length', 'radix_per_dimension', 'dimension_count', 'switch_radix', 'level_count', 'grid_side_length', 'concentration'):
+        if key in raw and (type(raw[key]) is not int or not 1 <= raw[key] <= 16):
+            raise ProposalRefused(f'{key} exceeds the bounded parameter domain.')
+    if 'router_count' in raw and (type(raw['router_count']) is not int or not 3 <= raw['router_count'] <= 256):
+        raise ProposalRefused('Router count exceeds the bounded parameter domain.')
+    intent = topology_intent_from_dict({**current, **raw})
+    request = replace(base, topology=intent, noc_controls=noc)
+    topology = materialize_topology(build_inventory(request), fabric_intent_view(request))
+    if len(topology.routers) > 256 or len(topology.channels) > 4096:
+        raise ProposalRefused('Parameter proposal exceeds the materialized graph budget.')
+    if sum(router.seat_capacity for router in topology.routers) < sum(agent.count for agent in base.agents):
+        raise ProposalRefused('Proposed dimensions cannot seat the unchanged agents.')
+    cid = 'pprop_' + content_id('veritx/parameter-proposal/v1', {'base_design_hash': base.design_hash(), 'design_hash': request.design_hash()})
+    return TopologyProposal(cid, base.design_hash(), request, proposal['rationale'])
+
+
 def evaluate_candidate(candidate, evaluator, *, proof_path: Path | None = None) -> dict[str, Any]:
     """Metrics enter only through consumption-time authenticated evidence."""
     from veritx_dse.application.authenticated_evaluation import verify_authenticated_backend_evaluation
@@ -110,6 +149,7 @@ def evaluate_candidate(candidate, evaluator, *, proof_path: Path | None = None) 
               "compilation_status": outcome.compilation_status,
               "performance_result_id": outcome.performance_result_id,
               "requirement_report": outcome.requirement_report,
+              "analyses": [analysis.to_dict() for analysis in getattr(outcome, "federated_analyses", ())],
               "objective_values": {}}
     if outcome.status == "EVALUATED":
         claims = verify_authenticated_backend_evaluation(candidate.request, outcome.authenticated_proof)

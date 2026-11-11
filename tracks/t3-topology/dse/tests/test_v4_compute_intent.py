@@ -20,7 +20,7 @@ DSE = Path(__file__).parent.parent
 REPO = DSE.parents[2]
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
+from veritx_dse.model.compile_model import AgentKind, CompileRequestV3  # noqa: E402
 from veritx_dse.model.compile_request_v4 import (  # noqa: E402
     CompileRequestV4, CompileRequestV4SchemaError, migrate_v3_to_v4,
 )
@@ -140,6 +140,59 @@ def test_declared_compute_resolves_real_memory_demand():
         policy=certified_mapping_policy())
     assert resolved.artifact.artifact_hash.startswith("sha256:")
     assert len(resolved.artifact.regions) == 9
+
+def _qwen_v4() -> CompileRequestV4:
+    return CompileRequestV4.from_dict(json.loads(
+        (EX / "qwen3_moe_tp2_ep4_16tiles-v4.json").read_text()))
+
+def test_qwen_v4_example_names_its_hbm_pool_explicitly():
+    """Four declared HBM controllers make bare LOCAL ambiguous, so the
+    acceptance fixture declares each stage's pool: adjacent ranks share a
+    controller (device = owner // 2). This is authored fixture data, not a
+    product-inferred compute-to-memory locality contract."""
+    request = _qwen_v4()
+    declared = sum(agent.count for agent in request.agents
+                   if agent.kind is AgentKind.HBM_CONTROLLER)
+    assert declared == 4
+    for stage in request.compute.stages:
+        expected = f"LOCAL:{stage.owner // 2}"
+        assert stage.input_loc == expected
+        assert stage.weight_loc == expected
+        assert stage.output_loc == expected
+
+def test_qwen_v4_example_resolves_onto_every_declared_pool():
+    from veritx_dse.backend.ramulator_adapter import memory_design_for_request
+    from veritx_dse.workload.memory_lowering import (
+        artifact_device_ids, resolve_memory_graph,
+    )
+
+    request = _qwen_v4()
+    design = memory_design_for_request(request)
+    assert design.hbm_devices == (0, 1, 2, 3)
+    resolved = resolve_memory_graph(
+        lower_compile_workload(request).graph, design)
+    assert resolved.conserved()
+    assert artifact_device_ids(resolved.artifact) == (0, 1, 2, 3)
+
+def test_qwen_v4_bare_local_still_refuses_as_ambiguous():
+    from veritx_dse.backend.ramulator_adapter import memory_design_for_request
+    from veritx_dse.workload.lowering import UnsupportedSemantic
+    from veritx_dse.workload.memory_lowering import resolve_memory_graph
+
+    request = _qwen_v4()
+    bare = dataclasses.replace(
+        request,
+        compute=dataclasses.replace(
+            request.compute,
+            stages=tuple(dataclasses.replace(
+                s, input_loc="LOCAL", weight_loc="LOCAL", output_loc="LOCAL")
+                for s in request.compute.stages)))
+    lowered = lower_compile_workload(bare)
+    with pytest.raises(UnsupportedSemantic) as refusal:
+        resolve_memory_graph(lowered.graph, memory_design_for_request(bare))
+    assert str(refusal.value) == (
+        "bare LOCAL is ambiguous with multiple HBM controllers; "
+        "use LOCAL:<declared-device-id>")
 
 def test_lowering_view_reports_the_memory_demand():
     from veritx_dse.application.views import lowering_view

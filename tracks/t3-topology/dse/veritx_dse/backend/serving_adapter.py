@@ -341,7 +341,8 @@ Rationale: docs/decisions/modules/backend.md
         from veritx_dse.simulation.serve_canonical import (
             load_cluster_service_semantics,
         )
-        service = load_cluster_service_semantics(experiment.cluster_config)
+        service = load_cluster_service_semantics(
+            _resolve_input(experiment.cluster_config))
         instances = service["instances"]
         ranks = sum(max(int(i["tp_size"]), 1) for i in instances)
         inconsistent = [

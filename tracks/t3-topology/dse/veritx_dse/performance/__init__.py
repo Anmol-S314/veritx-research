@@ -11,11 +11,21 @@ from veritx_dse.performance.model import (
     rate_duration,
 )
 from veritx_dse.performance.result import (
+    OPTIONAL_RESULT_FIELDS,
     RESULT_FIELDS,
     ResultError,
     PerformanceEventGraph,
     build_performance_result,
     reverify_result,
+)
+from veritx_dse.performance.traffic_class import (
+    ClassMeasurement,
+    TRAFFIC_CLASS_LATENCY_FIELDS,
+    TRAFFIC_CLASS_METRICS_SCHEMA_VERSION,
+    TrafficClassMetricsError,
+    build_traffic_class_metrics,
+    parse_traffic_class_metrics,
+    validate_traffic_class_metrics,
 )
 from veritx_dse.performance.scheduler import (
     Schedule,
@@ -33,9 +43,14 @@ from veritx_dse.performance.workload import (
 
 __all__ = [
     "ClockDef", "COMPUTE_SOURCES", "EVENT_KINDS", "NETWORK_TIMING_BOOKSIM",
-    "RESULT_FIELDS", "ResourceDef", "ResultError", "QTime", "Schedule",
+    "OPTIONAL_RESULT_FIELDS", "RESULT_FIELDS", "ResourceDef", "ResultError",
+    "QTime", "Schedule",
     "SchedulerDeadlock", "ScheduledEvent", "TimeError", "PerformanceEventGraph",
     "PerformanceModel", "PerformanceRequest", "TemporalEvent",
     "TemporalWorkload", "build_performance_result", "rate_duration",
     "reverify_result", "schedule_workload",
+    "ClassMeasurement", "TRAFFIC_CLASS_LATENCY_FIELDS",
+    "TRAFFIC_CLASS_METRICS_SCHEMA_VERSION", "TrafficClassMetricsError",
+    "build_traffic_class_metrics", "parse_traffic_class_metrics",
+    "validate_traffic_class_metrics",
 ]

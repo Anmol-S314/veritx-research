@@ -105,8 +105,9 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     assert run["design_hash"] == revision["design_hash"]
 
 def test_qwen_v4_declared_compute_reaches_ramulator(tmp_path):
-    """The v4 acceptance workload declares compute, so DRAM timing has real
-    demand and executes through the product (not just 'READY')."""
+    """The v4 acceptance workload declares compute and names its local HBM
+    controller per stage, so DRAM timing has real demand and executes
+    through the product (not just 'READY')."""
     from test_gateway_federation import _wait_run
 
     v4_workload = "qwen3-moe-tp2-ep4-8ranks-declared-compute"
@@ -137,5 +138,10 @@ def test_qwen_v4_declared_compute_reaches_ramulator(tmp_path):
                     if a["question"] == "DRAM_TIMING")
     assert analysis["status"] == "EVALUATED", analysis["reason"]
     assert analysis["backend_id"] == "RAMULATOR2_HBM3_V1"
+    # The example declares four HBM controllers and explicitly places its
+    # stages on all four, so the run must use the multi-pool dispatcher.
+    assert any("multi-pool" in text for text in analysis["limitations"])
     metrics = {m["key"]: m["value"] for m in analysis["normalized_metrics"]}
     assert metrics["completion_cycles"] > 0
+    assert metrics["completed_read_bytes"] > 0
+    assert metrics["completed_write_bytes"] > 0

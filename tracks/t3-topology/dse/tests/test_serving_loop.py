@@ -734,6 +734,27 @@ def test_partial_run_reports_incomplete_not_internal_error(tmp_path):
     assert len(result.requests) == 1
     assert result.rounds and result.round_evidence
 
+def test_memory_stall_is_typed_incomplete_not_internal_error(tmp_path):
+    """A stall the token bound cannot explain is INCOMPLETE, not an error.
+
+    The request fits ``max_num_batched_tokens`` but its KV can never fit the
+    profile's NPU memory, so the vendored scheduler returns no batch at every
+    clock and no future arrival exists. This is the converted form of the
+    Sep-29 campaign's ``no instance can schedule ... the trace is stuck``
+    raise: the loop must RETURN the typed stall outcome instead of raising
+    it away.
+    """
+    rows = [{"input_toks": 20000, "output_toks": 1, "arrival_time_ns": 0}]
+    result, _, _ = _run(tmp_path, rows, instance_count=4,
+                        profile={"max_num_batched_tokens": 30000,
+                                 "npu_mem_gb": 4})
+    assert result.status is sl.ServiceRunStatus.INCOMPLETE
+    assert result.reason is not None
+    assert result.reason.code == "NO_SCHEDULABLE_EVENT"
+    assert result.reason.request_id == "0"
+    assert result.rounds == () and result.round_evidence == ()
+    assert result.evidence.rounds == 0
+
 def test_a_real_contract_violation_still_raises_serving_loop_error(tmp_path):
     """Negative control: the typed returns never swallow a broken contract.
 

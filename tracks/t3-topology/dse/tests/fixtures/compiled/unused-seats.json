@@ -1297,7 +1297,8 @@
         "channels": 80,
         "endpoints": 20,
         "routers": 25,
-        "seats": 25
+        "seats": 25,
+        "shared_links": 0
       },
       "design_hash": "sha256:b1a2d760358da5c723df988bc88640b7aa459d37358a803dfe148985340e0737",
       "endpoints": [
@@ -1463,7 +1464,11 @@
         }
       ],
       "family": "mesh",
+      "island_columns": [],
       "physical_links": [],
+      "planes": [
+        "d"
+      ],
       "revision_id": "fixture-unused-seats",
       "routers": [
         {
@@ -1667,6 +1672,7 @@
           "seat_capacity": 1
         }
       ],
+      "shared_links": [],
       "topology_hash": "sha256:3b1f63fa7f3896c9671413e33916350e585c9789133ede9a3a1a0ebf6c3a502b"
     }
   },

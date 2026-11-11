@@ -69,6 +69,13 @@ class ResolvedRouteArtifact:
     endpoint_to_router: tuple[tuple[int, int], ...]
     routing_classes: tuple[str, ...]
     endpoint_route_table_hash: str
+    #: Routing addresses that DIFFER from the attachment (ingress) router.
+    #: Empty on every symmetric fabric, which is why every existing
+    #: resolved-route identity is byte-identical; a fabric whose terminals
+    #: eject at another router (the multi-stage Fly) records them here instead
+    #: of overwriting `endpoint_to_router`, so "where the agent attaches" and
+    #: "where its traffic is routed toward" can never be confused.
+    endpoint_routing_router: tuple[tuple[int, int], ...] = ()
     schema_version: int = RESOLVED_ROUTE_SCHEMA_VERSION
     artifact_hash: str = ""
 
@@ -99,6 +106,22 @@ class ResolvedRouteArtifact:
         if eids != list(range(len(eids))):
             raise ResolvedRouteError(
                 "endpoint ids must be contiguous from 0")
+        if self.endpoint_routing_router:
+            if not isinstance(self.endpoint_routing_router, tuple):
+                raise ResolvedRouteError(
+                    "endpoint_routing_router must be a tuple of pairs")
+            for index, pair in enumerate(self.endpoint_routing_router):
+                if not isinstance(pair, tuple) or len(pair) != 2 \
+                        or type(pair[0]) is not int or type(pair[1]) is not int \
+                        or pair[1] < 0:
+                    raise ResolvedRouteError(
+                        f"endpoint_routing_router[{index}] must be an "
+                        f"(endpoint_id, router_id) pair of exact integers, "
+                        f"got {pair!r}")
+            if [e for e, _ in self.endpoint_routing_router] != eids:
+                raise ResolvedRouteError(
+                    "endpoint_routing_router must name the same endpoint ids "
+                    "in the same order as endpoint_to_router")
         if not isinstance(self.routing_classes, tuple) \
                 or not self.routing_classes:
             raise ResolvedRouteError("routing_classes must be non-empty")
@@ -119,8 +142,15 @@ class ResolvedRouteArtifact:
             raise ResolvedRouteError(
                 "artifact_hash does not match content")
 
+    def routing_pairs(self) -> tuple[tuple[int, int], ...]:
+        """(endpoint, router its traffic is routed toward) per endpoint."""
+        return self.endpoint_routing_router or self.endpoint_to_router
+
+    def routing_router_of(self, endpoint_id: int) -> int:
+        return dict(self.routing_pairs())[endpoint_id]
+
     def canonical_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
             "topology_hash": self.topology_hash,
@@ -130,6 +160,12 @@ class ResolvedRouteArtifact:
             "routing_classes": list(self.routing_classes),
             "endpoint_route_table_hash": self.endpoint_route_table_hash,
         }
+        if self.endpoint_routing_router:
+            # Emitted ONLY when the routing address differs from the
+            # attachment, so symmetric fabrics keep their exact old hash.
+            d["endpoint_routing_router"] = [
+                list(p) for p in self.endpoint_routing_router]
+        return d
 
     def _compute_hash(self) -> str:
         return content_id(
@@ -156,7 +192,8 @@ class ResolvedRouteArtifact:
         _strict_keys(d, frozenset({
             "type", "schema_version", "topology_hash", "attachment_hash",
             "router_route_hash", "endpoint_to_router", "routing_classes",
-            "endpoint_route_table_hash", "artifact_hash"}), "resolved_route")
+            "endpoint_route_table_hash", "endpoint_routing_router",
+            "artifact_hash"}), "resolved_route")
         if _need(d, "type", "resolved_route") != _HASH_TYPE_TAG:
             raise ResolvedRouteError(
                 f"resolved_route type must be {_HASH_TYPE_TAG!r}, got "
@@ -194,9 +231,26 @@ class ResolvedRouteArtifact:
                     f"routing_classes[{index}] must be a non-empty string, "
                     f"got {class_id!r}")
             classes.append(class_id)
+        raw_routing = d.get("endpoint_routing_router", [])
+        if not isinstance(raw_routing, list):
+            raise ResolvedRouteError(
+                "endpoint_routing_router must be a list of pairs")
+        routing: list[tuple[int, int]] = []
+        for index, row in enumerate(raw_routing):
+            if type(row) is not list or len(row) != 2:
+                raise ResolvedRouteError(
+                    f"endpoint_routing_router[{index}] must be a two-element "
+                    f"list, got {row!r}")
+            eid, router_id = row
+            if type(eid) is not int or type(router_id) is not int:
+                raise ResolvedRouteError(
+                    f"endpoint_routing_router[{index}] must contain exact "
+                    f"integers, got {row!r}")
+            routing.append((eid, router_id))
         artifact = cls(
             topology_hash=_need(d, "topology_hash", "resolved_route"),
             attachment_hash=_need(d, "attachment_hash", "resolved_route"),
+            endpoint_routing_router=tuple(routing),
             router_route_hash=_need(d, "router_route_hash", "resolved_route"),
             endpoint_to_router=tuple(pairs),
             routing_classes=tuple(classes),
@@ -262,6 +316,12 @@ class ResolvedRouteArtifact:
         if self.endpoint_to_router != expected_pairs:
             raise ResolvedRouteError(
                 "endpoint_to_router does not match the attachment")
+        expected_routing = tuple(
+            (e.endpoint_id, routing_router(e)) for e in attachment.endpoints)
+        if self.routing_pairs() != expected_routing:
+            raise ResolvedRouteError(
+                "endpoint routing addresses do not match the attachment's "
+                "egress locations")
         for _eid, router_id in self.endpoint_to_router:
             if not 0 <= router_id < topology.router_count:
                 raise ResolvedRouteError(
@@ -271,7 +331,7 @@ class ResolvedRouteArtifact:
         router_route.validate_against(topology)
         recomputed = _endpoint_table_hash(_endpoint_route_table(
             self.endpoint_to_router, self.routing_classes,
-            router_route.entries))
+            router_route.entries, self.endpoint_routing_router))
         if self.endpoint_route_table_hash != recomputed:
             raise ResolvedRouteError(
                 "endpoint_route_table_hash does not match the expansion of "
@@ -305,10 +365,16 @@ class ResolvedRouteArtifact:
         if self.endpoint_to_router != expected_pairs:
             raise ResolvedRouteError(
                 "endpoint_to_router does not match the attachment")
+        expected_routing = tuple(
+            (e.endpoint_id, routing_router(e)) for e in attachment.endpoints)
+        if self.routing_pairs() != expected_routing:
+            raise ResolvedRouteError(
+                "endpoint routing addresses do not match the attachment's "
+                "egress locations")
         attachment.validate_against_topology(topology)
         recomputed = _endpoint_table_hash_v3(_endpoint_route_table_v3(
             self.endpoint_to_router, router_route.routing_class,
-            router_route))
+            router_route, self.endpoint_routing_router))
         if self.endpoint_route_table_hash != recomputed:
             raise ResolvedRouteError(
                 "endpoint_route_table_hash does not match the v3 expansion "
@@ -319,14 +385,25 @@ def _endpoint_route_table(
         endpoint_to_router: tuple[tuple[int, int], ...],
         routing_classes: tuple[str, ...],
         router_entries: Mapping[tuple[str, int, int], int],
+        routing_to_router: tuple[tuple[int, int], ...] = (),
 ) -> list[list[Any]]:
+    """Expand router hops into endpoint flows.
+
+    `endpoint_to_router` is where each agent ATTACHES (its ingress router) and
+    therefore where its flow STARTS; `routing_to_router` is the router each
+    flow is routed TOWARD. They coincide on every symmetric fabric (the
+    parameter is then empty), and differ on a fabric whose terminals eject
+    elsewhere -- where using the ingress as the destination would demand hops
+    no flit can take.
+    """
     by_id = dict(endpoint_to_router)
+    routing = dict(routing_to_router) if routing_to_router else by_id
     rows: list[list[Any]] = []
     for src in range(len(endpoint_to_router)):
         for dst in range(len(endpoint_to_router)):
             if src == dst:
                 continue
-            inj, eje = by_id[src], by_id[dst]
+            inj, eje = by_id[src], routing[dst]
             for cls in routing_classes:
                 if inj == eje:
                     rows.append([src, dst, cls, LOCAL_EJECTION, None])
@@ -350,6 +427,20 @@ def _endpoint_table_hash(rows: list[list[Any]]) -> str:
 
 def _endpoint_table_hash_v3(rows: list[list[Any]]) -> str:
     return content_id(_ENDPOINT_TABLE_DOMAIN_V3, rows)
+
+def routing_router(endpoint: Any) -> int:
+    """The router an endpoint's traffic is ROUTED toward.
+
+    For a symmetric fabric that is the seat's router, and the identity below
+    keeps every recorded table unchanged. A fabric whose terminals eject at a
+    different router than they inject through (the multi-stage Fly) routes
+    toward the EGRESS location: reading the ingress router would ask for hops
+    no flit can take, and would silently accept a fabric whose ejection points
+    were never bound.
+    """
+    return (endpoint.router_id if getattr(endpoint, "egress_router_id", None)
+            is None else endpoint.egress_router_id)
+
 
 def _router_of_node(route: Any, node: int) -> int:
     """The router a destination TERMINAL attaches to.
@@ -379,6 +470,7 @@ def _endpoint_route_table_v3(
         endpoint_to_router: tuple[tuple[int, int], ...],
         routing_class: str,
         route: Any,
+        routing_to_router: tuple[tuple[int, int], ...] = (),
 ) -> list[list[Any]]:
     """Expand endpoint flows into first-hop DECISIONS.
 
@@ -387,6 +479,7 @@ def _endpoint_route_table_v3(
     endpoint-resolved route to record — refuse rather than pick one.
     """
     by_id = dict(endpoint_to_router)
+    routing = dict(routing_to_router) if routing_to_router else by_id
     nodes_of_router: dict[int, list[int]] = {}
     for node, router in sorted(route.terminal_to_router.items()):
         nodes_of_router.setdefault(router, []).append(node)
@@ -395,7 +488,7 @@ def _endpoint_route_table_v3(
         for dst in range(len(endpoint_to_router)):
             if src == dst:
                 continue
-            inj, eje = by_id[src], by_id[dst]
+            inj, eje = by_id[src], routing[dst]
             if inj == eje:
                 rows.append([src, dst, routing_class, LOCAL_EJECTION, None])
                 continue
@@ -448,19 +541,28 @@ def derive_resolved_route_v3(topology: TopologyArtifact,
             f"{type(router_route).__name__}")
     router_route.validate_against(topology)
     pairs = tuple((e.endpoint_id, e.router_id) for e in attachment.endpoints)
+    routing_pairs = tuple((e.endpoint_id, routing_router(e))
+                          for e in attachment.endpoints)
+    if routing_pairs == pairs:
+        routing_pairs = ()
     for _eid, router_id in pairs:
         if not 0 <= router_id < topology.router_count:
             raise ResolvedRouteError(
                 f"attachment references router {router_id} outside the "
                 "materialized topology")
+    routing_pairs = tuple((e.endpoint_id, routing_router(e))
+                          for e in attachment.endpoints)
+    if routing_pairs == pairs:
+        routing_pairs = ()
     classes = (router_route.routing_class,)
     rows = _endpoint_route_table_v3(pairs, router_route.routing_class,
-                                    router_route)
+                                    router_route, routing_pairs)
     artifact = ResolvedRouteArtifact(
         topology_hash=topology.topology_hash(),
         attachment_hash=attachment.attachment_hash(),
         router_route_hash=router_route.route_artifact_id(),
         endpoint_to_router=pairs,
+        endpoint_routing_router=routing_pairs,
         routing_classes=classes,
         endpoint_route_table_hash=_endpoint_table_hash_v3(rows),
         schema_version=RESOLVED_ROUTE_V3_SCHEMA_VERSION,
@@ -509,13 +611,19 @@ def derive_resolved_route(topology: TopologyArtifact,
             raise ResolvedRouteError(
                 f"attachment references router {router_id} outside the "
                 "materialized topology")
+    routing_pairs = tuple((e.endpoint_id, routing_router(e))
+                          for e in attachment.endpoints)
+    if routing_pairs == pairs:
+        routing_pairs = ()
     classes = _router_route_classes(router_route)
-    rows = _endpoint_route_table(pairs, classes, router_route.entries)
+    rows = _endpoint_route_table(pairs, classes, router_route.entries,
+                                 routing_pairs)
     artifact = ResolvedRouteArtifact(
         topology_hash=topology.topology_hash(),
         attachment_hash=attachment.attachment_hash(),
         router_route_hash=router_route.artifact_hash,
         endpoint_to_router=pairs,
+        endpoint_routing_router=routing_pairs,
         routing_classes=classes,
         endpoint_route_table_hash=_endpoint_table_hash(rows),
     )

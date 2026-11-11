@@ -5,6 +5,7 @@ Rationale: docs/decisions/modules/backend.md
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -60,6 +61,9 @@ _INJECTED_RE = re.compile(
 _STREAM_RE = re.compile(
     r"\[LEDGER\]\[STREAM\]\s+rank=(\d+)\s+stream_id=(\d+)\s+"
     r"comm_type=(\d+)")
+_CLASS_CONSERVATION_RE = re.compile(
+    r"VeritX:\s+class\s+(\d+)\s+injected flits\s*=\s*(\d+),\s*"
+    r"accepted flits\s*=\s*(\d+)")
 COMTYPE_TO_CLASS_ID = {0: 0, 1: 2, 2: 3, 3: 1, 4: 4, 5: 0}
 COLLECTIVE_KIND_TO_COMTYPE = {
     "REDUCESCATTER": 1, "ALLGATHER": 2, "ALLREDUCE": 3,
@@ -124,6 +128,8 @@ class AstraRuntimeEvidence:
     transport: str
     class_binding_id: str | None = None
     embedded_network_class_abi_version: int = 0
+    embedded_traffic_class_abi_version: int = 0
+    embedded_class_count: int = 0
     astra_build_manifest_sha256: str | None = None
     astra_build_recipe_version: str | None = None
     per_class_injected: tuple[tuple[str, int], ...] = ()
@@ -187,6 +193,9 @@ class AstraRuntimeEvidence:
             "class_binding_id": self.class_binding_id,
             "embedded_network_class_abi_version":
                 self.embedded_network_class_abi_version,
+            "embedded_traffic_class_abi_version":
+                self.embedded_traffic_class_abi_version,
+            "embedded_class_count": self.embedded_class_count,
             "astra_build_manifest_sha256":
                 self.astra_build_manifest_sha256,
             "astra_build_recipe_version":
@@ -295,6 +304,21 @@ class AstraRuntimeEvidence:
             raise AstraExecutionError(
                 "evidence document embedded_network_class_abi_version "
                 "must be a non-negative int")
+        traffic_class_abi = doc.get(
+            "embedded_traffic_class_abi_version", 0)
+        if type(traffic_class_abi) is not int \
+                or isinstance(traffic_class_abi, bool) \
+                or traffic_class_abi < 0:
+            raise AstraExecutionError(
+                "evidence document embedded_traffic_class_abi_version "
+                "must be a non-negative int")
+        embedded_class_count = doc.get("embedded_class_count", 0)
+        if type(embedded_class_count) is not int \
+                or isinstance(embedded_class_count, bool) \
+                or embedded_class_count < 0:
+            raise AstraExecutionError(
+                "evidence document embedded_class_count must be a "
+                "non-negative int")
         manifest_sha = doc.get("astra_build_manifest_sha256")
         if manifest_sha is not None and not isinstance(manifest_sha, str):
             raise AstraExecutionError(
@@ -332,6 +356,8 @@ class AstraRuntimeEvidence:
             astra_source_revision=revision, astra_dirty=dirty,
             class_binding_id=binding_id,
             embedded_network_class_abi_version=class_abi,
+            embedded_traffic_class_abi_version=traffic_class_abi,
+            embedded_class_count=embedded_class_count,
             astra_build_manifest_sha256=manifest_sha,
             astra_build_recipe_version=recipe,
             per_class_injected=per_class_injected,
@@ -493,6 +519,57 @@ def parse_class_stream_ledger(stderr: str) -> dict[int, int]:
             counts[comtype] = counts.get(comtype, 0) + 1
     return counts
 
+def parse_class_conservation(stdout: str) -> dict[int, tuple[int, int]]:
+    """Per-embedded-class (injected, accepted) flit totals from stdout.
+
+    ASTRA prints one line per round after the fabric drains:
+    ``VeritX: class N injected flits = X, accepted flits = Y``. A process
+    that ran several rounds resets the counters per round, so the LAST
+    occurrence for a class is the round being reported. Absence stays
+    absent (an empty map), never a zero-filled claim.
+    """
+    counts: dict[int, tuple[int, int]] = {}
+    for line in (stdout or "").splitlines():
+        match = _CLASS_CONSERVATION_RE.search(line)
+        if match:
+            index, injected, accepted = (int(v) for v in match.groups())
+            counts[index] = (injected, accepted)
+    return counts
+
+
+def class_conservation_by_name(
+        counts: dict[int, tuple[int, int]],
+        mapping: tuple[tuple[str, int], ...]) -> tuple[
+            tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
+    """Translate dense runtime class indices into canonical class names.
+
+    The runtime only knows the dense index it was handed in the Chakra node;
+    the canonical name lives in the projection. Unknown indices, missing
+    canonical classes, or a non-injective name->index mapping are refusals:
+    evidence is never renamed by guesswork.
+    """
+    index_to_name = {index: name for name, index in mapping}
+    if len(index_to_name) != len(mapping) \
+            or len(set(index_to_name.values())) != len(mapping):
+        raise AstraExecutionError(
+            f"canonical class index mapping is not injective: {mapping}")
+    unknown = sorted(set(counts) - set(index_to_name))
+    if unknown:
+        raise AstraExecutionError(
+            f"runtime reported per-class counts for unmapped embedded "
+            f"class indices {unknown}; refusing unattributable classes")
+    missing = sorted(set(index_to_name) - set(counts))
+    if missing:
+        raise AstraExecutionError(
+            "runtime emitted no per-class conservation for canonical "
+            f"class indices {missing}; refusing an unattributed class")
+    injected = tuple(sorted((index_to_name[i], counts[i][0])
+                            for i in counts))
+    completed = tuple(sorted((index_to_name[i], counts[i][1])
+                             for i in counts))
+    return injected, completed
+
+
 def assert_stream_ledger_covers_kinds(
         counts: dict[int, int],
         expected_kinds: tuple[str, ...]) -> dict[int, int]:
@@ -625,6 +702,50 @@ def materialize_machine(machine: AstraMachineProjection,
                 f"machine projection is missing required config {required}")
     return written
 
+def _supervised_runner(command: tuple[str, ...], cwd: Path, timeout: int,
+                       env: dict[str, str]) -> AstraOutcome:
+    """Run ASTRA with durable raw logs, including partial timeout output."""
+    stdout_path = cwd / "astra.stdout.log"
+    stderr_path = cwd / "astra.stderr.log"
+    try:
+        with stdout_path.open("wb") as stdout_log, \
+                stderr_path.open("wb") as stderr_log:
+            try:
+                process = subprocess.run(
+                    command, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                    stdout=stdout_log, stderr=stderr_log, timeout=timeout,
+                    env=env)
+                returncode = process.returncode
+                timed_out = False
+            except subprocess.TimeoutExpired:
+                returncode = -1
+                timed_out = True
+    except OSError as exc:
+        raise AstraExecutionError(
+            f"could not spawn ASTRA process: {exc}") from exc
+    stdout_bytes = stdout_path.read_bytes()
+    stderr_bytes = stderr_path.read_bytes()
+    stdout = stdout_bytes.decode("utf-8", errors="replace")
+    stderr = stderr_bytes.decode("utf-8", errors="replace")
+    manifest = {
+        "schema": "veritx/astra-process-logs/1",
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "logs": {
+            "stdout": {"path": stdout_path.name,
+                       "size_bytes": len(stdout_bytes),
+                       "sha256": hashlib.sha256(stdout_bytes).hexdigest()},
+            "stderr": {"path": stderr_path.name,
+                       "size_bytes": len(stderr_bytes),
+                       "sha256": hashlib.sha256(stderr_bytes).hexdigest()},
+        },
+    }
+    (cwd / "astra-process-logs.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return AstraOutcome(returncode=returncode, stdout=stdout,
+                        stderr=stderr, timed_out=timed_out)
+
+
 def execute_astra_machine(
         *, machine: AstraMachineProjection, binary: str | Path,
         run_dir: str | Path, workload_configuration: str | Path,
@@ -638,7 +759,8 @@ def execute_astra_machine(
         namespace: Any = None,
         write: bool = True,
         class_binding_id: str | None = None,
-        expected_collective_kinds: tuple[str, ...] | None = None
+        expected_collective_kinds: tuple[str, ...] | None = None,
+        canonical_class_index: tuple[tuple[str, int], ...] | None = None
         ) -> AstraRuntimeEvidence:
     """Run the projected machine and authenticate what came back.
 
@@ -700,33 +822,27 @@ Rationale: docs/decisions/modules/backend.md
     supervised = runner is None
     if supervised:
         def runner(cmd, cwd, timeout):  # pragma: no cover - real process
+            env = dict(os.environ)
             try:
-                env = dict(os.environ)
-                try:
-                    level = int(env.get("VERITX_LEDGER", "0") or "0")
-                except ValueError:
-                    level = 0
-                if level < 1:
-                    env["VERITX_LEDGER"] = "1"
-                proc = subprocess.run(cmd, cwd=str(cwd), stdin=subprocess.DEVNULL,
-                                      capture_output=True, text=True,
-                                      timeout=timeout, env=env)
-            except subprocess.TimeoutExpired:
-                return AstraOutcome(returncode=-1, stdout="", stderr="",
-                                    timed_out=True)
-            return AstraOutcome(returncode=proc.returncode,
-                                stdout=proc.stdout or "",
-                                stderr=proc.stderr or "")
+                level = int(env.get("VERITX_LEDGER", "0") or "0")
+            except ValueError:
+                level = 0
+            if level < 1:
+                env["VERITX_LEDGER"] = "1"
+            return _supervised_runner(cmd, Path(cwd), timeout, env)
     transport = (EXECUTION_TRANSPORT_SUPERVISED if supervised
                  else EXECUTION_TRANSPORT_TEST_INJECTED)
     outcome = runner(command, run_directory, timeout_s)
+    log_manifest_path = run_directory / "astra-process-logs.json"
+    log_hint = (f"; stdout/stderr logs: {log_manifest_path}"
+                if log_manifest_path.is_file() else "")
     if outcome.timed_out:
         raise AstraExecutionError(
-            f"ASTRA runtime timed out after {timeout_s}s")
+            f"ASTRA runtime timed out after {timeout_s}s{log_hint}")
     if outcome.returncode != 0:
         raise AstraExecutionError(
             f"ASTRA runtime exited {outcome.returncode}: "
-            f"{(outcome.stderr or '')[-400:]}")
+            f"{(outcome.stderr or '')[-400:]}{log_hint}")
     from veritx_dse.backend.booksim_execution import (
         BookSimExecutionError, validate_mesh_class_vc_observations)
     try:
@@ -736,6 +852,25 @@ Rationale: docs/decisions/modules/backend.md
         raise AstraExecutionError(str(exc)) from exc
     money = parse_astra_stats(outcome.stdout, outcome.stderr)
     injected = autonomous_injection_packets(outcome.stderr)
+    per_class_injected: tuple[tuple[str, int], ...] = ()
+    per_class_completed: tuple[tuple[str, int], ...] = ()
+    if canonical_class_index is None:
+        # Reproduction and direct-execution callers may not thread the
+        # mapping explicitly; the machine identity already binds it.
+        canonical_class_index = tuple(
+            getattr(machine, "canonical_class_index", ()) or ()) or None
+    if canonical_class_index is not None:
+        class_counts = parse_class_conservation(
+            outcome.stdout + "\n" + (outcome.stderr or ""))
+        if len(canonical_class_index) > 1 and not class_counts:
+            raise AstraExecutionError(
+                "multi-class execution emitted no per-class conservation "
+                "ledger: refusing to normalize a run whose canonical "
+                "classes cannot be proven")
+        if class_counts:
+            per_class_injected, per_class_completed = \
+                class_conservation_by_name(
+                    class_counts, canonical_class_index)
     if expected_collective_kinds is not None:
         assert_stream_ledger_covers_kinds(
             parse_class_stream_ledger(outcome.stderr),
@@ -811,6 +946,11 @@ Rationale: docs/decisions/modules/backend.md
         class_binding_id=class_binding_id,
         embedded_network_class_abi_version=
         machine.embedded_network_class_abi_version,
+        embedded_traffic_class_abi_version=
+        machine.embedded_traffic_class_abi_version,
+        embedded_class_count=machine.embedded_class_count,
+        per_class_injected=per_class_injected,
+        per_class_completed=per_class_completed,
         binary_accepts_legacy_json_abi=accepts_legacy,
         book_sim_source_has_json_unwrap=source_has_unwrap,
         packetization_fidelity=machine.packetization_fidelity,
@@ -880,6 +1020,9 @@ def _assert_machine_fields_in_command(command: tuple[str, ...],
             and f"--booksim2-flit-bytes={machine.flit_bytes}" not in joined:
         raise AstraExecutionError(
             "runtime command does not carry the projected flit width")
+    if f"--booksim2-host-flit-limit={machine.host_flit_limit}" not in joined:
+        raise AstraExecutionError(
+            "runtime command does not carry the projected host flit limit")
     if f"--network-configuration={NETWORK_FILE}" not in joined:
         raise AstraExecutionError(
             "runtime command does not carry the projected network config")

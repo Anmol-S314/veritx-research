@@ -2893,7 +2893,8 @@
         "channels": 224,
         "endpoints": 64,
         "routers": 64,
-        "seats": 64
+        "seats": 64,
+        "shared_links": 0
       },
       "design_hash": "sha256:8dabc57f23150de95dc53bf940236332a233261173f0e165388525948ad88bbc",
       "endpoints": [
@@ -3411,7 +3412,11 @@
         }
       ],
       "family": "mesh",
+      "island_columns": [],
       "physical_links": [],
+      "planes": [
+        "d"
+      ],
       "revision_id": "fixture-mesh8x8",
       "routers": [
         {
@@ -3927,6 +3932,7 @@
           "seat_capacity": 1
         }
       ],
+      "shared_links": [],
       "topology_hash": "sha256:d884861d46f41c98e89eb7a5fcea87f9a763de5d4f20a9adebaef9621e3b39da"
     }
   },

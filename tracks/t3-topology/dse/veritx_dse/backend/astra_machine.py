@@ -6,6 +6,7 @@ Rationale: docs/decisions/modules/backend.md
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -22,8 +23,15 @@ from veritx_dse.backend.booksim_projection import (
 ASTRA_MACHINE_SCHEMA_VERSION = 1
 EMBEDDED_FABRIC_ABI_VERSION = "srota/booksim-embedded-fabric-abi/v1"
 
+#: Legacy network class envelope (collective-kind attribution). Kept for
+#: qualification compatibility; the canonical path below supersedes it.
 EMBEDDED_NETWORK_CLASS_ABI_VERSION = 1
 REQUIRED_CLASS_ABI_MULTI_CLASS = 1
+#: Canonical traffic-class forwarding ABI. This carries the dense canonical
+#: class index from the Chakra node through the ASTRA collective algorithm
+#: into the embedded BookSim injection and its per-class conservation ledger.
+EMBEDDED_TRAFFIC_CLASS_ABI_VERSION = 1
+REQUIRED_TRAFFIC_CLASS_ABI_MULTI_CLASS = 1
 MACHINE_PROFILE_VERSION = "srota/astra-machine-profile/v1"
 MACHINE_DERIVATION_VERSION = "srota/astra-machine-derivation/v1"
 
@@ -240,12 +248,89 @@ Rationale: docs/decisions/modules/backend.md
     disarmed_values: tuple[tuple[str, str], ...]
     carries_trace_reference: bool
 
+UNBOUNDED_HOST_FLITS = 1 << 40
+
+HOST_FLIT_LIMIT_DERIVATION = (
+    f"uncapped ({UNBOUNDED_HOST_FLITS}): the embedded fabric's host flit limit "
+    "is an injection window, not a fabric buffer, and the producer this "
+    "machine replaced injected without any host-side cap. Setting it explicitly "
+    "and uncapped keeps backpressure where it physically lives (the network's "
+    "virtual channels) and keeps measurements comparable with the previous "
+    "producer. A bound smaller than one maximum-size stream refuses injection "
+    "outright, which is why a fabricated-capacity bound is not used here")
+
+
+QUALIFICATION_LIMIT_ENV = "VERITX_HOST_FLIT_LIMIT"
+
+
+def host_flit_limit_for(prepared: Any) -> int:
+    """The embedded fabric's host flit limit for this machine.
+
+    The canonical fork requires a positive limit before any injection and
+    refuses injection while the limit has no room. The previous producer had no
+    host cap, so the limit is set explicitly and uncapped: fabric virtual
+    channels remain the only backpressure, exactly as before.
+
+    `VERITX_HOST_FLIT_LIMIT` overrides it so an operator can qualify the
+    refusal path or impose an authored cap without a code change; because an
+    undersized cap refuses injection outright, that override must stay explicit
+    and auditable rather than becoming a default.
+    """
+    override = os.environ.get(QUALIFICATION_LIMIT_ENV)
+    if override not in (None, ""):
+        try:
+            limit = int(override)
+        except ValueError as exc:
+            raise AstraMachineError(
+                f"{QUALIFICATION_LIMIT_ENV} must be an integer, got {override!r}"
+            ) from exc
+        if limit <= 0:
+            raise AstraMachineError(
+                f"{QUALIFICATION_LIMIT_ENV} must be positive, got {limit}")
+        return limit
+    del prepared
+    return UNBOUNDED_HOST_FLITS
+
+
 def _standalone_values(prepared: Any) -> dict[str, str]:
     return parse_config_values(prepared.config_text)
 
-def embedded_fabric_config(prepared: Any, *, embedded_classes: int
+def _canonical_class_index_rows(
+        rows: Any, embedded_classes: int
+) -> tuple[tuple[str, int], ...]:
+    """Validate a canonical class -> dense embedded index mapping."""
+    if not isinstance(rows, (list, tuple)):
+        raise AstraMachineError(
+            "canonical class index mapping must be a list of "
+            "[class, index] rows")
+    out: list[tuple[str, int]] = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 2 \
+                or not isinstance(row[0], str) or not row[0] \
+                or type(row[1]) is not int or isinstance(row[1], bool) \
+                or not 0 <= row[1] < embedded_classes:
+            raise AstraMachineError(
+                "canonical class index rows must be "
+                "[non-empty class, index in the embedded envelope]")
+        out.append((row[0], row[1]))
+    names = [name for name, _index in out]
+    indices = [index for _name, index in out]
+    if len(set(names)) != len(names) or len(set(indices)) != len(indices):
+        raise AstraMachineError(
+            f"canonical class index mapping is not injective: {out}")
+    return tuple(out)
+
+
+def embedded_fabric_config(prepared: Any, *, embedded_classes: int,
+                           canonical_class_index: Any = None
                            ) -> EmbeddedFabricConfig:
     """Disarm standalone injection; keep every machine fact intact.
+
+    ``canonical_class_index`` binds the workload's canonical traffic classes
+    to the dense embedded class indices written into the Chakra collective
+    nodes. When supplied, distinct canonical-class VC ranges are preserved
+    instead of being flattened; when absent, the legacy kind-based callers
+    keep their explicit refusal.
 
 Rationale: docs/decisions/modules/backend.md
     """
@@ -259,6 +344,8 @@ Rationale: docs/decisions/modules/backend.md
         raise AstraMachineError(
             f"embedded class envelope must be a positive int, got "
             f"{embedded_classes!r}")
+    mapping = None if canonical_class_index is None else \
+        _canonical_class_index_rows(canonical_class_index, embedded_classes)
     stripped = text.lstrip("\ufeff").lstrip()
     if stripped.startswith("{"):
         raise AstraMachineError(
@@ -270,16 +357,31 @@ Rationale: docs/decisions/modules/backend.md
     from veritx_dse.backend.booksim_execution import mesh_class_vc_ranges_from_config
     ranges = mesh_class_vc_ranges_from_config(text)
     if ranges:
-        if len(set(ranges)) != 1:
-            raise AstraMachineError(
-                "ASTRA's embedded class ABI identifies collective kinds, not "
-                "canonical traffic classes; distinct class VC ranges cannot "
-                "be represented without a traffic-class ABI extension")
-        # One canonical class may use several collective kinds. Each of
-        # those runtime-kind slots MUST keep that same canonical VC range.
-        start, end = ranges[0]
-        values['mesh_class_vc_begin'] = '{' + ','.join([str(start)] * embedded_classes) + '}'
-        values['mesh_class_vc_end'] = '{' + ','.join([str(end)] * embedded_classes) + '}'
+        if mapping is None:
+            if len(set(ranges)) != 1:
+                raise AstraMachineError(
+                    "ASTRA's embedded class ABI identifies collective kinds, "
+                    "not canonical traffic classes; distinct class VC ranges "
+                    "cannot be represented without a traffic-class ABI "
+                    "extension")
+            # One canonical class may use several collective kinds. Each of
+            # those runtime-kind slots MUST keep that same canonical VC range.
+            rendered = (ranges[0],) * embedded_classes
+        else:
+            if len(ranges) > embedded_classes:
+                raise AstraMachineError(
+                    f"the standalone fabric declares {len(ranges)} class VC "
+                    f"ranges but the embedded envelope is only "
+                    f"{embedded_classes}; refusing to drop a canonical class")
+            # Canonical class indices match the standalone trace-class order,
+            # so each existing range stays on its own index. Unused trailing
+            # slots inherit the last declared range (they carry no traffic).
+            rendered = tuple(ranges) + (ranges[-1],) * (
+                embedded_classes - len(ranges))
+        values['mesh_class_vc_begin'] = '{' + ','.join(
+            str(row[0]) for row in rendered) + '}'
+        values['mesh_class_vc_end'] = '{' + ','.join(
+            str(row[1]) for row in rendered) + '}'
     if values.get("topology") == "gec" and values.get("routing_function") == "dor_gec":
         # Standalone accepts a fully-qualified registry key. ASTRA's IQRouter
         # appends _<topology>, so dor_gec became the nonexistent dor_gec_gec.
@@ -520,6 +622,10 @@ class AstraMachineProjection:
     router_count: int
     endpoint_count: int
     num_vcs: int
+    # Total resident host-injected flits the embedded fabric admits. The HEAD
+    # producer refuses injection until this is set, and its backpressure is
+    # what bounds host traffic; see HOST_FLIT_LIMIT_DERIVATION.
+    host_flit_limit: int
     flit_bytes: int
     packetization_fidelity: str
     ns_per_cycle: float
@@ -531,6 +637,9 @@ class AstraMachineProjection:
     memory_config_text: str
     topology_file_text: str = ""
     embedded_network_class_abi_version: int = 0
+    embedded_traffic_class_abi_version: int = 0
+    embedded_class_count: int = 0
+    canonical_class_index: tuple[tuple[str, int], ...] = ()
     schema_version: int = ASTRA_MACHINE_SCHEMA_VERSION
 
     def files(self) -> dict[str, bytes]:
@@ -575,6 +684,11 @@ class AstraMachineProjection:
             "standalone_config_sha256": self.standalone_config_sha256,
             "embedded_network_class_abi_version":
                 self.embedded_network_class_abi_version,
+            "embedded_traffic_class_abi_version":
+                self.embedded_traffic_class_abi_version,
+            "embedded_class_count": self.embedded_class_count,
+            "canonical_class_index": [
+                [cls, index] for cls, index in self.canonical_class_index],
             "workload_projection_id": self.workload_projection_id,
             "workload_semantics_version": self.workload_semantics_version,
             "et_granularity": self.et_granularity,
@@ -589,6 +703,7 @@ class AstraMachineProjection:
             "router_count": self.router_count,
             "endpoint_count": self.endpoint_count,
             "num_vcs": self.num_vcs,
+            "host_flit_limit": self.host_flit_limit,
             "flit_bytes": self.flit_bytes,
             "packetization_fidelity": self.packetization_fidelity,
             "ns_per_cycle": self.ns_per_cycle,
@@ -628,10 +743,13 @@ Rationale: docs/decisions/modules/backend.md
             "standalone_config_sha256": self.standalone_config_sha256,
             "embedded_network_class_abi_version":
                 self.embedded_network_class_abi_version,
+            "embedded_traffic_class_abi_version":
+                self.embedded_traffic_class_abi_version,
             "astra_sys_count": self.astra_sys_count,
             "router_count": self.router_count,
             "endpoint_count": self.endpoint_count,
             "num_vcs": self.num_vcs,
+            "host_flit_limit": self.host_flit_limit,
             "flit_bytes": self.flit_bytes,
             "packetization_fidelity": self.packetization_fidelity,
             "ns_per_cycle": self.ns_per_cycle,
@@ -686,7 +804,8 @@ Rationale: docs/decisions/modules/backend.md
                     "workload_semantics_version", "participant_count",
                     "astra_sys_count", "workload_compute_floor",
                     "workload_payload_bytes", "router_count",
-                    "endpoint_count", "num_vcs", "flit_bytes")}
+                    "endpoint_count", "num_vcs", "host_flit_limit",
+                    "flit_bytes")}
         except KeyError as exc:
             raise AstraMachineError(
                 f"machine document is missing {exc}") from exc
@@ -726,12 +845,40 @@ Rationale: docs/decisions/modules/backend.md
             raise AstraMachineError(
                 "machine document embedded_network_class_abi_version "
                 "must be a non-negative int")
+        traffic_class_abi = doc.get(
+            "embedded_traffic_class_abi_version", 0)
+        if type(traffic_class_abi) is not int \
+                or isinstance(traffic_class_abi, bool) \
+                or traffic_class_abi < 0:
+            raise AstraMachineError(
+                "machine document embedded_traffic_class_abi_version "
+                "must be a non-negative int")
+        embedded_class_count = doc.get("embedded_class_count", 0)
+        if type(embedded_class_count) is not int \
+                or isinstance(embedded_class_count, bool) \
+                or embedded_class_count < 0:
+            raise AstraMachineError(
+                "machine document embedded_class_count must be a "
+                "non-negative int")
+        raw_index = doc.get("canonical_class_index", ())
+        if embedded_class_count:
+            class_index = _canonical_class_index_rows(
+                raw_index, embedded_class_count)
+        else:
+            if raw_index not in ((), [], None):
+                raise AstraMachineError(
+                    "machine document carries a canonical class index "
+                    "mapping without an embedded class envelope")
+            class_index = ()
         return cls(
             **str_fields, **int_fields, **text_fields,
             logical_dimensions=tuple(dimensions),
             ns_per_cycle=float(ns_per_cycle),
             memory_semantically_active=active,
             embedded_network_class_abi_version=class_abi,
+            embedded_traffic_class_abi_version=traffic_class_abi,
+            embedded_class_count=embedded_class_count,
+            canonical_class_index=class_index,
             schema_version=schema)
 
     def canonical_bytes(self) -> bytes:
@@ -764,6 +911,7 @@ Rationale: docs/decisions/modules/backend.md
             f"--remote-memory-configuration={MEMORY_FILE}",
             f"--booksim2-flit-bytes={self.flit_bytes}",
             f"--booksim2-ns-per-cycle={self.ns_per_cycle}",
+            f"--booksim2-host-flit-limit={self.host_flit_limit}",
         ]
         if injection_override:
             command.append(
@@ -798,36 +946,44 @@ Rationale: docs/decisions/modules/backend.md
         raise AstraMachineError(
             "the workload projection must be an AstraWorkloadProjection")
 
-    from veritx_dse.backend.astra import (
-        AstraLoweringRefused, required_embedded_classes,
-    )
-    try:
-        if embedded_classes is None:
-            embedded_classes = required_embedded_classes(
-                projection.collective_operations)
-        embedded = embedded_fabric_config(
-            prepared, embedded_classes=embedded_classes)
-    except AstraLoweringRefused as exc:
+    projected_classes = projection.traffic_classes()
+    canonical_class_index = tuple(projection.canonical_class_index())
+    canonical_count = projection.embedded_class_count()
+    if embedded_classes is None:
+        embedded_classes = canonical_count
+    elif embedded_classes < canonical_count:
         raise AstraMachineError(
-            f"cannot declare the embedded class envelope: {exc}"
-        ) from exc
+            f"embedded class envelope {embedded_classes} cannot cover the "
+            f"{canonical_count} canonical traffic classes "
+            f"{list(projected_classes)}: refusing a lossy class mapping")
+    embedded = embedded_fabric_config(
+        prepared, embedded_classes=embedded_classes,
+        canonical_class_index=canonical_class_index)
     derived_topology = derive_logical_dimensions(projection)
     scope, active = memory_scope(logical, projection)
     authority = projection.expansion_authority()
     if authority not in ("srota_logical_messages", "astra_comm_coll"):
         raise AstraMachineError(
             f"unknown collective expansion authority {authority!r}")
-    projected_classes = projection.traffic_classes()
-    if len(projected_classes) > 1 \
-            and EMBEDDED_NETWORK_CLASS_ABI_VERSION < \
-            REQUIRED_CLASS_ABI_MULTI_CLASS:
-        raise AstraMachineError(
-            f"multi-class workload ({len(projected_classes)} classes: "
-            f"{list(projected_classes)}) requires embedded network "
-            f"class ABI >= {REQUIRED_CLASS_ABI_MULTI_CLASS}, but the "
-            "qualified runtime proves "
-            f"{EMBEDDED_NETWORK_CLASS_ABI_VERSION}: old runtimes fail "
-            "qualification rather than executing classes unattributed")
+    if len(projected_classes) > 1:
+        if EMBEDDED_NETWORK_CLASS_ABI_VERSION < \
+                REQUIRED_CLASS_ABI_MULTI_CLASS:
+            raise AstraMachineError(
+                f"multi-class workload ({len(projected_classes)} classes: "
+                f"{list(projected_classes)}) requires embedded network "
+                f"class ABI >= {REQUIRED_CLASS_ABI_MULTI_CLASS}, but the "
+                "qualified runtime proves "
+                f"{EMBEDDED_NETWORK_CLASS_ABI_VERSION}: old runtimes fail "
+                "qualification rather than executing classes unattributed")
+        if EMBEDDED_TRAFFIC_CLASS_ABI_VERSION < \
+                REQUIRED_TRAFFIC_CLASS_ABI_MULTI_CLASS:
+            raise AstraMachineError(
+                f"multi-class workload ({len(projected_classes)} classes: "
+                f"{list(projected_classes)}) requires canonical traffic "
+                f"class ABI >= {REQUIRED_TRAFFIC_CLASS_ABI_MULTI_CLASS}, "
+                "but this producer only forwards collective kinds: "
+                f"{EMBEDDED_TRAFFIC_CLASS_ABI_VERSION}. Refusing to use "
+                "kind identity as a substitute for canonical classes")
     if astra_collective_authority is not None:
         wants_astra = authority == "astra_comm_coll"
         if astra_collective_authority != wants_astra:
@@ -896,6 +1052,10 @@ Rationale: docs/decisions/modules/backend.md
         embedded_fabric_abi_version=embedded.abi_version,
         embedded_network_class_abi_version=
         EMBEDDED_NETWORK_CLASS_ABI_VERSION,
+        embedded_traffic_class_abi_version=
+        EMBEDDED_TRAFFIC_CLASS_ABI_VERSION,
+        embedded_class_count=embedded_classes,
+        canonical_class_index=canonical_class_index,
         standalone_config_sha256=embedded.standalone_config_sha256,
         workload_projection_id=projection.projection_id(),
         workload_semantics_version=projection.schema_version,
@@ -916,6 +1076,7 @@ Rationale: docs/decisions/modules/backend.md
         router_count=prepared.router_count,
         endpoint_count=prepared.endpoint_count,
         num_vcs=prepared.num_vcs,
+        host_flit_limit=host_flit_limit_for(prepared),
         flit_bytes=width,
         packetization_fidelity=fidelity,
         ns_per_cycle=CANONICAL_NS_PER_CYCLE,

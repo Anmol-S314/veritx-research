@@ -172,7 +172,8 @@ def test_prepared_input_binds_cmesh_semantics_and_route_rows(parents):
     prepared = prepare_booksim_input(parents, seed=0)
     assert prepared.profile_id == "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
     assert prepared.semantics_version == (
-        "booksim2-fork+cmesh-terminal-bijection+prepared-v2")
+        "booksim2-fork+cmesh-terminal-bijection+prepared-v2"
+        "+multi-class/v1")
     assert prepared.lowerer_version == "DORXY/1"
     assert len(prepared.expected_route_rows) == \
         parents.topology.router_count * parents.topology.router_count * 4

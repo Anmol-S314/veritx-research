@@ -55,7 +55,8 @@ def test_selector_can_return_mc_profile():
 
     import veritx_dse.backend.booksim_projection as bp
 
-    src = inspect.getsource(bp.select_booksim_profile)
+    src = (inspect.getsource(bp.select_booksim_profile)
+           + inspect.getsource(bp._select_multi_class_profile))
     assert "MESH_DOR_MC_PROFILE" in src or MC_PROFILE_ID in src
 
 

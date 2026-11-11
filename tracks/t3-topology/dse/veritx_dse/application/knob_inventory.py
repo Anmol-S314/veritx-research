@@ -131,10 +131,14 @@ def control_knobs() -> list[dict[str, Any]]:
 
 def knob_inventory() -> dict[str, Any]:
     """The complete writable surface for the blocks this module covers."""
+    from veritx_dse.application.backend_knob_catalog import (
+        backend_knob_catalog_document,
+    )
     return {
         "type": "veritx/KnobInventory/v1",
         "topology": topology_knobs(),
         "controls": control_knobs(),
+        "backend": backend_knob_catalog_document(),
         "not_covered": ["agents", "physical", "requirements", "address_map",
                         "workload", "dependencies"],
         "notes": (
@@ -144,6 +148,10 @@ def knob_inventory() -> dict[str, Any]:
             "validator, which refuse. This file reports SHAPE, and the "
             "engine decides legality, so the two cannot disagree. Request "
             "blocks other than topology and controls are not yet covered; "
-            "see the module docstring."
+            "see the module docstring. `backend` reports the simulation "
+            "knob surface joined from the fork's own registration and the "
+            "profile audit; `overridable` there is the audited set a "
+            "controlled profile can already replace, not an editing "
+            "permission this document grants."
         ),
     }

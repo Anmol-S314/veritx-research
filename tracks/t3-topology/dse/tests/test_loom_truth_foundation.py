@@ -315,8 +315,8 @@ class TestSrotaRowFollowsTheEngine:
 
         concentration = rows["router.concentration"]
         assert concentration["status"] == "PARTIAL"
-        assert "QUALIFIED claim has been withdrawn" in concentration["reason"]
-        assert "2:1 is unsupported" in concentration["reason"]
+        assert "concentration 2 or 4" in concentration["reason"]
+        assert "arbitrary concentration" in concentration["reason"]
 
         v5 = rows["design.compile_request_v5"]
         assert v5["status"] == "PARTIAL"

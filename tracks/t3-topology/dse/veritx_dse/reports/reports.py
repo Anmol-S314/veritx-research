@@ -302,7 +302,10 @@ def generate_report(
     n_nics = n_agents
     data_width = cr.physical.default_data_width
     process_nm = cr.physical.process_node_nm
-    freq_ghz = cr.physical.default_clock_freq_mhz / 1000.0
+    clock_fallback = cr.physical.default_clock_freq_mhz is None
+    freq_ghz = (cr.physical.default_clock_freq_mhz / 1000.0
+                if cr.physical.default_clock_freq_mhz is not None
+                else FREQ_DEFAULT_GHZ)
 
     topo_name = "mesh"
     if cr.noc_config.topology_family:
@@ -352,6 +355,11 @@ def generate_report(
         },
         "guardrail_hash": cr.guardrail_hash(),
         "accuracy_notes": {
+            "clock_source": ("declared physical.default_clock_freq_mhz" if not clock_fallback
+                             else "UNCALIBRATED PRD §7 fallback: no clock declared; "
+                                  f"assumed {FREQ_DEFAULT_GHZ * 1000:.0f} MHz (FREQ_DEFAULT_GHZ) "
+                                  "for power estimates only; NOT a timing claim. Declare "
+                                  "physical.default_clock_freq_mhz to bind a real frequency."),
             "area": "±30% relative accuracy. Good for A vs B comparison, not tape-out.",
             "power": "Includes link + router internal activity. No process corners or thermal.",
             "timing": f"Derated Fmax (×{_FMAX_DERATING}). Needs STA for guaranteed frequency.",

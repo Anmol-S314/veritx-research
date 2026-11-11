@@ -20,7 +20,11 @@ def test_catalog_covers_all_supported_families_with_real_templates(client):
     expected = {"mesh", "concentrated_mesh", "torus", "explicit", "flatfly",
                 "fattree", "fat_tree", "dragonfly", "flattened_butterfly",
                 "qtree", "tree4", "srota", "gec_mesh", "gec_express",
-                "gec_multidrop", "gec_hybrid"}
+                "gec_multidrop", "gec_hybrid",
+                # exact native constructions get their own editor family:
+                # they are not the balanced `qtree` graph nor the legacy
+                # line-shaped `ring` fixture.
+                "qtree_native", "ring_native", "tree4_native", "fly_native"}
     assert {entry["family"] for entry in catalog} == expected
     for entry in catalog:
         assert capability_family_label(topology_intent_from_dict(entry["topology"])) == entry["family"]

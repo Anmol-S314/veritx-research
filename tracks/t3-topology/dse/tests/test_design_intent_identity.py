@@ -93,7 +93,7 @@ IDENTITY_FIELDS = {
     Agent: frozenset({
         "kind", "count", "data_width", "addr_width", "protocol",
         "clock_domain", "power_domain", "ip_template_id", "ip_template_version",
-        "ip_instance_id",
+        "ip_instance_id", "group_name",
     }),
     Dependency: frozenset({"source", "target", "kind"}),
     DependencyGraph: frozenset({"dependencies"}),
@@ -292,6 +292,7 @@ MUTATORS = {
     (Agent, "ip_template_id"): _stamped_ip_agent,
     (Agent, "ip_template_version"): _stamped_ip_agent,
     (Agent, "ip_instance_id"): _stamped_ip_agent,
+    (Agent, "group_name"): lambda: _ag(0, group_name="renamed_group"),
     (Dependency, "source"): lambda: _dep(0, source="cls_z"),
     (Dependency, "target"): lambda: _dep(0, target="cls_z"),
     (Dependency, "kind"): lambda: _dep(0, kind=DepKind.INDEPENDENT),

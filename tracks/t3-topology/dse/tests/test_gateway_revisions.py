@@ -69,13 +69,15 @@ def test_hbm3e_stamp_is_an_immutable_draft_edit_and_compiles(client):
     from dataclasses import replace
 
     from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    from veritx_dse.model.topology_intent import ConcentratedMeshIntent
 
     example = Path(__file__).resolve().parents[1] / "examples/tensor_demand_v5.json"
     doc = json.loads(example.read_text())
     request = CompileRequestV5.from_dict(doc["design"])
     request = replace(request, base_v4=replace(
-        request.base_v4, topology=replace(request.base_v4.topology,
-                                           concentration=2)))
+        request.base_v4, topology=ConcentratedMeshIntent(
+            side_length=request.base_v4.topology.side_length,
+            concentration=2)))
     created = client.post("/api/v1/projects", json={"name": "ip-stamp"})
     assert created.status_code == 200, created.text
     project_id = created.json()["project"]["project_id"]

@@ -35,6 +35,13 @@ _LOCKED_TOKENS = (
     "escape",
 )
 
+#: Separator between a metric name and its asserted dimension selectors in a
+#: composite optimization-axis key.
+AXIS_KEY_SEPARATOR = "@"
+
+#: The dimension name a ``traffic_class`` selector asserts.
+TRAFFIC_CLASS_AXIS_DIMENSION = "traffic_class"
+
 class OptimizationDefinitionError(ValueError):
     """Invalid optimization definition (typed, fail-closed)."""
 
@@ -56,9 +63,9 @@ def _check_guided(name: str) -> str:
                 "VC count/structure, turn restrictions and escape VC are "
                 "compiler-derived and structurally inexpressible here — "
                 "every candidate recompiles them via FabricCompiler")
-    if short not in GUIDED_PARAMS:
+    if short not in GUIDED_PARAMS and short not in PARALLELISM_DIMS:
         raise OptimizationDefinitionError(
-            f"unknown GUIDED parameter {name!r}; supported: {sorted(GUIDED_PARAMS)}")
+            f"unknown GUIDED/workload parameter {name!r}; supported: {sorted(set(GUIDED_PARAMS) | set(PARALLELISM_DIMS))}")
     return short
 
 def _canonical_value(v: Any) -> Any:
@@ -72,9 +79,57 @@ def _canonical_value(v: Any) -> Any:
     raise OptimizationDefinitionError(
         f"unsupported domain value {v!r}; P2 v1 supports int/str/bool")
 
+def _coerce_traffic_class(value: Any, where: str) -> str | None:
+    """A canonical traffic-class SELECTOR, or None for the aggregate axis.
+
+    The name selects the ``traffic_class`` metric dimension; it is never a
+    free-form label. It must already be the canonical name the workload
+    lowering emits: surrounding whitespace is refused rather than trimmed,
+    so two spellings can never name one optimization axis.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise OptimizationDefinitionError(
+            f"{where} traffic_class must be a non-empty class name string "
+            f"or None, got {value!r}")
+    if value != value.strip():
+        raise OptimizationDefinitionError(
+            f"{where} traffic_class {value!r} carries surrounding "
+            "whitespace; the canonical class name does not")
+    return value
+
+def metric_axis_key(metric: str, traffic_class: str | None = None) -> str:
+    """The stable composite value-axis key for ``(metric, traffic_class)``.
+
+    The aggregate axis keeps the historical bare metric name, so every
+    aggregate map entry stays byte-identical::
+
+        metric_axis_key("completion_cycles") == "completion_cycles"
+
+    A class-scoped axis appends the dimension the selector asserts, using
+    the same ``name=value`` spelling the dimension tuple carries::
+
+        metric_axis_key("packet_latency_avg", "ep_dispatch")
+            == "packet_latency_avg@traffic_class=ep_dispatch"
+
+    The key names ONE metric reading, not one objective declaration: two
+    objectives over the same axis are still refused, and one objective and
+    one constraint may share an axis because they read the same reading.
+    """
+    if not isinstance(metric, str) or not metric:
+        raise OptimizationDefinitionError(
+            f"metric axis needs a non-empty metric name, got {metric!r}")
+    if traffic_class is None:
+        return metric
+    traffic_class = _coerce_traffic_class(traffic_class, "metric axis")
+    return (f"{metric}{AXIS_KEY_SEPARATOR}"
+            f"{TRAFFIC_CLASS_AXIS_DIMENSION}={traffic_class}")
+
+
 @dataclass(frozen=True)
 class DomainParam:
-    """One finite GUIDED design-variable domain."""
+    """One finite hardware or canonical workload design-variable domain."""
     name: str
     values: tuple[Any, ...]
 
@@ -87,6 +142,9 @@ class DomainParam:
         if not isinstance(vals, tuple) or not vals:
             raise OptimizationDefinitionError(
                 f"parameter {self.name!r} needs a non-empty value tuple/list")
+        if short in PARALLELISM_DIMS and any(type(v) is not int or v < 1 for v in vals):
+            raise OptimizationDefinitionError(
+                f"parallelism dimension {short!r} needs positive integer sizes")
         canon = tuple(_canonical_value(v) for v in vals)
         if len(set(canonical_json(v) for v in canon)) != len(canon):
             raise OptimizationDefinitionError(
@@ -104,6 +162,7 @@ Rationale: docs/decisions/modules/optimization.md
     metric_key: str
     question: EvaluationQuestion = EvaluationQuestion.NETWORK_COMPLETION
     backend_id: str | None = None
+    traffic_class: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.metric_key, str) or not self.metric_key:
@@ -117,11 +176,17 @@ Rationale: docs/decisions/modules/optimization.md
             raise OptimizationDefinitionError(
                 "objective backend constraint must be a backend id "
                 f"string or None, got {self.backend_id!r}")
+        object.__setattr__(self, "traffic_class",
+                            _coerce_traffic_class(self.traffic_class,
+                                                  "objective source"))
 
     def to_dict(self) -> dict[str, Any]:
-        return {"metric_key": self.metric_key,
-                "question": self.question.value,
-                "backend_id": self.backend_id}
+        doc = {"metric_key": self.metric_key,
+               "question": self.question.value,
+               "backend_id": self.backend_id}
+        if self.traffic_class is not None:
+            doc["traffic_class"] = self.traffic_class
+        return doc
 
 def _coerce_question(value: Any) -> EvaluationQuestion:
     """EvaluationQuestion or its canonical name -> EvaluationQuestion."""
@@ -151,6 +216,7 @@ Rationale: docs/decisions/modules/optimization.md
     direction: str
     question: EvaluationQuestion = EvaluationQuestion.NETWORK_COMPLETION
     backend_id: str | None = None
+    traffic_class: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.metric, str) or not self.metric:
@@ -166,13 +232,22 @@ Rationale: docs/decisions/modules/optimization.md
             raise OptimizationDefinitionError(
                 "objective backend constraint must be a backend id "
                 f"string or None, got {self.backend_id!r}")
+        object.__setattr__(self, "traffic_class",
+                            _coerce_traffic_class(self.traffic_class,
+                                                  "objective"))
 
     @property
     def source(self) -> ObjectiveSource:
         """This objective's explicit evaluation policy."""
         return ObjectiveSource(metric_key=self.metric,
                                question=self.question,
-                               backend_id=self.backend_id)
+                               backend_id=self.backend_id,
+                               traffic_class=self.traffic_class)
+
+    @property
+    def key(self) -> str:
+        """Stable ``(metric, traffic_class)`` value-axis identity."""
+        return metric_axis_key(self.metric, self.traffic_class)
 
 @dataclass(frozen=True)
 class Constraint:
@@ -180,6 +255,7 @@ class Constraint:
     metric: str
     op: str
     threshold: float
+    traffic_class: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.metric, str) or not self.metric:
@@ -195,6 +271,14 @@ class Constraint:
         if not math.isfinite(float(self.threshold)):
             raise OptimizationDefinitionError("constraint threshold must be finite")
         object.__setattr__(self, "threshold", float(self.threshold))
+        object.__setattr__(self, "traffic_class",
+                            _coerce_traffic_class(self.traffic_class,
+                                                  "constraint"))
+
+    @property
+    def key(self) -> str:
+        """Stable ``(metric, traffic_class)`` value-axis identity."""
+        return metric_axis_key(self.metric, self.traffic_class)
 
 @dataclass(frozen=True)
 class OptimizationDefinition:
@@ -240,20 +324,25 @@ Rationale: docs/decisions/modules/optimization.md
             raise OptimizationDefinitionError("duplicate parameter names")
         if not objectives:
             raise OptimizationDefinitionError("at least one objective is required")
-        obj_metrics = [o.metric for o in objectives]
-        dup_obj = sorted({m for m in obj_metrics if obj_metrics.count(m) > 1})
+        obj_keys = [o.key for o in objectives]
+        dup_obj = sorted({k for k in obj_keys if obj_keys.count(k) > 1})
         if dup_obj:
             raise OptimizationDefinitionError(
-                f"duplicate objective metric(s) {dup_obj}: each requested "
-                "objective must be declared exactly once")
-        con_metrics = [c.metric for c in constraints]
-        dup_con = sorted({m for m in con_metrics if con_metrics.count(m) > 1})
+                f"duplicate objective axis(es) {dup_obj}: each "
+                "(metric, traffic_class) value axis must be declared "
+                "exactly once — two classes of one metric are distinct "
+                "axes and may coexist, but the same axis declared twice "
+                "would silently overwrite its reading")
+        con_keys = [c.key for c in constraints]
+        dup_con = sorted({k for k in con_keys if con_keys.count(k) > 1})
         if dup_con:
             raise OptimizationDefinitionError(
-                f"duplicate constraint metric(s) {dup_con}: one constraint "
-                "per metric; two bounds over the same metric would "
-                "silently overwrite each other — refused at construction, "
-                "never last-write-wins")
+                f"duplicate constraint axis(es) {dup_con}: one constraint "
+                "per (metric, traffic_class) value axis; two bounds over "
+                "the same axis — even when the metric name is shared by "
+                "different traffic classes — would silently overwrite "
+                "each other. Refused at construction, never "
+                "last-write-wins")
         if self.method not in SEARCH_METHODS:
             if self.method in ("bayes", "bo", "milp", "sa", "rho", "grpo"):
                 raise OptimizationDefinitionError(
@@ -295,12 +384,9 @@ Rationale: docs/decisions/modules/optimization.md
         return content_id(DOMAIN, {
             "parameters": [{"name": p.name, "values": list(p.values)}
                            for p in sorted(self.domain, key=lambda p: p.name)],
-            "objectives": [{"metric": o.metric, "direction": o.direction,
-                            "question": o.question.value,
-                            "backend_id": o.backend_id}
+            "objectives": [_objective_identity_doc(o)
                            for o in self.objectives],
-            "constraints": [{"metric": c.metric, "op": c.op,
-                             "threshold": c.threshold}
+            "constraints": [_constraint_identity_doc(c)
                             for c in self.constraints],
             "method": self.method,
             "budget": dict(sorted(self.budget.items())),
@@ -310,12 +396,9 @@ Rationale: docs/decisions/modules/optimization.md
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "objectives": [{"metric": o.metric, "direction": o.direction,
-                            "question": o.question.value,
-                            "backend_id": o.backend_id}
+            "objectives": [_objective_identity_doc(o)
                            for o in self.objectives],
-            "constraints": [{"metric": c.metric, "op": c.op,
-                             "threshold": c.threshold}
+            "constraints": [_constraint_identity_doc(c)
                             for c in self.constraints],
             "method": self.method,
             "budget": dict(self.budget),
@@ -323,6 +406,28 @@ Rationale: docs/decisions/modules/optimization.md
             "selection": self.selection,
             "domain": {p.name: list(p.values) for p in self.domain},
         }
+
+def _objective_identity_doc(objective: Objective) -> dict[str, Any]:
+    """The objective's identity fields — byte-compatible with v2.
+
+    ``traffic_class`` is emitted ONLY when it is set: an aggregate objective
+    serializes exactly the historical key set, so a definition written
+    before the per-class dimension keeps its bytes and its ``definition_id``.
+    """
+    doc = {"metric": objective.metric, "direction": objective.direction,
+           "question": objective.question.value,
+           "backend_id": objective.backend_id}
+    if objective.traffic_class is not None:
+        doc["traffic_class"] = objective.traffic_class
+    return doc
+
+def _constraint_identity_doc(constraint: Constraint) -> dict[str, Any]:
+    """The constraint's identity fields (same conditional-key rule)."""
+    doc = {"metric": constraint.metric, "op": constraint.op,
+           "threshold": constraint.threshold}
+    if constraint.traffic_class is not None:
+        doc["traffic_class"] = constraint.traffic_class
+    return doc
 
 def required_questions(definition: "OptimizationDefinition"
                        ) -> tuple[EvaluationQuestion, ...]:
@@ -549,6 +654,8 @@ def assess_effectiveness(dimension: str, metric: str
 
 __all__ = [
     "DOMAIN", "GUIDED_PARAMS", "SEARCH_METHODS", "SELECTION_POLICIES",
+    "AXIS_KEY_SEPARATOR", "TRAFFIC_CLASS_AXIS_DIMENSION",
+    "metric_axis_key",
     "Constraint", "DomainParam", "Objective", "ObjectiveSource",
     "OptimizationDefinition", "OptimizationDefinitionError",
     "required_questions",

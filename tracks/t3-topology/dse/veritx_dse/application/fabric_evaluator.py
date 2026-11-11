@@ -439,17 +439,33 @@ class FabricEvaluator:
                 from veritx_dse.simulation.booksim import find_booksim_bin
                 bin_path = find_booksim_bin(repo_root)
             from types import SimpleNamespace
+            # The sampled series needs a link capacity in flits per cycle. Both
+            # widths are declared by the compiled fabric (channel/shared-link
+            # width_bits, packet-format flit_width_bits), so read them instead
+            # of requiring an environment variable the UI never mentions. When
+            # the fabric does not declare one usable pair, sampling is turned
+            # off for this run rather than failing the evaluation or plotting a
+            # capacity that is true of no link.
+            period = getattr(opts, "sample_period_cycles", None)
+            link_width = getattr(opts, "series_link_width_bits", None)
+            flit_width = getattr(opts, "series_flit_width_bits", None)
+            store_dir = getattr(opts, "series_store_dir", None)
+            if period is not None and (link_width is None
+                                       or flit_width is None):
+                from veritx_dse.application.series_widths import (
+                    SeriesWidthsUnavailable, series_widths_from_bundle)
+                try:
+                    link_width, flit_width = series_widths_from_bundle(bundle)
+                except SeriesWidthsUnavailable:
+                    period, link_width, flit_width, store_dir = \
+                        None, None, None, None
             exec_opts = SimpleNamespace(
                 binary=bin_path, repo_root=repo_root,
                 run_dir=run_dir, timeout=opts.timeout_s, seed=seed,
-                sample_period_cycles=getattr(
-                    opts, "sample_period_cycles", None),
-                series_link_width_bits=getattr(
-                    opts, "series_link_width_bits", None),
-                series_flit_width_bits=getattr(
-                    opts, "series_flit_width_bits", None),
-                series_store_dir=getattr(
-                    opts, "series_store_dir", None))
+                sample_period_cycles=period,
+                series_link_width_bits=link_width,
+                series_flit_width_bits=flit_width,
+                series_store_dir=store_dir)
             result = adapter.execute(exec_prepared, exec_opts)
             producer = result.producer
         except FileNotFoundError as exc:
@@ -712,6 +728,18 @@ class FabricEvaluator:
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
+        # Per-class readings are an authenticated enrichment of the verified
+        # result, not a second derivation: reuse the ONE catalog-path helper
+        # so the canonical class map, flit width and digest binding are the
+        # same authority. Without a canonical multi-class map nothing is
+        # attached, and class-scoped requirements stay UNMEASURABLE.
+        from veritx_dse.application.authenticated_evaluation import (
+            _ensure_traffic_class_metrics,
+        )
+        _ensure_traffic_class_metrics(
+            compilation=compilation, verified_result=verified_perf,
+            evidence_doc=verified_doc, evidence_sha256=eref.sha256,
+            stats_sha256=artifact.stats_sha256)
         wall_ns = window.to_float() * 1e9 if isinstance(window, QTime) \
             else None
         return EvaluationOutcome(

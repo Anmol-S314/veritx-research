@@ -31,6 +31,32 @@ class MockBookSimRunner:
         result.stderr = ""
         return result
 
+def test_trace_profile_and_evaluate_trace_are_wired():
+    """The new trace-profile and raw-trace evaluation commands parse and
+    dispatch; a parser rename must not silently drop them."""
+    from veritx_dse.cli.cli import DISPATCH, TRACE_CMDS, build_parser
+
+    profile = build_parser().parse_args([
+        "trace", "profile", "--spec", "spec.json", "--out", "out.trace",
+    ])
+    assert profile.trace_cmd == "profile"
+    assert "profile" in TRACE_CMDS
+
+    evaluate = build_parser().parse_args([
+        "evaluate", "trace", "--request", "request.json",
+        "--trace", "out.trace", "--out", "evidence.json",
+    ])
+    assert evaluate.eval_cmd == "trace"
+    assert "trace" in DISPATCH["evaluate"]
+
+    mesh = build_parser().parse_args([
+        "evaluate", "mesh-trace", "--request", "request.json",
+        "--trace", "out.trace", "--out", "evidence.json",
+    ])
+    assert mesh.eval_cmd == "mesh-trace"
+    assert "mesh-trace" in DISPATCH["evaluate"]
+
+
 class TestBuildConfig:
     def test_seed_in_config(self):
         """Seed=42 must appear in generated config."""

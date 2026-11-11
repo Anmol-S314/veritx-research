@@ -9,6 +9,7 @@ from functools import cached_property
 from typing import Any
 
 from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
+from veritx_dse.model.compile_request_v4 import CompileRequestV4
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
 
 from .errors import ControlPlaneError, ErrorCode
@@ -58,7 +59,7 @@ Rationale: docs/decisions/modules/application.md
     """
 
     status: str
-    request: CompileRequest | CompileRequestV3 | CompileRequestV5
+    request: CompileRequest | CompileRequestV3 | CompileRequestV4 | CompileRequestV5
     bundle: Any | None
     certificate: Any | None
     error: str | None
@@ -80,6 +81,14 @@ Rationale: docs/decisions/modules/application.md
     #: None for a single-plane design. On a multi-plane fabric THIS, not the
     #: flat ``bundle.vc_assignment``, says which VCs a traffic class uses.
     multi_plane_vc: Any = None
+    #: STAGE 1 (M1–M4) verdicts, one dict per module that ran:
+    #: ``{module, ok, status, reason, findings}``. Empty for v2/v3 requests
+    #: (no stage-1 intent to check). Additive: existing clients read the
+    #: fields they know and ignore these.
+    stage1_verdicts: tuple = ()
+    #: STAGE 1 warnings (e.g. max_outstanding without ordering). A warning
+    #: compiles; the finding rides on the result instead of being dropped.
+    findings: tuple = ()
 
     def __post_init__(self) -> None:
         if self.status not in ("COMPILED", "INVALID", "UNSUPPORTED"):
@@ -230,7 +239,225 @@ class FabricCompiler:
                            bundle=None, certificate=None, error=reason,
                            stopped_at_stage=owner)
 
-    def compile(self, request: CompileRequest | CompileRequestV3 | CompileRequestV5,
+    def _run_stage1(self, request: Any) -> tuple[tuple, tuple, str | None, str | None, str | None]:
+        """Run STAGE 1 deep modules M1→M4 on a v4 request.
+
+Rationale: docs/design/mesh-stage1-schema-compiler-scope.md §4.5.
+Returns ``(verdicts, findings, status, stage, reason)``: verdicts/findings
+are always populated; on the first refusal status/stage/reason name it.
+v2/v3 requests carry no stage-1 intent and return empty verdicts.
+"""
+        if getattr(request, "schema_version", None) != 4 \
+                or not hasattr(request, "noc_controls"):
+            return (), (), None, None, None
+        verdicts: list[dict[str, Any]] = []
+        findings: list[str] = []
+
+        def _record(module: str, verdict: Any, stage: str) -> tuple[str, str, str] | None:
+            verdicts.append({
+                "module": module,
+                "ok": verdict.ok,
+                "status": verdict.status,
+                "reason": verdict.reason,
+                "findings": list(verdict.findings),
+                "stopped_at_stage": stage,
+            })
+            findings.extend(verdict.findings)
+            if verdict.ok:
+                return None
+            return (verdict.status, stage,
+                    f"[{module}] {verdict.reason}")
+
+        from veritx_dse.model.address_permission import (  # noqa: PLC0415
+            AddressPermissionInput, TrafficRequirement,
+            check_address_permission,
+        )
+        from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+            ClockPowerInput, EndpointDomain, check_clock_power_cdc,
+        )
+        intents = tuple(getattr(request, "agent_intents", ()) or ())
+        by_idx = {intent.agent_idx: intent for intent in intents}
+
+        # M1 — Address & Permission (owner: ADDRESS_DECODE).
+        # Initiator × region model: group identity (agent_idx) is preserved
+        # to the check, never flattened. Duplicate (agent_idx, range) is a
+        # conflict; two groups on one range may differ.
+        from veritx_dse.model.address_permission import (  # noqa: PLC0415
+            InitiatorPolicy,
+        )
+        initiator_policies = tuple(
+            InitiatorPolicy(
+                agent_idx=int(intent.agent_idx),
+                address_range=str(window.address_range),
+                readable=bool(window.readable),
+                writable=bool(window.writable),
+                atomic=bool(getattr(window, "atomic", False)),
+            )
+            for intent in intents
+            for window in getattr(intent, "permission_windows", ()) or ())
+        protocol_of: dict[int, str | None] = {}
+        for intent in intents:
+            fam = getattr(getattr(intent, "protocol", None), "value", None)
+            if fam is None:
+                fam = getattr(intent, "protocol", None)
+                fam = fam if isinstance(fam, str) else None
+            protocol_of[int(intent.agent_idx)] = fam
+        initiator_protocols = tuple(
+            (idx, protocol_of[idx]) for idx in sorted(protocol_of))
+        counts = tuple(int(a.count) for a in request.agents)
+        # Traffic is unattributed at M1 (no rank→range home map, see
+        # address_permission docstring): the check is existential across
+        # initiators for a range, so a read-only window with any write
+        # traffic is INVALID while two opposite policies on one range
+        # (one allows write) compile and differ at runtime.
+        def _req_for_profile(profile) -> TrafficRequirement:
+            cls = profile.traffic_class
+            low = cls.lower()
+            return TrafficRequirement(
+                traffic_class=cls,
+                is_write=("write" in low or "invalidate" in low
+                          or low == "wb" or low.endswith("_wb")),
+                is_read=("read" in low),
+                is_atomic=("atomic" in low),
+                initiator_idx=None)
+        traffic = tuple(
+            _req_for_profile(profile)
+            for profile in request.workload.traffic_profiles)
+        refusal = _record(
+            "address_permission",
+            check_address_permission(AddressPermissionInput(
+                ranges=tuple(request.address_map.ranges),
+                windows=(),
+                agent_counts=counts,
+                traffic=traffic,
+                initiator_policies=initiator_policies,
+                initiator_protocols=initiator_protocols)),
+            "ADDRESS_DECODE")
+        if refusal is not None:
+            return tuple(verdicts), tuple(findings), *refusal
+
+        # M2 — Ordering & VC (owner: VC). The derived assignment is the
+        # authority (D4); only constrains the checks when desires exist.
+        policy = getattr(request, "traffic_policy", None)
+        desired = tuple(getattr(policy, "traffic_class_vcs", ()) or ())
+        if desired:
+            from veritx_dse.model.compile_model import (  # noqa: PLC0415
+                derive_vc_assignment_v3,
+            )
+            from veritx_dse.model.ordering_vc import (  # noqa: PLC0415
+                OrderingVCInput, check_ordering_vc,
+            )
+            try:
+                derived = derive_vc_assignment_v3(request)
+            except Exception as exc:  # noqa: BLE001
+                return (tuple(verdicts), tuple(findings), "INVALID", "VC",
+                        f"[ordering_vc] derived VC assignment cannot be "
+                        f"computed ({exc})")
+            refusal = _record(
+                "ordering_vc",
+                check_ordering_vc(OrderingVCInput(
+                    graph=request.dependencies,
+                    desired=desired,
+                    derived_vc_count=derived.vc_count,
+                    derived_per_class_vc=tuple(sorted(
+                        derived.per_class_vc.items())))),
+                "VC")
+            if refusal is not None:
+                return tuple(verdicts), tuple(findings), *refusal
+        else:
+            verdicts.append({
+                "module": "ordering_vc", "ok": True, "status": "INVALID",
+                "reason": None, "findings": [], "stopped_at_stage": "VC",
+            })
+
+        # M3 — Clock, Power & CDC (owner: ATTACHMENT). Multi-domain fabrics
+        # compile exactly when every named insertion point is covered by a
+        # CdcCell (the CdcCell factory builds one at each point); an
+        # uncovered crossing is a typed CDC_CELL_MISSING refusal.
+        endpoints = tuple(
+            EndpointDomain(
+                agent_idx=i,
+                agent_clock_domain=agent.clock_domain,
+                agent_power_domain=agent.power_domain,
+                intent_clock_domain=(by_idx[i].clock_domain
+                                     if i in by_idx else None),
+                intent_power_domain=(by_idx[i].power_domain
+                                     if i in by_idx else None),
+            )
+            for i, agent in enumerate(request.agents))
+        from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+            crossing_points,
+        )
+        provisional = ClockPowerInput(
+            endpoints=endpoints, agents=tuple(request.agents),
+            num_power_domains=request.physical.num_power_domains)
+        # Real coverage: attempt a CdcCell build at every insertion point.
+        # A point whose build is refused stays uncovered and the M3 gate
+        # below then refuses with CDC_CELL_MISSING (a refusal, not a warn).
+        from veritx_dse.product.cdc_cell_rtl import (  # noqa: PLC0415
+            CdcParams, build_cdc_cell,
+        )
+        covered: list[str] = []
+        for point in crossing_points(provisional):
+            src_agent = (request.agents[point.src_group]
+                         if point.src_group is not None
+                         and point.src_group < len(request.agents)
+                         else (request.agents[0] if request.agents
+                               else None))
+            build = build_cdc_cell(CdcParams(
+                insertion_point=point.insertion_point,
+                src_domain=point.src_domain, dst_domain=point.dst_domain,
+                src_group=point.src_group, dst_group=point.dst_group,
+                data_width=(src_agent.data_width
+                            if src_agent is not None else 64),
+                # Per-domain rates UNDECLARED (rates stay None: MTBF is
+                # NOT_CALCULATED with reason; never substituted from the
+                # global default_clock_freq_mhz assumption).
+            ))
+            if build.verdict.ok:
+                covered.append(point.insertion_point)
+        refusal = _record(
+            "clock_power_cdc",
+            check_clock_power_cdc(ClockPowerInput(
+                endpoints=endpoints,
+                agents=tuple(request.agents),
+                num_power_domains=request.physical.num_power_domains,
+                cdc_cells=tuple(covered))),
+            "ATTACHMENT")
+        if refusal is not None:
+            return tuple(verdicts), tuple(findings), *refusal
+
+        # M4 — Protocol Adapter (owner: PACKET_FORMAT).
+        from veritx_dse.model.protocol_adapter import (  # noqa: PLC0415
+            ProtocolInput, check_protocol,
+        )
+        first = request.agents[0] if request.agents else None
+        refusal = _record(
+            "protocol_adapter",
+            check_protocol(ProtocolInput(
+                intents=intents,
+                data_width=first.data_width if first else 256,
+                addr_width=first.addr_width if first else 64)),
+            "PACKET_FORMAT")
+        if refusal is not None:
+            return tuple(verdicts), tuple(findings), *refusal
+        owned = {int(intent.agent_idx) for intent in intents}
+        unowned = tuple(
+            (idx, getattr(agent, "protocol", None))
+            for idx, agent in enumerate(request.agents)
+            if getattr(agent, "protocol", None) and idx not in owned)
+        if unowned:
+            findings.append(
+                "AGENT_PROTOCOL_UNOWNED: "
+                + ", ".join(f"group {idx} ({literal!r})"
+                            for idx, literal in unowned)
+                + " declare legacy Agent.protocol literals with no matching "
+                "agent_intents entry; the literal is preserved for "
+                "identity and reports only and no adapter is generated "
+                "from it")
+        return tuple(verdicts), tuple(findings), None, None, None
+
+    def compile(self, request: CompileRequest | CompileRequestV3 | CompileRequestV4 | CompileRequestV5,
                 routing_policy: Any = None) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 
@@ -261,8 +488,22 @@ Rationale: docs/decisions/modules/application.md
         )
 
         from veritx_dse.compiler.orchestration import (
-            build_resolved_bundle, build_resolved_bundle_v3,
-            derive_stages_v3)
+            build_resolved_bundle, derive_stages_v3)
+        # STAGE 1 gate: M1–M4 run on the frozen request BEFORE derivation so
+        # their owner stages are authoritative (§5) and intent errors fail
+        # fast. v2/v3 requests carry no stage-1 intent (empty verdicts).
+        # NOTE: the scope doc §4.5 sketches running after derive_stages_v3;
+        # running first is what puts ADDRESS_DECODE/VC/ATTACHMENT/
+        # PACKET_FORMAT refusals ahead of downstream derivation refusals
+        # that would otherwise shadow M1/M3.
+        verdicts, stage1_findings, refusal_status, refusal_stage, refusal_reason = \
+            self._run_stage1(request)
+        if refusal_status is not None:
+            return Compilation(
+                status=refusal_status, request=request, bundle=None,
+                certificate=None, error=refusal_reason,
+                stopped_at_stage=refusal_stage,
+                stage1_verdicts=verdicts, findings=stage1_findings)
         try:
             if isinstance(request, CompileRequestV3) or (
                     getattr(request, "schema_version", None) == 4
@@ -339,13 +580,16 @@ Rationale: docs/decisions/modules/application.md
                 certificate=certificate,
                 error=f"certificate obligations failed: {failed}",
                 stopped_at_stage=CompileStage.VERIFICATION.value,
-                staged=_staged)
+                staged=_staged,
+                stage1_verdicts=verdicts, findings=stage1_findings)
         if routing_policy is None:
             return Compilation(status="COMPILED", request=request,
                                bundle=bundle, certificate=certificate,
                                error=None,
                                control_plane=self._control_plane(bundle),
-                               multi_plane_vc=self._multi_plane_vc(bundle))
+                               multi_plane_vc=self._multi_plane_vc(bundle),
+                               stage1_verdicts=verdicts,
+                               findings=stage1_findings)
         from veritx_dse.compiler.orchestration import (  # noqa: PLC0415
             derive_adaptive_overlay,
         )
@@ -375,11 +619,14 @@ Rationale: docs/decisions/modules/application.md
             return Compilation(
                 status=status, request=request, bundle=None,
                 certificate=None, error=exc.message,
-                stopped_at_stage=stopped, staged=staged)
+                stopped_at_stage=stopped, staged=staged,
+                stage1_verdicts=verdicts, findings=stage1_findings)
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
                            error=None, adaptive=overlay,
                            control_plane=self._control_plane(bundle),
-                           multi_plane_vc=self._multi_plane_vc(bundle))
+                           multi_plane_vc=self._multi_plane_vc(bundle),
+                           stage1_verdicts=verdicts,
+                           findings=stage1_findings)
 
 __all__ = ["Compilation", "FabricCompiler"]

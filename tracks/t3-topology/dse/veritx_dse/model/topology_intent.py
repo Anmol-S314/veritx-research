@@ -18,7 +18,16 @@ from veritx_dse.model.topology_intent_base import (  # noqa: F401
 @dataclass(frozen=True)
 class MeshIntent(TopologyIntent):
     """A k x k nearest-neighbour mesh; each router seats `concentration`
-    endpoints. `side_length` is the number of ROUTERS per side."""
+    endpoints. `side_length` is the number of ROUTERS per side.
+
+    CONCENTRATION IS A FAMILY CHOICE, NOT A FREE MESH KNOB. The certified
+    mesh profile realizes one seat per router; a grid whose routers seat
+    more than one endpoint is ``ConcentratedMeshIntent`` (kind
+    ``concentrated_mesh``), which has its own cmesh-DOR proof. This class
+    keeps accepting ``concentration > 1`` so existing documents stay
+    loadable and hash-stable, but materialization refuses with a hint
+    instead of silently rewriting the declared family.
+    """
     side_length: int
     concentration: int = 1
     kind: ClassVar[str] = "mesh"
@@ -52,7 +61,14 @@ Rationale: docs/decisions/modules/model.md
 @dataclass(frozen=True)
 class TorusIntent(TopologyIntent):
     """A k x k torus (wraparound in every dimension). Wraparound is what
-    MAKES it a torus, so it is not a knob."""
+    MAKES it a torus, so it is not a knob.
+
+    CONCENTRATION IS NOT A FREE TORUS KNOB. The certified native torus-DOR
+    profile covers one seat per router only; no multi-seat native torus
+    profile exists. This class keeps accepting ``concentration > 1`` so
+    existing documents stay loadable and hash-stable, but materialization
+    refuses with a hint instead of silently rewriting the declared family.
+    """
     side_length: int
     concentration: int = 1
     kind: ClassVar[str] = "torus"
@@ -66,9 +82,101 @@ class TorusIntent(TopologyIntent):
                 "concentration": self.concentration}
 
 @dataclass(frozen=True)
+class RingIntent(TopologyIntent):
+    """A native 1-D ring: one wraparound dimension, one terminal per router.
+
+    Distinct from `TorusIntent` (a 2-D square fabric whose family implies
+    wraparound) and from the legacy line-shaped ring materialization: this
+    intent owns the fixed +1/-1 port law and the single n-1/0 dateline.
+    """
+    router_count: int
+    kind: ClassVar[str] = "ring_native"
+
+    def __post_init__(self):
+        _as_int("router_count", self.router_count, minimum=3)
+
+    def parameters(self):
+        return {"router_count": self.router_count}
+
+
+@dataclass(frozen=True)
+class Tree4Intent(TopologyIntent):
+    """Native Tree4: four roots, every middle wired to every root, leaf-only
+    terminals and a randomised upward parent choice.
+
+    Distinct from `StructuredTopologyIntent(family="tree4")`, which is the
+    balanced k-ary tree (one root, one parent per node): that construction
+    has no redundant upward choice, so it cannot execute the fork's NCA
+    function at all.
+    """
+    radix: int
+    levels: int
+    kind: ClassVar[str] = "tree4_native"
+
+    def __post_init__(self):
+        _as_int("radix", self.radix, minimum=2)
+        _as_int("levels", self.levels, minimum=2)
+        if (self.radix, self.levels) != (4, 3):
+            raise TopologyIntentError(
+                "native Tree4 currently supports radix=4, levels=3 only")
+
+    def parameters(self):
+        return {"radix": self.radix, "levels": self.levels}
+
+
+@dataclass(frozen=True)
+class FlyIntent(TopologyIntent):
+    """Native k-ary n-fly (butterfly): m stages of k^(n-1) routers, terminals
+    injecting at stage 0 and ejecting at stage n-1, destination-tag routing.
+
+    Distinct from `StructuredTopologyIntent(family="fly")`, which is an AnyNet
+    description of a graph: it has no stage law, no injection/ejection split
+    and no destination-tag function, so it cannot execute BookSim's `fly`
+    network at all.
+    """
+    radix: int
+    levels: int
+    kind: ClassVar[str] = "fly_native"
+
+    def __post_init__(self):
+        _as_int("radix", self.radix, minimum=2)
+        _as_int("levels", self.levels, minimum=1)
+        if (self.radix, self.levels) != (4, 3):
+            raise TopologyIntentError(
+                "native fly currently supports radix=4, levels=3 only")
+
+    def parameters(self):
+        return {"radix": self.radix, "levels": self.levels}
+
+
+@dataclass(frozen=True)
+class QTreeIntent(TopologyIntent):
+    """Indirect quad-tree: terminals only on leaves, not a balanced-tree alias."""
+    radix: int
+    levels: int
+    kind: ClassVar[str] = "qtree_native"
+
+    def __post_init__(self):
+        _as_int("radix", self.radix, minimum=2)
+        _as_int("levels", self.levels, minimum=2)
+        if (self.radix, self.levels) != (4, 3):
+            raise TopologyIntentError("native QTree currently supports radix=4, levels=3 only")
+
+    def parameters(self):
+        return {"radix": self.radix, "levels": self.levels}
+
+
+@dataclass(frozen=True)
 class FlatFlyIntent(TopologyIntent):
     """A flattened butterfly: `dimension_count` dimensions, each a complete
-    graph over `radix_per_dimension` routers, with concentration."""
+    graph over `radix_per_dimension` routers, with concentration.
+
+    CONCENTRATION IS NOT A FREE FLATFLY KNOB. The certified native flatfly-min
+    profile covers one seat per router only; no multi-seat native flatfly
+    profile exists. This class keeps accepting ``concentration > 1`` so
+    existing documents stay loadable and hash-stable, but materialization
+    refuses with a hint instead of silently rewriting the declared family.
+    """
     radix_per_dimension: int
     dimension_count: int
     concentration: int
@@ -121,8 +229,17 @@ class StructuredTopologyIntent(TopologyIntent):
             raise TopologyIntentError(
                 f"family {self.family!r} takes {sorted(spec['fields'])}, "
                 f"got unknown {unknown}")
+        bool_fields = frozenset(spec.get("bool_fields", ()))
         for field in spec["fields"]:
-            _as_int(field, self.params.get(field), minimum=2)
+            value = self.params.get(field)
+            if field in bool_fields:
+                if type(value) is not bool:
+                    raise TopologyIntentError(
+                        f"family {self.family!r} field {field!r} must be "
+                        f"boolean, got {value!r}")
+            else:
+                minimum = spec.get("minimums", {}).get(field, 2)
+                _as_int(field, value, minimum=minimum)
 
     def parameters(self):
         return {"family": self.family, "params": dict(self.params)}
@@ -279,6 +396,10 @@ _KIND_TO_CLASS: dict[str, type[TopologyIntent]] = {
     "gec": GecTopologyIntent,
     "explicit": ExplicitTopologyIntent,
     "structured": StructuredTopologyIntent,
+    "qtree_native": QTreeIntent,
+    "fly_native": FlyIntent,
+    "tree4_native": Tree4Intent,
+    "ring_native": RingIntent,
 }
 
 _SROTA_FIELDS: frozenset[str] = frozenset({
@@ -301,6 +422,10 @@ _FIELDS: dict[str, frozenset[str]] = {
     "explicit": frozenset({"kind", "graph"}),
     "structured": frozenset({"kind", "family", "params"}),
     "srota": _SROTA_FIELDS,
+    "qtree_native": frozenset({"kind", "radix", "levels"}),
+    "tree4_native": frozenset({"kind", "radix", "levels"}),
+    "ring_native": frozenset({"kind", "router_count"}),
+    "fly_native": frozenset({"kind", "radix", "levels"}),
 }
 
 # SrotaIntent lives in its own module and imports THIS module for the base
@@ -436,7 +561,7 @@ __all__ = [
     "TopologyIntent", "TopologyIntentError", "GecMode",
     "MeshIntent", "ConcentratedMeshIntent", "TorusIntent", "FlatFlyIntent",
     "FatTreeIntent", "GecTopologyIntent", "ExplicitTopologyIntent",
-    "SrotaIntent",
+    "SrotaIntent", "QTreeIntent",
     "AUTHORABLE_INTENT_KINDS", "capability_family_label",
     "topology_intent_from_dict", "topology_intent_from_noc_config",
     "V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION",

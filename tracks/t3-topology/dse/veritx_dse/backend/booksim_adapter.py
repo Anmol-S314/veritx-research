@@ -4,6 +4,7 @@ Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace as _NS
@@ -16,6 +17,9 @@ from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.backend.adapter import (
     BackendAdapter, BackendAssessment, BackendCapability, BackendReadiness,
     ModelFidelity, PreparedExecution, SupportLevel,
+)
+from veritx_dse.performance.traffic_class import (
+    TrafficClassMetricsError, build_traffic_class_metrics,
 )
 
 class BookSimProjectionRefusal(Exception):
@@ -101,6 +105,226 @@ Rationale: docs/decisions/modules/backend.md
              physical_traffic_id)
     _require("resolved_fabric_hash", evidence.resolved_fabric_hash,
              resolved_fabric_hash)
+
+_CLASS_MAP_UNAVAILABLE = (
+    "per-class readings are present in the native stats but the "
+    "canonical trace class map is unavailable, so no per-class reading "
+    "was projected")
+
+def _class_index(value: Any) -> int | None:
+    """A trace-class index from an int or its canonical JSON string key."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str) and value.isdigit() \
+            and str(int(value)) == value:
+        return int(value)
+    return None
+
+def _per_class_metric_values(
+        stats: Mapping[str, Any],
+        trace_classes: Any) -> tuple[list[Any], str | None]:
+    """The per-class counter/latency readings this evidence carries.
+
+    BookSim reports ``stats.flits_by_class`` by trace class INDEX; the
+    canonical NAME comes from ``PreparedBookSimInput.trace_class_map``
+    (or the equivalent map derived from the same canonical traffic).
+    ``stats.latency_by_class`` uses the same index order and is exposed
+    only for fields the fork actually printed. Returns ``(values,
+    limitation)`` and never fabricates:
+
+    - an index the map does not name refuses the WHOLE per-class
+      projection (the map and the evidence disagree — a guessed name
+      would relabel a measurement);
+    - an index the stats omit is simply absent (the class has no reading,
+      which is not a zero);
+    - a non-integer counter refuses rather than coercing.
+    """
+    from veritx_dse.backend.normalized_evidence import MetricValue
+    from veritx_dse.optimization.metric_registry import (
+        BOOKSIM_PER_CLASS_LATENCY_METRICS, BOOKSIM_PER_CLASS_METRICS,
+        traffic_class_dimensions,
+    )
+    has_counters = isinstance(stats, Mapping) and bool(
+        stats.get("flits_by_class"))
+    latency_stats = (stats.get("latency_by_class")
+                     if isinstance(stats, Mapping) else None)
+    has_latency = isinstance(latency_stats, Mapping) and bool(latency_stats)
+    if not has_counters and not has_latency:
+        return [], None
+    classes = tuple(trace_classes or ())
+    if not classes:
+        # A single class block is fully represented by the aggregate scalar
+        # latency keys; without a canonical map there is no honest NAME for
+        # a dimensioned row, so nothing is projected and nothing is claimed.
+        if not has_counters and isinstance(latency_stats, Mapping) \
+                and len(latency_stats) == 1:
+            return [], None
+        return [], _CLASS_MAP_UNAVAILABLE
+    values: list[MetricValue] = []
+
+    def _class_name(raw_index: Any,
+                    seen: set[int]) -> tuple[str | None, str | None]:
+        index = _class_index(raw_index)
+        if index is None or index >= len(classes):
+            return None, (
+                f"native per-class index {raw_index!r} is outside the "
+                f"canonical class map {list(classes)}; refusing to guess "
+                f"a class name")
+        if index in seen:
+            return None, (
+                f"native per-class stats repeat class index {index}; "
+                f"refusing a spliced per-class reading")
+        seen.add(index)
+        return classes[index], None
+
+    counters = (stats.get("flits_by_class")
+                if isinstance(stats, Mapping) else None)
+    if isinstance(counters, Mapping) and counters:
+        seen: set[int] = set()
+        for raw_index, row in counters.items():
+            class_name, reason = _class_name(raw_index, seen)
+            if reason is not None:
+                return [], reason.replace(
+                    "native per-class", "native flits_by_class")
+            if not isinstance(row, Mapping):
+                return [], (
+                    f"native flits_by_class[{raw_index}] is not a counter "
+                    f"mapping; refusing to invent per-class values")
+            for metric, counter in BOOKSIM_PER_CLASS_METRICS:
+                raw = row.get(counter)
+                if raw is None:
+                    continue
+                if isinstance(raw, bool) or not isinstance(raw, int) \
+                        or raw < 0:
+                    return [], (
+                        f"native flits_by_class[{raw_index}][{counter!r}] "
+                        f"is not a non-negative integer, got {raw!r}")
+                values.append(MetricValue(
+                    key=metric, value=float(raw), unit=None,
+                    source_metric_key=None,
+                    dimensions=traffic_class_dimensions(class_name)))
+
+    latency = (stats.get("latency_by_class")
+               if isinstance(stats, Mapping) else None)
+    if isinstance(latency, Mapping) and latency:
+        seen = set()
+        for raw_index, row in latency.items():
+            class_name, reason = _class_name(raw_index, seen)
+            if reason is not None:
+                return [], reason.replace(
+                    "native per-class", "native latency_by_class")
+            if not isinstance(row, Mapping):
+                return [], (
+                    f"native latency_by_class[{raw_index}] is not a "
+                    f"latency mapping; refusing to invent per-class values")
+            for metric, field in BOOKSIM_PER_CLASS_LATENCY_METRICS:
+                raw = row.get(field)
+                if raw is None:
+                    continue
+                if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                    return [], (
+                        f"native latency_by_class[{raw_index}][{field!r}] "
+                        f"is not a real number, got {raw!r}")
+                number = float(raw)
+                if number != number or abs(number) == float("inf"):
+                    return [], (
+                        f"native latency_by_class[{raw_index}][{field!r}] "
+                        f"is not finite, got {raw!r}")
+                if metric == "pkt_count" and (
+                        not isinstance(raw, int) or raw < 0):
+                    return [], (
+                        f"native latency_by_class[{raw_index}][{field!r}] "
+                        f"is not a non-negative integer, got {raw!r}")
+                values.append(MetricValue(
+                    key=metric, value=number, unit=None,
+                    source_metric_key=None,
+                    dimensions=traffic_class_dimensions(class_name)))
+    values.sort(key=lambda metric: (metric.key, metric.dimensions))
+    return values, None
+
+def _trace_classes_of(physical_traffic: Any) -> tuple[str, ...]:
+    """The canonical trace class map of a physical traffic artifact.
+
+    The SAME function the projection renders trace indices with, so the
+    index->name correspondence is the renderer's own, not a second copy.
+    Single-class artifacts are named too (the prepared input binds no map
+    there, but the one class is still canonical). Any refusal is () —
+    callers then decline to project per-class readings.
+    """
+    if physical_traffic is None:
+        return ()
+    try:
+        from veritx_dse.backend.booksim_projection import trace_class_map
+        return tuple(trace_class_map(physical_traffic))
+    except Exception:  # optional enrichment: never fail a normalization
+        return ()
+
+def _physical_traffic_from_context(context: Any) -> Any | None:
+    """The canonical physical traffic this context projects, or None."""
+    try:
+        _logical, physical = BookSimAdapter()._canonical_traffic(
+            context,
+            traffic_class=getattr(context, "unified_traffic_class", None))
+    except Exception:  # optional enrichment: never fail a normalization
+        return None
+    return physical
+
+
+def _trace_classes_from_context(context: Any) -> tuple[str, ...] | None:
+    """The canonical trace class map this context projects, or None.
+
+    Rebuilds the SAME canonical traffic the evaluator built (the workload
+    layer memoizes it by content) and reads the ONE class-map authority.
+    Any refusal or absent context means "no map" — normalization never
+    guesses a class name, it only declines to project per-class readings.
+    """
+    physical = _physical_traffic_from_context(context)
+    return _trace_classes_of(physical) or None
+
+
+def _traffic_class_metrics_from_evidence(
+        *,
+        stats: Mapping[str, Any],
+        classes: tuple[str, ...],
+        flit_width_bits: int | None,
+        evidence_sha256: str,
+        stats_sha256: str,
+) -> dict[str, Any] | None:
+    """Build the verified-result per-class block from parsed evidence stats."""
+    return build_traffic_class_metrics(
+        stats=stats, class_names=classes,
+        flit_width_bits=flit_width_bits,
+        evidence_sha256=evidence_sha256, stats_sha256=stats_sha256)
+
+
+def _attach_traffic_class_metrics(outcome: Any, block: Any) -> None:
+    """Attach per-class readings to the outcome's verified result.
+
+    The block is not part of the result's content identity (aggregate
+    results keep their exact identity) but it is digest-bound to the
+    result's network binding; ``reverify_result`` refuses a mismatch.
+    """
+    if block is None:
+        return
+    performance = getattr(outcome, "performance_result", None)
+    if not isinstance(performance, dict):
+        return
+    binding = performance.get("network_binding")
+    if not isinstance(binding, dict):
+        return
+    if performance.get("traffic_class_metrics") is not None:
+        return
+    def _bare(value: Any) -> Any:
+        return value[7:] if isinstance(value, str) \
+            and value.startswith("sha256:") else value
+    if _bare(block.get("evidence_sha256")) != \
+            _bare(binding.get("evidence_sha256")) \
+            or _bare(block.get("stats_sha256")) != \
+            _bare(binding.get("stats_sha256")):
+        return
+    performance["traffic_class_metrics"] = block
 
 class BookSimAdapter:
     """Orchestrates the certified standalone-BookSim execution chain.
@@ -595,7 +819,25 @@ Rationale: docs/decisions/modules/backend.md
             realization_digest=native.realization_digest,
             resolved_fabric_hash=resolved_hash)
         metrics: list[MetricValue] = []
+        from veritx_dse.optimization.metric_registry import (
+            BOOKSIM_PER_CLASS_LATENCY_METRICS,
+        )
+        latency_keys = {metric for metric, _field
+                        in BOOKSIM_PER_CLASS_LATENCY_METRICS}
+        latency_by_class = evidence.stats.get("latency_by_class")
+        classes = (getattr(native.prepared, "trace_class_map", ())
+                   or _trace_classes_of(native.physical_traffic))
+        multi_class_latency = (
+            (isinstance(latency_by_class, Mapping)
+             and len(latency_by_class) > 1)
+            or len(tuple(classes or ())) > 1)
         for key, value in evidence.stats.items():
+            if multi_class_latency and key in latency_keys:
+                # The historical scalar latency keys match the FIRST
+                # ``Class N:`` block, which is class 0 — not an aggregate
+                # for a multi-class run. The measured per-class rows below
+                # carry the real readings; never relabel class 0 as all.
+                continue
             if isinstance(value, bool):
                 continue
             if isinstance(value, int):
@@ -607,6 +849,17 @@ Rationale: docs/decisions/modules/backend.md
                     metrics.append(MetricValue(
                         key=key, value=value, unit=None,
                         source_metric_key=key))
+        per_class, class_limitation = _per_class_metric_values(
+            evidence.stats, classes)
+        metrics.extend(per_class)
+        limitations = self._capabilities[0].limitations
+        if multi_class_latency:
+            limitations = limitations + (
+                "multi-class BookSim latency is printed per traffic "
+                "class; the scalar packet/flit latency keys are not an "
+                "aggregate and are not normalized",)
+        if class_limitation is not None:
+            limitations = limitations + (class_limitation,)
         return NormalizedBackendEvidence(
             backend_id=self.backend_id, question=question,
             model_fidelity=BOOKSIM_MODEL_FIDELITY,
@@ -621,15 +874,23 @@ Rationale: docs/decisions/modules/backend.md
             backend_config_hash=native.config_hash,
             backend_input_hash=native.input_hash,
             metrics=tuple(metrics),
-            limitations=self._capabilities[0].limitations)
+            limitations=limitations)
 
 def normalize_booksim_outcome(
     context: CanonicalEvaluationContext,
     outcome: Any,
+    *,
+    trace_class_map: tuple[str, ...] | None = None,
 ) -> NormalizedBackendEvidence:
     """Normalize the authenticated resulting outcome of the certified
     FabricEvaluator — the federated path that must NOT construct a
     second BookSim evidence chain.
+
+    ``trace_class_map`` is the canonical class map this run rendered. The
+    federated path may pass the map it prepared; when it does not, the map
+    is derived from the same canonical traffic the evaluator built. Without
+    one, per-class counters stay unprojected (a named limitation), never
+    guessed.
 
 Rationale: docs/decisions/modules/backend.md
     """
@@ -691,8 +952,25 @@ Rationale: docs/decisions/modules/backend.md
         realization_digest=outcome.realization_digest,
         resolved_fabric_hash=_outcome_resolved_hash)
     metrics: list[MetricValue] = []
+    physical = _physical_traffic_from_context(context)
+    classes = tuple(trace_class_map or ()) \
+        or _trace_classes_of(physical) or ()
+    from veritx_dse.optimization.metric_registry import (
+        BOOKSIM_PER_CLASS_LATENCY_METRICS,
+    )
+    latency_keys = {metric for metric, _field
+                    in BOOKSIM_PER_CLASS_LATENCY_METRICS}
+    latency_by_class = evidence.stats.get("latency_by_class")
+    multi_class_latency = (
+        (isinstance(latency_by_class, Mapping)
+         and len(latency_by_class) > 1)
+        or len(classes) > 1)
     stats = outcome.metrics or {}
     for key, value in stats.items():
+        if multi_class_latency and key in latency_keys:
+            # Class blocks are per class; the scalar key is class 0's
+            # first block, never a multi-class aggregate.
+            continue
         if isinstance(value, bool):
             continue
         if isinstance(value, int):
@@ -704,6 +982,41 @@ Rationale: docs/decisions/modules/backend.md
                 metrics.append(MetricValue(
                     key=key, value=value, unit=None,
                     source_metric_key=key))
+    per_class, class_limitation = _per_class_metric_values(
+        evidence.stats, classes)
+    metrics.extend(per_class)
+    limitations = (
+        "network packet simulation only: cycles are the "
+        "canonical projection's completion window, never "
+        "end-to-end workload runtime",)
+    if multi_class_latency:
+        limitations = limitations + (
+            "multi-class BookSim latency is printed per traffic "
+            "class; the scalar packet/flit latency keys are not an "
+            "aggregate and are not normalized",)
+    if class_limitation is not None:
+        limitations = limitations + (class_limitation,)
+    flit_width_bits = getattr(
+        getattr(physical, "packet_format", None), "flit_width_bits", None)
+    # The direct evaluator already attaches the authenticated class block
+    # through the ONE application helper; reuse it instead of deriving a
+    # second block here. Only an outcome without one is enriched locally.
+    performance = getattr(outcome, "performance_result", None)
+    class_block = (performance.get("traffic_class_metrics")
+                   if isinstance(performance, dict) else None)
+    if class_block is None:
+        try:
+            if len(classes) > 1:
+                class_block = _traffic_class_metrics_from_evidence(
+                    stats=evidence.stats, classes=classes,
+                    flit_width_bits=flit_width_bits,
+                    evidence_sha256=outcome.raw_evidence_digest,
+                    stats_sha256=outcome.stats_digest)
+        except TrafficClassMetricsError as exc:
+            limitation = f"per-class requirement evidence refused: {exc}"
+            if limitation not in limitations:
+                limitations = limitations + (limitation,)
+    _attach_traffic_class_metrics(outcome, class_block)
     _resolved = context.bundle.resolved_fabric.resolved_fabric_hash
     resolved_hash = _resolved() if callable(_resolved) else _resolved
     return NormalizedBackendEvidence(
@@ -721,10 +1034,7 @@ Rationale: docs/decisions/modules/backend.md
         backend_config_hash=outcome.backend_config_hash,
         backend_input_hash=outcome.backend_input_hash,
         metrics=tuple(metrics),
-        limitations=(
-            "network packet simulation only: cycles are the "
-            "canonical projection's completion window, never "
-            "end-to-end workload runtime",))
+        limitations=limitations)
 
 __all__ = [
     "BOOKSIM_MODEL_FIDELITY", "BookSimAdapter", "BookSimExecutionResult",

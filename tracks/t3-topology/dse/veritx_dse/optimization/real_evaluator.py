@@ -25,6 +25,7 @@ from veritx_dse.application.federated_evaluator import (
     ANALYSIS_INCONCLUSIVE,
     ANALYSIS_UNAVAILABLE,
     BookSimRunOptions,
+    AstraRunOptions,
     evaluate_federated,
 )
 from veritx_dse.application.requirements import (
@@ -39,6 +40,7 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.model.generation import is_v4_request
+from veritx_dse.optimization.definition import metric_axis_key
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
@@ -48,6 +50,8 @@ from veritx_dse.optimization.evaluators import (
 )
 from veritx_dse.optimization.metric_registry import (
     CERTIFIED_METRIC_REGISTRY,
+    TRAFFIC_CLASS_DIMENSION,
+    traffic_class_dimensions,
 )
 from veritx_dse.workload.intent_lowering import (
     assert_traffic_classes_bound,
@@ -241,6 +245,7 @@ Rationale: docs/decisions/modules/optimization.md
                 binary=self.binary, repo_root=self.repo_root,
                 timeout_s=self.timeout_s,
                 network_clock_hz=self.network_clock_hz),
+            astra_options=AstraRunOptions(timeout_s=self.timeout_s, repo_root=self.repo_root),
             run_dir=str(run_dir))
         by_question = {a.question: a for a in federated.analyses}
         analyses = tuple(federated.analyses)
@@ -312,8 +317,7 @@ Rationale: docs/decisions/modules/optimization.md
             self.objectives, network_analysis, values)
         extra_values, extra_provenance, miss = \
             self._bind_federated_objectives(
-                {a.question: a for a in analyses
-                 if a.question is not NETWORK_QUESTION})
+                {a.question: a for a in analyses})
         for key, value in extra_values.items():
             if key in values:
                 raise EvaluationError(
@@ -323,8 +327,9 @@ Rationale: docs/decisions/modules/optimization.md
                     f"different model's number")
             values[key] = value
         provenance.update(extra_provenance)
-        miss.update(_network_miss_reasons(
-            self.objectives, values))
+        for key, reason in _network_miss_reasons(
+                self.objectives, values).items():
+            miss.setdefault(key, reason)
         if not report_passes(report):
             bad = [e for e in report.get("entries", [])
                    if e.get("binding") and
@@ -365,11 +370,20 @@ Rationale: docs/decisions/modules/optimization.md
     def _bind_federated_objectives(
             self, by_question: dict[Any, Any]
             ) -> tuple[dict[str, float], dict[str, Any], dict[str, str]]:
-        """Read non-network objectives from their analyses' envelopes.
+        """Read non-network and per-class objectives from their envelopes.
 
-        Returns (values, provenance, miss-reasons). Network-question
-        objectives are never read here — they come from the
-        authenticated proof, never from an envelope projection.
+        Returns (values, provenance, miss-reasons). Aggregate
+        network-question objectives are never read here — they come from
+        the authenticated proof, never from an envelope projection. A
+        NETWORK_COMPLETION objective that names a traffic class reads the
+        dimensioned transport reading (per-class flits/latency) from the
+        network envelope; the aggregate completion proof authority is
+        unchanged.
+
+        Values, provenance and miss reasons are keyed by the stable
+        ``(metric, traffic_class)`` axis key: an aggregate axis keeps the
+        bare metric name, a class-scoped axis appends
+        ``@traffic_class=<class>``.
         """
         values: dict[str, float] = {}
         provenance: dict[str, Any] = {}
@@ -377,49 +391,89 @@ Rationale: docs/decisions/modules/optimization.md
         for objective in (self.objectives or ()):
             metric = getattr(objective, "metric", None)
             question = getattr(objective, "question", None)
-            if question is NETWORK_QUESTION:
+            traffic_class = getattr(objective, "traffic_class", None)
+            if question is NETWORK_QUESTION and traffic_class is None:
                 continue
             if not isinstance(metric, str) or not metric:
                 continue
+            key = metric_axis_key(metric, traffic_class)
             analysis = by_question.get(question)
             if analysis is None:
-                miss[metric] = (
+                miss[key] = (
                     f"question {question.value} was not executed — "
-                    f"objective {metric!r} has no analysis to read")
+                    f"objective {key!r} has no analysis to read")
                 continue
             constraint = getattr(objective, "backend_id", None)
             if constraint is not None and \
                     analysis.backend_id != constraint:
-                miss[metric] = (
+                miss[key] = (
                     f"backend constraint {constraint!r} not satisfied: "
                     f"question {question.value} was planned on "
                     f"{analysis.backend_id!r} — never substituted")
                 continue
             if analysis.status != ANALYSIS_EVALUATED or \
                     analysis.normalized_evidence is None:
-                miss[metric] = (
+                miss[key] = (
                     f"question {question.value} on "
                     f"{analysis.backend_id!r} is {analysis.status}: "
                     f"{analysis.reason}")
                 continue
             envelope = analysis.normalized_evidence
-            scalars = [m for m in envelope.metrics
-                       if m.key == metric and m.dimensions == ()]
-            if not scalars:
-                if any(m.key == metric for m in envelope.metrics):
-                    miss[metric] = (
-                        f"metric {metric!r} from {question.value} is "
-                        f"measured with dimensions only "
-                        f"(per-rank/per-request); a scalar objective "
-                        f"cannot bind it — no invented key suffixes")
-                else:
-                    miss[metric] = (
-                        f"metric {metric!r} not evidenced by "
-                        f"{question.value} on {analysis.backend_id!r}")
-                continue
-            found = scalars[0]
+            if traffic_class is None:
+                found = next(
+                    (m for m in envelope.metrics
+                     if m.key == metric and m.dimensions == ()), None)
+                if found is None:
+                    if any(m.key == metric for m in envelope.metrics):
+                        miss[key] = (
+                            f"metric {metric!r} from {question.value} is "
+                            f"measured with dimensions only "
+                            f"(per-rank/per-request); a scalar objective "
+                            f"cannot bind it — no invented key suffixes")
+                    else:
+                        miss[key] = (
+                            f"metric {metric!r} not evidenced by "
+                            f"{question.value} on {analysis.backend_id!r}")
+                    continue
+            else:
+                try:
+                    wanted = traffic_class_dimensions(traffic_class)
+                except ValueError as exc:
+                    miss[key] = (
+                        f"objective {key!r} names traffic class "
+                        f"{traffic_class!r}, which is not canonical: {exc}")
+                    continue
+                found = next(
+                    (m for m in envelope.metrics
+                     if m.key == metric and m.dimensions == wanted), None)
+                if found is None:
+                    if any(m.key == metric and m.dimensions == ()
+                           for m in envelope.metrics):
+                        miss[key] = (
+                            f"metric {metric!r} is evidenced by "
+                            f"{question.value} only as an aggregate; "
+                            f"traffic class {traffic_class!r} has no "
+                            f"measured reading — never substituted, never "
+                            f"zero")
+                    elif any(m.key == metric for m in envelope.metrics):
+                        miss[key] = (
+                            f"metric {metric!r} is evidenced by "
+                            f"{question.value}, but not for traffic class "
+                            f"{traffic_class!r}; evidenced classes: "
+                            f"{sorted({dict(m.dimensions).get(
+                                TRAFFIC_CLASS_DIMENSION) for m in
+                                envelope.metrics
+                                if m.key == metric and
+                                TRAFFIC_CLASS_DIMENSION in
+                                dict(m.dimensions)})}")
+                    else:
+                        miss[key] = (
+                            f"metric {metric!r} not evidenced by "
+                            f"{question.value} on {analysis.backend_id!r} "
+                            f"for traffic class {traffic_class!r}")
+                    continue
             fidelity = analysis.model_fidelity
-            provenance[metric] = ObjectiveProvenance(
+            provenance[key] = ObjectiveProvenance(
                 metric_key=metric, question=question,
                 backend_id=analysis.backend_id,
                 model_fidelity=(None if fidelity is None
@@ -427,7 +481,7 @@ Rationale: docs/decisions/modules/optimization.md
                 qualification=analysis.qualification,
                 native_evidence_id=analysis.native_evidence_id,
                 unit=found.unit, value=float(found.value))
-            values[metric] = float(found.value)
+            values[key] = float(found.value)
         return values, provenance, miss
 
 
@@ -452,6 +506,10 @@ def _network_provenance(objectives: tuple[Any, ...] | None,
     for objective in (objectives or ()):
         if getattr(objective, "question", None) is not NETWORK_QUESTION:
             continue
+        if getattr(objective, "traffic_class", None) is not None:
+            # Per-class transport readings bind from the envelope; the
+            # aggregate proof does not carry a class-scoped value.
+            continue
         metric = getattr(objective, "metric", None)
         if metric in values:
             out[metric] = ObjectiveProvenance(
@@ -473,10 +531,20 @@ def _network_miss_reasons(objectives: tuple[Any, ...] | None,
         if getattr(objective, "question", None) is not NETWORK_QUESTION:
             continue
         metric = getattr(objective, "metric", None)
-        if isinstance(metric, str) and metric and metric not in values:
-            miss[metric] = (
-                f"metric {metric!r} not evidenced by the authenticated "
-                f"network proof over NETWORK_COMPLETION")
+        if isinstance(metric, str) and metric:
+            traffic_class = getattr(objective, "traffic_class", None)
+            key = metric_axis_key(metric, traffic_class)
+            if key in values:
+                continue
+            if traffic_class is not None:
+                miss[key] = (
+                    f"metric {metric!r} for traffic class "
+                    f"{traffic_class!r} not evidenced by the network "
+                    f"evaluation over NETWORK_COMPLETION")
+            else:
+                miss[key] = (
+                    f"metric {metric!r} not evidenced by the authenticated "
+                    f"network proof over NETWORK_COMPLETION")
     return miss
 
 

@@ -6,7 +6,10 @@ vendored fork when a binary is available and skip otherwise.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -76,6 +79,34 @@ def _execute(tmp_path, *, prepared=None, runner=None, **kw):
         run_dir=tmp_path / "run", timeout=30,
         runner=runner or _runner_for(prepared), **kw)
 
+def test_supervised_runner_persists_partial_stdout_and_stderr_on_timeout(tmp_path):
+    command = (sys.executable, "-c",
+               "import sys,time; print('partial-out', flush=True); "
+               "print('partial-err', file=sys.stderr, flush=True); "
+               "time.sleep(2)")
+
+    outcome = bx._supervised_runner(command, tmp_path, timeout=0.1)
+
+    assert outcome.timed_out
+    assert outcome.stdout == "partial-out\n"
+    assert outcome.stderr == "partial-err\n"
+    assert (tmp_path / "booksim.stdout.log").read_text() == outcome.stdout
+    assert (tmp_path / "booksim.stderr.log").read_text() == outcome.stderr
+    manifest = json.loads((tmp_path / "booksim-process-logs.json").read_text())
+    assert manifest["timed_out"] is True
+    assert manifest["logs"]["stdout"]["size_bytes"] == len(
+        outcome.stdout.encode())
+    assert manifest["logs"]["stdout"]["sha256"] == hashlib.sha256(
+        outcome.stdout.encode()).hexdigest()
+    assert manifest["logs"]["stderr"]["sha256"] == hashlib.sha256(
+        outcome.stderr.encode()).hexdigest()
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+    bundle = finalize_run_bundle(tmp_path)
+    assert "booksim.stdout.log" in bundle["files"]
+    assert "booksim.stderr.log" in bundle["files"]
+    assert "booksim-process-logs.json" in bundle["files"]
+
+
 @pytest.mark.parametrize("token", ["-", "nan", "-nan", "inf", "-inf"])
 def test_unavailable_and_nonfinite_metrics_become_none(token):
     stdout = (GOOD_STDOUT.replace("12.5", token)
@@ -85,6 +116,30 @@ def test_unavailable_and_nonfinite_metrics_become_none(token):
     assert stats["flit_latency_avg"] is None
     assert stats["completion_cycles"] == 777
     assert stats["loaded_trace_packets"] == 5
+
+def test_request_time_percentiles_are_parsed_from_the_fork_stats():
+    """The fork prints exact p50/p95/p99 over _all_latencies; the product
+    must carry them, because a mean cannot answer a tail question."""
+    stdout = (GOOD_STDOUT
+              + "\tp50 = 11.0\n"
+              + "\tp95 = 19.5\n"
+              + "\tp99 = 24.25\n"
+              + "\tpkt_count = 5\n"
+              + "\thonest_avg = 12.75\n")
+    stats = bx.parse_booksim_stats(stdout, GOOD_STDERR)
+    assert stats["p50"] == 11.0
+    assert stats["p95"] == 19.5
+    assert stats["p99"] == 24.25
+    assert stats["pkt_count"] == 5
+    assert stats["honest_latency"] == 12.75
+
+def test_percentiles_are_absent_when_the_fork_prints_none():
+    stats = bx.parse_booksim_stats(GOOD_STDOUT, GOOD_STDERR)
+    assert stats["p50"] is None
+    assert stats["p95"] is None
+    assert stats["p99"] is None
+    assert stats["pkt_count"] is None
+    assert stats["honest_latency"] is None
 
 def test_latency_is_not_required_for_trace_driven_runs():
     stdout = ("Loaded text trace: 5 packets from workload.trace\n"
@@ -466,3 +521,43 @@ def test_real_late_trace_event_is_not_truncated(tmp_path):
         == schedule["expected_packets"]
     injected = record.evidence.stats["injected_trace_packets"]
     assert injected in (None, schedule["expected_packets"])
+
+
+def test_observed_watch_plan_spreads_samples_across_the_run():
+    """A prefix of packet ids is a cold-start sample, not a sample of the run."""
+    from veritx_dse.backend.booksim_execution import observed_watch_plan
+    trace = "\n".join(f"0 {index} 1 1 8" for index in range(8928)) + "\n"
+    ids, plan = observed_watch_plan(trace, budget=96)
+    assert plan["declared_packets"] == 8928
+    assert plan["stride"] == 93
+    assert plan["sampled_packets"] == len(ids) == 96
+    assert ids[0] == 0 and ids[-1] > 8800
+    assert ids == sorted(set(ids))
+    # The rule is recorded, so a reader can reproduce or challenge the sample.
+    assert "every 93th" in plan["rule"]
+
+
+def test_observed_watch_plan_handles_short_and_empty_traces():
+    from veritx_dse.backend.booksim_execution import observed_watch_plan
+    ids, plan = observed_watch_plan("0 0 1 1 8\n\n# comment\n% comment\n", budget=96)
+    assert ids == [0]
+    assert plan["stride"] == 1 and plan["declared_packets"] == 1
+    ids, plan = observed_watch_plan("", budget=96)
+    assert ids == []
+    assert plan["declared_packets"] == 0 and plan["stride"] is None
+
+
+def test_amendment_writes_only_the_sampled_watch_ids():
+    from veritx_dse.backend.booksim_execution import amend_config_for_series
+    amended = amend_config_for_series(
+        "topology=mesh;\n", sample_period_cycles=10, run_hash="a" * 64,
+        binary_sha256="b" * 64, link_capacity=1, trace_sha256="c" * 64,
+        config_sha256="d" * 64, watch_packet_ids=(0, 47, 94))
+    assert "watch_out = observed_hops.log;" in amended
+    assert "watch_packets = {0,47,94};" in amended
+    # An unsampled call must not leave a watch file behind.
+    plain = amend_config_for_series(
+        "topology=mesh;\n", sample_period_cycles=10, run_hash="a" * 64,
+        binary_sha256="b" * 64, link_capacity=1, trace_sha256="c" * 64,
+        config_sha256="d" * 64)
+    assert "watch_packets" not in plain and "watch_out" not in plain

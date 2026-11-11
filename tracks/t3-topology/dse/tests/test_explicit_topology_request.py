@@ -211,11 +211,12 @@ def test_cfab_18c_named_families_keep_dor():
         art = materialize_family(fam, endpoint_count=16)
         assert routing_policy_for(art) == "DOR_XY", fam
 
-def test_cfab_18d_undeclared_family_refuses_rather_than_guessing():
-    """RING is deliberately NOT in the policy table (a test fixture, not
-    user intent); it must refuse with a typed error rather than silently
-    inherit a policy. Torus graduated to DOR_TORUS_XY via its sealed
-    class and is covered by the routing-table tests."""
+def test_cfab_18d_materialized_family_does_not_imply_routable_graph():
+    """`ring_native` is certified RING_DATELINE; the older `ring` fixture is
+    a different construction (ports ordered by neighbour id, so the order
+    flips on every interior router) and inherit a policy. Torus graduated
+    to DOR_TORUS_XY via its sealed class and is covered by the
+    routing-table tests."""
     from veritx_dse.model.routing import routing_policy_for
     from veritx_dse.model.topology_artifact import (
         MaterializedFamily, materialize_family,

@@ -98,4 +98,7 @@ def test_untagged_backlog_is_bounded_and_reported():
     # Current measured backlog. A change here is a reviewed decision: either
     # a new gap site appeared, or one got tagged. Both are worth a look.
     # The "no hardware" phrase now contributes no refusal/backlog site.
-    assert len(backlog) == 18
+    # 2026-11-10: 18 -> 21 (three new "no canonical ..." gap declarations:
+    # the per-agent intent list, the traffic policy and the workload traffic
+    # profiles; all three are genuine open gaps, not regressions).
+    assert len(backlog) == 21

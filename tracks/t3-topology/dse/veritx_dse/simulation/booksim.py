@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from functools import lru_cache
@@ -126,10 +127,11 @@ def _build_anynet_config(params: dict, topo: Topology) -> str:
 
 @lru_cache(maxsize=16)
 def find_booksim_bin(repo_root: Path) -> Path:
-    """Locate the BookSim binary."""
+    """Locate the BookSim binary (platform executable suffix included)."""
+    suffix = ".exe" if sys.platform == "win32" else ""
     candidates = [
-        repo_root / "third_party" / "booksim2" / "src" / "booksim",
-        repo_root / "third_party" / "booksim2" / "build" / "booksim",
+        repo_root / "third_party" / "booksim2" / "src" / f"booksim{suffix}",
+        repo_root / "third_party" / "booksim2" / "build" / f"booksim{suffix}",
     ]
     for c in candidates:
         if c.exists():

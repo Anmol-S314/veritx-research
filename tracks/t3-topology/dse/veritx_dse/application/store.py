@@ -4,7 +4,8 @@ Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
-import fcntl
+from veritx_dse.core.atomic import atomic_replace
+from veritx_dse.core.file_lock import lock_exclusive, unlock
 import json
 import os
 import re
@@ -75,6 +76,9 @@ def _flush_and_sync(handle: Any) -> None:
     os.fsync(handle.fileno())
 
 def _sync_directory(directory: Path) -> None:
+    # os.open cannot open Windows directories; file data is fsynced separately.
+    if os.name == "nt":
+        return
     fd = os.open(str(directory), os.O_RDONLY)
     try:
         os.fsync(fd)
@@ -214,11 +218,11 @@ class ResourceStore:
     def _write_lock(self) -> Iterator[None]:
         fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o644)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            lock_exclusive(fd)
             try:
                 yield
             finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                unlock(fd)
         finally:
             os.close(fd)
 
@@ -232,7 +236,7 @@ class ResourceStore:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
                 _flush_and_sync(handle)
-            os.replace(tmp_path, str(path))
+            atomic_replace(tmp_path, str(path))
             tmp_path = None
             _sync_directory(directory)
         except OSError as exc:

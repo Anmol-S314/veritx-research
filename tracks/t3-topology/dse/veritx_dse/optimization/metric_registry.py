@@ -338,6 +338,129 @@ def wave_e_honesty_metadata(verified: Any) -> dict[str, Any]:
         meta["fidelity_warning"] = verified.get("metrics_warning")
     return meta
 
+#: The dimension an objective asserts to read a per-class reading.
+TRAFFIC_CLASS_DIMENSION = "traffic_class"
+
+#: The PER-CLASS counters the BookSim fork actually emits.
+#:
+#: (envelope metric key, ``stats.flits_by_class`` counter). BookSim reports
+#: ``flits_by_class`` keyed by trace class INDEX; the canonical class NAME
+#: comes from ``PreparedBookSimInput.trace_class_map`` and never from a
+#: guess.
+BOOKSIM_PER_CLASS_METRICS: tuple[tuple[str, str], ...] = (
+    ("flits_injected", "injected"),
+    ("flits_accepted", "accepted"),
+)
+
+#: The PER-CLASS latency statistics the fork's ``DisplayStats`` emits inside
+#: each ``Class N:`` block. (envelope metric key, ``latency_by_class`` field).
+#: A field is exposed only when the native stdout carried it: the drain block
+#: prints no latency, and a clean trace run may legitimately have no packet
+#: population.
+BOOKSIM_PER_CLASS_LATENCY_METRICS: tuple[tuple[str, str], ...] = (
+    ("packet_latency_avg", "packet_latency_avg"),
+    ("flit_latency_avg", "flit_latency_avg"),
+    ("p50", "p50"),
+    ("p95", "p95"),
+    ("p99", "p99"),
+    ("honest_latency", "honest_latency"),
+    ("pkt_count", "pkt_count"),
+)
+
+_BOOKSIM_PER_CLASS_COUNTERS: Mapping[str, str] = MappingProxyType(
+    dict(BOOKSIM_PER_CLASS_METRICS))
+
+_BOOKSIM_PER_CLASS_LATENCY: Mapping[str, str] = MappingProxyType(
+    dict(BOOKSIM_PER_CLASS_LATENCY_METRICS))
+
+#: Every metric ``traffic_class_readings`` can read from an envelope.
+_BOOKSIM_PER_CLASS_BINDABLE: Mapping[str, str] = MappingProxyType({
+    **_BOOKSIM_PER_CLASS_COUNTERS,
+    **_BOOKSIM_PER_CLASS_LATENCY,
+})
+
+def per_class_metric_names() -> tuple[str, ...]:
+    """The declared per-class counter keys (booksim standalone)."""
+    return tuple(metric for metric, _counter in BOOKSIM_PER_CLASS_METRICS)
+
+def per_class_latency_metric_names() -> tuple[str, ...]:
+    """The declared per-class latency keys (booksim standalone)."""
+    return tuple(metric for metric, _field
+                 in BOOKSIM_PER_CLASS_LATENCY_METRICS)
+
+def traffic_class_dimensions(traffic_class: str
+                             ) -> tuple[tuple[str, str], ...]:
+    """The canonical dimension tuple a per-class metric reading carries."""
+    if not isinstance(traffic_class, str) or not traffic_class.strip() \
+            or traffic_class != traffic_class.strip():
+        raise MetricRegistryError(
+            "traffic class must be a canonical non-empty class name "
+            f"string, got {traffic_class!r}")
+    return ((TRAFFIC_CLASS_DIMENSION, traffic_class),)
+
+def traffic_class_readings(evidence: Any, metric: str) -> dict[str, float]:
+    """Every measured per-class value of a declared per-class metric.
+
+    Reads the normalized envelope's dimensioned rows only. A row whose
+    dimensions are anything other than exactly ``(("traffic_class", name),)``
+    is not a per-class reading of this metric and is ignored.
+    """
+    if not isinstance(metric, str) or metric not in _BOOKSIM_PER_CLASS_BINDABLE:
+        raise MetricRegistryError(
+            f"metric {metric!r} is not a declared per-class metric; "
+            f"declared: {list(_BOOKSIM_PER_CLASS_BINDABLE)}")
+    readings: dict[str, float] = {}
+    for row in getattr(evidence, "metrics", ()) or ():
+        if getattr(row, "key", None) != metric:
+            continue
+        dimensions = dict(getattr(row, "dimensions", ()) or ())
+        if len(dimensions) != 1 \
+                or TRAFFIC_CLASS_DIMENSION not in dimensions:
+            continue
+        traffic_class = dimensions[TRAFFIC_CLASS_DIMENSION]
+        if traffic_class in readings:
+            raise MetricRegistryError(
+                f"metric {metric!r} carries two readings for traffic "
+                f"class {traffic_class!r} — refusing a spliced envelope")
+        readings[traffic_class] = float(row.value)
+    return readings
+
+def bind_traffic_class_metric(evidence: Any, *, metric: str,
+                              traffic_class: str) -> float | None:
+    """The measured per-class value, or None when it is not evidenced.
+
+    None means "this evidence carries no per-class reading for the metric"
+    — the same honest absence every other unmeasured metric has.
+
+    An UNKNOWN class REFUSES. Naming a class the evidence does not
+    evidence is a binding error, not an absent measurement: returning None
+    there would read as "not measured" while the truth is "you asked for a
+    class this run never carried".
+    """
+    from veritx_dse.application.evaluation_question import EvaluationQuestion
+    if not isinstance(metric, str) or metric not in _BOOKSIM_PER_CLASS_BINDABLE:
+        raise MetricRegistryError(
+            f"metric {metric!r} is not a declared per-class metric; "
+            f"declared: {list(_BOOKSIM_PER_CLASS_BINDABLE)}")
+    if not isinstance(traffic_class, str) or not traffic_class.strip():
+        raise MetricRegistryError(
+            "traffic class must be a non-empty class name string, got "
+            f"{traffic_class!r}")
+    question = getattr(evidence, "question", None)
+    if question is not None \
+            and question is not EvaluationQuestion.NETWORK_COMPLETION:
+        raise MetricRegistryError(
+            "per-class BookSim counters/latency are a NETWORK_COMPLETION "
+            f"reading; got {getattr(question, 'value', question)!r}")
+    readings = traffic_class_readings(evidence, metric)
+    if not readings:
+        return None
+    if traffic_class not in readings:
+        raise MetricRegistryError(
+            f"traffic class {traffic_class!r} is not evidenced for metric "
+            f"{metric!r}; evidenced classes: {sorted(readings)}")
+    return readings[traffic_class]
+
 CERTIFIED_METRIC_REGISTRY_V1 = (
     MetricRegistryBuilder("certified-builtin-v1")
     .register("completion_cycles", _completion_cycles,
@@ -372,6 +495,12 @@ class FederatedMetricDescriptor:
     scalar_bindable: bool
     optimization_eligible: bool
     reason: str | None = None
+    #: Dimensions the READING carries. An empty tuple is the aggregate
+    #: scalar. A non-empty tuple means the objective must assert every
+    #: named dimension to bind it: ``("traffic_class",)`` binds through
+    #: Objective.traffic_class; rank/request dimensions have no objective
+    #: field and therefore stay ineligible.
+    dimensions: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -384,6 +513,7 @@ class FederatedMetricDescriptor:
             "scalar_bindable": self.scalar_bindable,
             "optimization_eligible": self.optimization_eligible,
             "reason": self.reason,
+            "dimensions": list(self.dimensions),
         }
 
 def federated_semantic_family(question: Any, metric: str) -> str:
@@ -465,6 +595,42 @@ Rationale: docs/decisions/modules/optimization.md
             reason=(None if _backends(network) else
                     "no registered backend answers NETWORK_COMPLETION")))
 
+    # Per-class BookSim counters: the ONLY per-class readings this tree
+    # actually measures. The metric is bindable to a scalar once the
+    # objective asserts its traffic_class; an aggregate objective reads
+    # the undimensioned row of the same key instead. The backend list is
+    # narrowed to the producer that emits ``flits_by_class``.
+    booksim_network = tuple(
+        backend for backend in _backends(network)
+        if backend == "BOOKSIM_STANDALONE")
+    for metric, _counter in BOOKSIM_PER_CLASS_METRICS:
+        rows.append(FederatedMetricDescriptor(
+            metric=metric, semantic_family=_family(network, metric),
+            question=network.value, backends=booksim_network,
+            fidelity=_fidelity(network), unit=None,
+            scalar_bindable=True,
+            optimization_eligible=bool(booksim_network),
+            reason=(None if booksim_network else
+                    "no registered BOOKSIM_STANDALONE backend answers "
+                    "NETWORK_COMPLETION, so no per-class counter exists"),
+            dimensions=(TRAFFIC_CLASS_DIMENSION,)))
+
+    # Per-class latency: the fork prints it inside each ``Class N:`` block.
+    # Like the counters, it is bindable only to an objective that asserts
+    # its traffic_class; the aggregate objective reads an undimensioned row.
+    for metric, _field in BOOKSIM_PER_CLASS_LATENCY_METRICS:
+        rows.append(FederatedMetricDescriptor(
+            metric=metric, semantic_family=_family(network, metric),
+            question=network.value, backends=booksim_network,
+            fidelity=_fidelity(network),
+            unit=("packets" if metric == "pkt_count" else "cycles"),
+            scalar_bindable=True,
+            optimization_eligible=bool(booksim_network),
+            reason=(None if booksim_network else
+                    "no registered BOOKSIM_STANDALONE backend answers "
+                    "NETWORK_COMPLETION, so no per-class latency exists"),
+            dimensions=(TRAFFIC_CLASS_DIMENSION,)))
+
     from veritx_dse.backend.astra_adapter import ASTRA_NORMALIZED_METRICS
     for question in (EvaluationQuestion.SYSTEM_MAKESPAN,
                      EvaluationQuestion.COMMUNICATION_EXPOSURE,
@@ -533,6 +699,14 @@ def _ineligible_reason(question: Any, metric: str, bindable: bool,
 __all__ = [
     "CERTIFIED_METRIC_REGISTRY",
     "CERTIFIED_METRIC_REGISTRY_V1",
+    "BOOKSIM_PER_CLASS_METRICS",
+    "BOOKSIM_PER_CLASS_LATENCY_METRICS",
+    "TRAFFIC_CLASS_DIMENSION",
+    "per_class_metric_names",
+    "per_class_latency_metric_names",
+    "traffic_class_dimensions",
+    "traffic_class_readings",
+    "bind_traffic_class_metric",
     "WAVE_E_SCALAR_METRICS",
     "WAVE_E_NOT_SCALAR",
     "wave_e_honesty_metadata",

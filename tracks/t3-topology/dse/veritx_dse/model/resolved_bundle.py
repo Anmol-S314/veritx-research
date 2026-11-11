@@ -80,6 +80,9 @@ class ResolvedFabricBundle:
             vc_assignment=self.vc_assignment, vc_resource=vc_resource)
 
     def _validate_fabric(self, vc_resource):
+        from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+            cdc_cells_for_agents,
+        )
         from veritx_dse.model.routing_realization import (
             make_deterministic_routing_realization)
         realization = make_deterministic_routing_realization(
@@ -93,7 +96,9 @@ class ResolvedFabricBundle:
             router_behavior=self.router_behavior,
             address_decode=self.address_decode, route=self.router_route,
             resolved_route=self.resolved_route,
-            vc_assignment=self.vc_assignment)
+            vc_assignment=self.vc_assignment,
+            cdc_cells=cdc_cells_for_agents(
+                tuple(getattr(self.design, "agents", ()) or ())))
 
     def root_hashes(self) -> dict[str, str]:
         return {

@@ -5,6 +5,7 @@ Rationale: docs/decisions/modules/backend.md
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import platform
 import re
@@ -18,11 +19,17 @@ from typing import Any, Callable
 from veritx_dse.backend.booksim_projection import (
     GEC_MECS_PROFILE, GEC_HYBRID_PROFILE, GEC_HYBRID_OBSERVATION_FILE,
     SROTA_ROW_FIRST_PROFILE,
-    ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, FLATFLY_MIN_PROFILE,
-    MESH_DOR_MC_PROFILE, MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE,
-    TORUS_DOR_PROFILE, TRACE_FILE, PreparedBookSimInput,
-    parse_config_values,
+    ANYNET_MC_PROFILE, ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE,
+    FLATFLY_MIN_PROFILE,
+    MESH_DOR_CLASS_PRIORITY_PROFILE, MESH_DOR_CLASS_VC_PROFILE,
+    MESH_DOR_MC_PROFILE, MESH_DOR_PROFILE,
+    ROUTE_DUMP_FILE, TOPOLOGY_FILE, TORUS_DOR_PROFILE, TRACE_FILE,
+    PreparedBookSimInput, parse_config_values,
 )
+from veritx_dse.backend.qtree_projection import PROFILE as QTREE_PROFILE
+from veritx_dse.backend.tree4_projection import PROFILE as TREE4_PROFILE
+from veritx_dse.backend.ring_projection import PROFILE as RING_PROFILE
+from veritx_dse.backend.fly_projection import PROFILE as FLY_PROFILE
 from veritx_dse.backend.evidence import (
     BOOKSIM_BUILD_RECIPE_VERSION, EVIDENCE_SCHEMA_VERSION,
     EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
@@ -57,6 +64,42 @@ UNAVAILABLE_TOKENS = ("-", "nan", "-nan", "+nan", "inf", "-inf", "+inf",
                       "infinity", "-infinity")
 _PLAT_RE = re.compile(r"Packet latency average = ([0-9.eE+-]+)")
 _FLAT_RE = re.compile(r"Flit latency average = ([0-9.eE+-]+)")
+# The fork prints exact request-time percentiles next to the stock mean.
+# They are the population trace work is ranked on, not the qtime mean above.
+_P50_RE = re.compile(r"^\s*p50 = ([0-9.eE+-]+)\s*$", re.MULTILINE)
+_P95_RE = re.compile(r"^\s*p95 = ([0-9.eE+-]+)\s*$", re.MULTILINE)
+_P99_RE = re.compile(r"^\s*p99 = ([0-9.eE+-]+)\s*$", re.MULTILINE)
+_PKT_COUNT_RE = re.compile(r"^\s*pkt_count = (\d+)\s*$", re.MULTILINE)
+_HONEST_AVG_RE = re.compile(r"^\s*honest_avg = ([0-9.eE+-]+)\s*$", re.MULTILINE)
+
+# Per-class latency blocks. ``TrafficManager::DisplayStats`` prints one
+# ``Class N:`` block per measured traffic class, at the end of every sample
+# period. The same header is also printed while draining, but those blocks
+# carry only "Remaining flits" (no latency fields), so a block contributes
+# only the latency fields it actually printed.
+_CLASS_HEADER_RE = re.compile(r"^Class (\d+):\s*$", re.MULTILINE)
+_CLASS_BLOCK_END_RE = re.compile(
+    r"^(?:Draining remaining packets|={6} Overall Traffic Statistics)",
+    re.MULTILINE)
+_CLASS_LATENCY_FIELDS: tuple[tuple[str, re.Pattern, bool], ...] = (
+    ("packet_latency_avg",
+     re.compile(r"^\s*Packet latency average = ([0-9.eE+-]+)\s*$",
+                re.MULTILINE), False),
+    ("flit_latency_avg",
+     re.compile(r"^\s*Flit latency average = ([0-9.eE+-]+)\s*$",
+                re.MULTILINE), False),
+    ("p50", re.compile(r"^\s*p50 = ([0-9.eE+-]+)\s*$", re.MULTILINE),
+     False),
+    ("p95", re.compile(r"^\s*p95 = ([0-9.eE+-]+)\s*$", re.MULTILINE),
+     False),
+    ("p99", re.compile(r"^\s*p99 = ([0-9.eE+-]+)\s*$", re.MULTILINE),
+     False),
+    ("pkt_count", re.compile(r"^\s*pkt_count = (\d+)\s*$", re.MULTILINE),
+     True),
+    ("honest_latency",
+     re.compile(r"^\s*honest_avg = ([0-9.eE+-]+)\s*$", re.MULTILINE),
+     False),
+)
 _HOPS_RE = re.compile(r"hops\((\d+),:\) = ([0-9.,eE+-]+)")
 _UNSTABLE_TOKEN = "Simulation unstable"
 _ABORT_TOKENS = ("Assertion", "assertion", "failed", "Aborted",
@@ -83,6 +126,61 @@ def mesh_class_vc_ranges_from_config(text: str) -> tuple[tuple[int, int], ...]:
     if any(not 0 <= start <= end < count for start, end in bound):
         raise BookSimExecutionError('invalid mesh class VC range')
     return bound
+
+
+def validate_class_priority_config(prepared: PreparedBookSimInput) -> None:
+    """Refuse a priority claim the rendered bytes do not actually carry.
+
+    The profile can only be honest if ``priority = class`` stamps flits,
+    ``class_priority`` is the declared dense vector, and the switch allocator
+    is the stock priority-honouring ``select`` allocator. A swapped or
+    uniform vector is a dead field, not a QoS result.
+    """
+    if prepared.profile_id != MESH_DOR_CLASS_PRIORITY_PROFILE.profile_id:
+        if prepared.priority_class_map:
+            raise BookSimExecutionError(
+                f"profile {prepared.profile_id!r} binds a class priority "
+                "map but is not the certified priority profile")
+        return
+    if not prepared.priority_class_map:
+        raise BookSimExecutionError(
+            "priority profile prepared input binds no class priority map")
+    if tuple(cls for cls, _rank in prepared.priority_class_map) \
+            != prepared.trace_class_map:
+        raise BookSimExecutionError(
+            "class priority map does not follow the bound trace class order")
+    values = parse_config_values(prepared.config_text)
+    if values.get("priority") != "class":
+        raise BookSimExecutionError(
+            "priority profile config does not select priority = class")
+    if values.get("sw_allocator") != "select":
+        raise BookSimExecutionError(
+            "priority profile config does not use the priority-honouring "
+            "select switch allocator")
+    if values.get("vc_allocator", "islip") != "islip":
+        raise BookSimExecutionError(
+            "priority profile config uses a VC allocator outside the "
+            "certified surface")
+    if values.get("vc_priority_donation", "0") != "0":
+        raise BookSimExecutionError(
+            "priority profile config enables VC priority donation: the "
+            "declared class rank must not be donated to another head flit")
+    raw = values.get("class_priority", "")
+    if not re.fullmatch(r'\{\s*\d+(?:\s*,\s*\d+)*\s*\}', raw):
+        raise BookSimExecutionError("malformed class_priority vector")
+    ranks = tuple(int(v) for v in raw.strip("{}").split(","))
+    expected = tuple(rank for _cls, rank in prepared.priority_class_map)
+    if ranks != expected:
+        raise BookSimExecutionError(
+            "rendered class_priority does not match the declared QoS plan")
+    if len(set(ranks)) < 2:
+        raise BookSimExecutionError(
+            "class_priority is uniform: the priority field cannot affect "
+            "arbitration")
+    if values.get("classes") is None \
+            or int(values["classes"]) != len(ranks):
+        raise BookSimExecutionError(
+            "class_priority length does not equal the configured class count")
 
 
 def validate_mesh_class_vc_observations(config: str, text: str, *,
@@ -212,10 +310,40 @@ def series_capacity_or_refuse(link_width_bits: Any,
     return link_width_bits // flit_width_bits
 
 
+#: Bounded watch budget. The native watch log is a debug capture, not a
+#: sampling profiler: the budget is what keeps one run's log readable and
+#: the digest cheap, and the stride is what makes the sample cover the whole
+#: run instead of only its cold start.
+OBSERVED_WATCH_BUDGET = 96
+
+def observed_watch_plan(trace_text: str,
+                        budget: int = OBSERVED_WATCH_BUDGET
+                        ) -> tuple[list[int], dict[str, Any]]:
+    """The deterministic watch sample: stride across every declared packet.
+
+    Native packet ids are assigned in injection order, so a prefix of ids
+    is a cold-start sample. A stride over the declared packet count spreads
+    the watched packets across the whole run, and the rule is recorded in
+    the evidence so the sample can be reproduced or challenged.
+    """
+    total = sum(1 for line in trace_text.splitlines()
+                if line.strip() and not line.lstrip().startswith(("#", "%")))
+    if total <= 0:
+        return [], {"rule": "no declared packets; no watch sample",
+                    "declared_packets": 0, "stride": None,
+                    "sampled_packets": 0}
+    stride = max(1, -(-total // budget))
+    ids = list(range(0, total, stride))[:budget]
+    return ids, {"rule": (f"every {stride}th declared packet id, capped at "
+                          f"{budget} samples"),
+                 "declared_packets": total, "stride": stride,
+                 "sampled_packets": len(ids)}
+
 def amend_config_for_series(config_text: str, *, sample_period_cycles: int,
                             run_hash: str, binary_sha256: str,
                             link_capacity: int, trace_sha256: str,
-                            config_sha256: str) -> str:
+                            config_sha256: str,
+                            watch_packet_ids: tuple[int, ...] = ()) -> str:
     """Append the series keys; the prepared text above is untouched."""
     block = (
         "\n"
@@ -228,6 +356,13 @@ def amend_config_for_series(config_text: str, *, sample_period_cycles: int,
         f"run_binary_hash = {binary_sha256};\n"
         f"link_capacity_flits_per_cycle = {link_capacity};\n"
         f"run_input_hashes = {trace_sha256},{config_sha256};\n"
+        # A watch file with no selected packet ids is empty by construction, so
+        # the keys are omitted rather than left behind as a misleading artifact.
+        + ("// Bounded observed debug capture: a recorded stride sample of "
+           "native packet IDs.\n"
+           "watch_out = observed_hops.log;\n"
+           f"watch_packets = {{{','.join(str(i) for i in watch_packet_ids)}}};\n"
+           if watch_packet_ids else "")
     )
     return config_text + block
 
@@ -242,23 +377,49 @@ class ProcessOutcome:
 
 def _supervised_runner(command: tuple[str, ...], cwd: Path,
                        timeout: int) -> ProcessOutcome:
-    """The ONE production process seam. No shell, DEVNULL stdin, timeout."""
+    """The ONE production process seam. Stream raw logs to the run directory
+    so timeout/OOM evidence survives even when the simulator fails early.
+    No shell, DEVNULL stdin, finite timeout.
+    """
+    stdout_path = cwd / "booksim.stdout.log"
+    stderr_path = cwd / "booksim.stderr.log"
     try:
-        proc = subprocess.run(
-            list(command), cwd=str(cwd), stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=timeout, shell=False)
-    except subprocess.TimeoutExpired as exc:
-        return ProcessOutcome(returncode=-1,
-                              stdout=(exc.stdout or "") if isinstance(
-                                  exc.stdout, str) else "",
-                              stderr=(exc.stderr or "") if isinstance(
-                                  exc.stderr, str) else "",
-                              timed_out=True)
+        with stdout_path.open("wb") as stdout_log, \
+                stderr_path.open("wb") as stderr_log:
+            try:
+                proc = subprocess.run(
+                    list(command), cwd=str(cwd), stdin=subprocess.DEVNULL,
+                    stdout=stdout_log, stderr=stderr_log, timeout=timeout,
+                    shell=False)
+                timed_out = False
+                returncode = proc.returncode
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                returncode = -1
     except OSError as exc:
         raise BookSimExecutionError(
             f"could not spawn the BookSim process: {exc}") from exc
-    return ProcessOutcome(returncode=proc.returncode, stdout=proc.stdout,
-                          stderr=proc.stderr)
+    stdout_bytes = stdout_path.read_bytes()
+    stderr_bytes = stderr_path.read_bytes()
+    stdout = stdout_bytes.decode("utf-8", errors="replace")
+    stderr = stderr_bytes.decode("utf-8", errors="replace")
+    log_manifest = {
+        "schema": "veritx/booksim-process-logs/1",
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "logs": {
+            "stdout": {"path": stdout_path.name,
+                       "size_bytes": len(stdout_bytes),
+                       "sha256": hashlib.sha256(stdout_bytes).hexdigest()},
+            "stderr": {"path": stderr_path.name,
+                       "size_bytes": len(stderr_bytes),
+                       "sha256": hashlib.sha256(stderr_bytes).hexdigest()},
+        },
+    }
+    (cwd / "booksim-process-logs.json").write_text(
+        json.dumps(log_manifest, indent=2) + "\n", encoding="utf-8")
+    return ProcessOutcome(returncode=returncode, stdout=stdout,
+                          stderr=stderr, timed_out=timed_out)
 
 def _unavailable(token: str) -> bool:
     return token.strip().lower() in UNAVAILABLE_TOKENS
@@ -285,6 +446,44 @@ _ADAPTIVE_ROUTE_PROFILES: frozenset[str] = frozenset({
     "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
     "CERTIFIED_BOOKSIM_GEC_HYBRID_V1",
 })
+
+
+def _class_latency_blocks(stdout: str) -> dict[int, dict[str, float | int]]:
+    """Every per-class latency reading the fork actually printed.
+
+    Class index -> the latency fields present in that class's block. A
+    later sample's block for the same class replaces an earlier one field
+    by field, so the last sampled reading wins; drain blocks carry no
+    latency and can never erase a measured reading. An unprintable /
+    unavailable value is omitted, never zero-filled.
+    """
+    headers = list(_CLASS_HEADER_RE.finditer(stdout))
+    by_class: dict[int, dict[str, float | int]] = {}
+    for index, header in enumerate(headers):
+        start = header.end()
+        end = (headers[index + 1].start()
+               if index + 1 < len(headers) else len(stdout))
+        boundary = _CLASS_BLOCK_END_RE.search(stdout, start, end)
+        if boundary is not None:
+            end = boundary.start()
+        segment = stdout[start:end]
+        parsed: dict[str, float | int] = {}
+        for key, pattern, is_count in _CLASS_LATENCY_FIELDS:
+            match = pattern.search(segment)
+            if match is None:
+                continue
+            token = match.group(1).strip()
+            if _unavailable(token):
+                continue
+            if is_count:
+                parsed[key] = int(token)
+                continue
+            value = float(token)
+            if math.isfinite(value):
+                parsed[key] = value
+        if parsed:
+            by_class.setdefault(int(header.group(1)), {}).update(parsed)
+    return by_class
 
 
 def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
@@ -346,16 +545,34 @@ Rationale: docs/decisions/modules/backend.md
     unstable = _UNSTABLE_TOKEN in stdout or _UNSTABLE_TOKEN in stderr
     abort = next((token for token in _ABORT_TOKENS
                   if token in stdout or token in stderr), None)
+    latency_by_class = _class_latency_blocks(stdout)
+    # ``Class N:`` blocks are PER CLASS. In a multi-class run the first
+    # block is class 0, not an aggregate, so the historical scalar latency
+    # keys below are labelled rather than silently presented as aggregate.
+    latency_scope = ("PER_CLASS" if len(latency_by_class) > 1
+                     else "SINGLE_CLASS" if latency_by_class else None)
     return {
         "parser_version": PARSER_VERSION,
         "loaded_trace_packets": loaded_packets,
         "injected_trace_packets": injected,
         "completion_cycles": completion_cycles,
         "sample_window_cycles": sample_window_cycles,
+        # Historical scalar keys: keep them byte-identically present. In a
+        # multi-class run each matches the FIRST ``Class N:`` block (class
+        # 0), which latency_scope labels as PER_CLASS rather than aggregate.
         "packet_latency_avg": _optional_number(_PLAT_RE, stdout,
                                                "packet latency"),
         "flit_latency_avg": _optional_number(_FLAT_RE, stdout,
                                              "flit latency"),
+        "p50": _optional_number(_P50_RE, stdout, "p50 latency"),
+        "p95": _optional_number(_P95_RE, stdout, "p95 latency"),
+        "p99": _optional_number(_P99_RE, stdout, "p99 latency"),
+        "honest_latency": _optional_number(_HONEST_AVG_RE, stdout,
+                                          "honest average latency"),
+        "pkt_count": (int(match.group(1))
+                      if (match := _PKT_COUNT_RE.search(stdout)) else None),
+        "latency_by_class": latency_by_class,
+        "latency_scope": latency_scope,
         "hops": hops,
         "delivered_packets": delivered,
         "flits_injected": flits_injected,
@@ -484,7 +701,48 @@ def execute_prepared_booksim(
             f"{prepared.profile_id!r}: {_handler_err}")
     from veritx_dse.backend.router_controls import base_profile_id
     execution_profile_id = base_profile_id(prepared.profile_id)
-    class_vc_profile = execution_profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1"
+    validate_class_priority_config(prepared)
+    class_vc_profile = (
+        execution_profile_id in (MESH_DOR_CLASS_VC_PROFILE.profile_id,
+                                 MESH_DOR_CLASS_PRIORITY_PROFILE.profile_id))
+    # Every native family whose routing/VC proof is class-independent can
+    # execute a class-bound trace. The mesh single-class profile stays out:
+    # its audit pins classes = 1 and its execution gate must keep refusing a
+    # multi-class trace. The promoted profiles below render ``classes`` from
+    # the canonical map and must bind that map before execution.
+    _multi_class_capable = {
+        MESH_DOR_CLASS_VC_PROFILE.profile_id,
+        MESH_DOR_CLASS_PRIORITY_PROFILE.profile_id,
+        CMESH_DOR_PROFILE.profile_id,
+        TORUS_DOR_PROFILE.profile_id,
+        FLATFLY_MIN_PROFILE.profile_id,
+        ANYNET_MC_PROFILE.profile_id,
+        ANYNET_PROFILE.profile_id,
+        GEC_MECS_PROFILE.profile_id,
+        GEC_HYBRID_PROFILE.profile_id,
+        QTREE_PROFILE.profile_id,
+        TREE4_PROFILE.profile_id,
+        RING_PROFILE.profile_id,
+        FLY_PROFILE.profile_id,
+    }
+    _multi_class_only = {
+        MESH_DOR_MC_PROFILE.profile_id,
+        MESH_DOR_CLASS_VC_PROFILE.profile_id,
+        MESH_DOR_CLASS_PRIORITY_PROFILE.profile_id,
+    }
+    _single_class_capable = {
+        MESH_DOR_PROFILE.profile_id,
+        CMESH_DOR_PROFILE.profile_id,
+        TORUS_DOR_PROFILE.profile_id,
+        FLATFLY_MIN_PROFILE.profile_id,
+        ANYNET_PROFILE.profile_id,
+        GEC_MECS_PROFILE.profile_id,
+        GEC_HYBRID_PROFILE.profile_id,
+        QTREE_PROFILE.profile_id,
+        TREE4_PROFILE.profile_id,
+        RING_PROFILE.profile_id,
+        FLY_PROFILE.profile_id,
+    }
     from veritx_dse.application.booksim_qualification_registry import qualification_of
     unqualified_profile = not qualification_of(prepared.profile_id).is_qualified
     if unqualified_profile and (require_pinned_producer or not allow_unqualified_profile):
@@ -504,7 +762,31 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(
                 "prepared trace has a non-integer class index: "
                 "refusing a non-canonical trace") from None
-    if execution_profile_id == MESH_DOR_MC_PROFILE.profile_id or class_vc_profile:
+    if execution_profile_id == SROTA_ROW_FIRST_PROFILE.profile_id:
+        # A bound class map is the SROTA multi-class signal: on a single
+        # packet plane every class rides subnet 0; on a multi-plane fabric
+        # each class rides its own subnet. An unbound input is the legacy
+        # single-class path, and a multi-plane fabric without a map is
+        # refused rather than sent to subnet 0.
+        if prepared.trace_class_map:
+            if not _trace_indices <= set(
+                    range(len(prepared.trace_class_map))):
+                raise BookSimExecutionError(
+                    f"SROTA trace indices {sorted(_trace_indices)} "
+                    f"exceed the bound class map "
+                    f"{list(prepared.trace_class_map)}: refusing a "
+                    "class-swapped or collapsed trace")
+        elif parse_config_values(
+                prepared.config_text).get("subnets") == "2":
+            raise BookSimExecutionError(
+                "multi-plane prepared input binds no class map: "
+                "refusing an unbound multi-class execution")
+        elif not _trace_indices <= {0}:
+            raise BookSimExecutionError(
+                f"single-class profile {prepared.profile_id!r} carries "
+                f"trace class indices {sorted(_trace_indices)}: "
+                f"refusing a multi-class trace on a single-class profile")
+    elif execution_profile_id in _multi_class_only:
         if not prepared.trace_class_map:
             raise BookSimExecutionError(
                 "multi-class prepared input binds no class map: "
@@ -515,36 +797,15 @@ def execute_prepared_booksim(
                 f"exceed the bound class map "
                 f"{list(prepared.trace_class_map)}: refusing a "
                 f"class-swapped or collapsed trace")
-    elif execution_profile_id == SROTA_ROW_FIRST_PROFILE.profile_id:
-        # A multi-plane SROTA fabric renders subnets = 2 with a per-class
-        # subnet map, so it legitimately carries a multi-class trace. A
-        # single-plane SROTA fabric stays single-class.
-        multi_plane = parse_config_values(
-            prepared.config_text).get("subnets") == "2"
-        if multi_plane:
-            if not prepared.trace_class_map:
-                raise BookSimExecutionError(
-                    "multi-plane prepared input binds no class map: "
-                    "refusing an unbound multi-class execution")
-            if not _trace_indices <= set(
-                    range(len(prepared.trace_class_map))):
-                raise BookSimExecutionError(
-                    f"multi-plane trace indices {sorted(_trace_indices)} "
-                    f"exceed the bound class map "
-                    f"{list(prepared.trace_class_map)}: refusing a "
-                    "class-swapped or collapsed trace")
-        elif not _trace_indices <= {0}:
+    elif (execution_profile_id in _multi_class_capable
+          and prepared.trace_class_map):
+        if not _trace_indices <= set(range(len(prepared.trace_class_map))):
             raise BookSimExecutionError(
-                f"single-class profile {prepared.profile_id!r} carries "
-                f"trace class indices {sorted(_trace_indices)}: "
-                f"refusing a multi-class trace on a single-class profile")
-    elif execution_profile_id in (MESH_DOR_PROFILE.profile_id,
-                                  CMESH_DOR_PROFILE.profile_id,
-                                  ANYNET_PROFILE.profile_id,
-                                  TORUS_DOR_PROFILE.profile_id,
-                                  FLATFLY_MIN_PROFILE.profile_id,
-                                  GEC_MECS_PROFILE.profile_id,
-                                  GEC_HYBRID_PROFILE.profile_id):
+                f"multi-class trace indices {sorted(_trace_indices)} "
+                f"exceed the bound class map "
+                f"{list(prepared.trace_class_map)}: refusing a "
+                f"class-swapped or collapsed trace")
+    elif execution_profile_id in _single_class_capable:
         if not _trace_indices <= {0}:
             raise BookSimExecutionError(
                 f"single-class profile {prepared.profile_id!r} carries "
@@ -554,6 +815,80 @@ def execute_prepared_booksim(
         raise BookSimExecutionError(
             f"profile {prepared.profile_id!r} has no trace class-domain "
             f"rule: refusing execution until the domain is declared")
+    if execution_profile_id == QTREE_PROFILE.profile_id:
+        required = {(router, terminal) for router in range(21) for terminal in range(64)}
+        if (len(prepared.expected_route_rows) != 1344
+                or {(r, d) for r, d, _ in prepared.expected_route_rows} != required
+                or len(prepared.expected_route_ports) != 1344
+                or {(r, d) for r, d, _ in prepared.expected_route_ports} != required):
+            raise BookSimExecutionError("native QTree requires complete hop AND port obligations")
+    tree4_vc_count = None
+    if execution_profile_id == TREE4_PROFILE.profile_id:
+        # Tree4's executed law is a legal-choice UNION (four roots, two
+        # destination-group middles, two parents), so its obligations are the
+        # union table plus the runtime dump, not a single-row table. A
+        # prepared input carrying single rows would be a different, fictional
+        # dialect; the model must also cover every router/terminal pair.
+        if prepared.expected_route_rows or prepared.expected_route_ports:
+            raise BookSimExecutionError(
+                "native Tree4 prepared input must not carry single-row route "
+                "obligations: the upward parent is a legal choice union")
+        from .tree4_projection import expected_rows as _tree4_expected
+        from .tree4_projection import model_topology, pinned_geometry
+        from .tree4_projection import TERMINALS as _TREE4_TERMINALS
+        _values = parse_config_values(prepared.config_text)
+        pinned_geometry(_values)
+        _model = model_topology()
+        rows, ports, choices = _tree4_expected(_model)
+        if len(rows) + len(choices) != _model.router_count * _TREE4_TERMINALS:
+            raise BookSimExecutionError(
+                "native Tree4 model law does not cover every "
+                "router/terminal pair")
+        tree4_vc_count = int(parse_config_values(
+            prepared.config_text)["num_vcs"])
+    ring_size = None
+    if execution_profile_id == RING_PROFILE.profile_id:
+        # The ring's obligations are the union dump and the runtime
+        # route-compute dump, both total over the fabric; a prepared input
+        # carrying single-row obligations would be a different (fictional)
+        # dialect, so refuse rather than let one of them go unchecked.
+        if prepared.expected_route_rows or prepared.expected_route_ports:
+            raise BookSimExecutionError(
+                "native ring prepared input must not carry single-row route "
+                "obligations: the midpoint tie has no single first hop")
+        from .ring_projection import expected_rows_for
+        ring_size = int(parse_config_values(prepared.config_text)["k"])
+        if ring_size < 4 or ring_size % 2:
+            raise BookSimExecutionError(
+                f"native ring requires even k >= 4, prepared k={ring_size}")
+        rows, ports, ties = expected_rows_for(ring_size)
+        if len(rows) + len(ties) != ring_size * (ring_size - 1):
+            raise BookSimExecutionError(
+                "native ring model law does not cover every "
+                "router/destination pair")
+    fly_vc_count = None
+    if execution_profile_id == FLY_PROFILE.profile_id:
+        # dest_tag_fly is deterministic, so BOTH obligations are available and
+        # both are required: the single-row first-hop table (with ports) is
+        # compared against the static dump, and the executed route-compute
+        # stream is checked separately for stage advance and ejection point.
+        from .fly_projection import QUALIFIED_HOP_OBLIGATIONS
+        required = {(router, terminal)
+                    for router in range(QUALIFIED_HOP_OBLIGATIONS[0])
+                    for terminal in range(QUALIFIED_HOP_OBLIGATIONS[1])}
+        if (len(prepared.expected_route_rows) != len(required)
+                or {(r, d) for r, d, _ in prepared.expected_route_rows}
+                != required
+                or len(prepared.expected_route_ports) != len(required)
+                or {(r, d) for r, d, _ in prepared.expected_route_ports}
+                != required):
+            raise BookSimExecutionError(
+                "native fly requires complete hop AND port obligations over "
+                f"every (router, terminal) pair (expected "
+                f"{QUALIFIED_HOP_OBLIGATIONS[0]}x"
+                f"{QUALIFIED_HOP_OBLIGATIONS[1]})")
+        fly_vc_count = int(parse_config_values(
+            prepared.config_text)["num_vcs"])
     if (execution_profile_id == GEC_HYBRID_PROFILE.profile_id
             and not prepared.expected_hybrid_candidates):
         raise BookSimExecutionError("hybrid prepared input binds no runtime candidate set")
@@ -640,6 +975,8 @@ def execute_prepared_booksim(
             link_capacity=series_capacity,
             link_width_bits=series_link_width_bits,
             flit_width_bits=series_flit_width_bits)
+        watch_text = (Path(run_dir) / TRACE_FILE).read_text()
+        watch_ids, watch_plan = observed_watch_plan(watch_text)
         amended = amend_config_for_series(
             prepared.config_text,
             sample_period_cycles=sample_period_cycles,
@@ -647,7 +984,8 @@ def execute_prepared_booksim(
             binary_sha256=identity.binary_sha256,
             link_capacity=series_capacity,
             trace_sha256=digests[TRACE_FILE],
-            config_sha256=digests[CONFIG_FILE])
+            config_sha256=digests[CONFIG_FILE],
+            watch_packet_ids=watch_ids)
         config_path = Path(run_dir) / CONFIG_FILE
         if config_path.read_bytes() != prepared.config_text.encode():
             raise BookSimExecutionError(
@@ -662,15 +1000,24 @@ def execute_prepared_booksim(
     outcome = run(command, Path(run_dir), timeout)
     wall = time.monotonic() - started
 
+    log_manifest_path = Path(run_dir) / "booksim-process-logs.json"
+    log_hint = (f"; stdout/stderr logs: {log_manifest_path}"
+                if log_manifest_path.is_file() else "")
     if outcome.timed_out:
         raise BookSimExecutionError(
-            f"BookSim timed out after {timeout}s and was killed")
+            f"BookSim timed out after {timeout}s and was killed{log_hint}")
     if outcome.returncode != 0:
         raise BookSimExecutionError(
             f"BookSim exited {outcome.returncode}: "
-            f"{(outcome.stderr or '')[-300:]}")
+            f"{(outcome.stderr or '')[-300:]}{log_hint}")
 
     stats = parse_booksim_stats(outcome.stdout, outcome.stderr)
+    if prepared.priority_class_map:
+        # The executed vector is a canonical design fact, not a parser
+        # artifact: put the declared class->rank binding in the evidence so
+        # a reader does not have to re-open the config to see the claim.
+        stats['class_priority_plan'] = {
+            cls: rank for cls, rank in prepared.priority_class_map}
     declared_by_class = (dict(prepared.expected_flits_by_class)
                          if prepared.expected_flits_by_class else {})
     expected_by_index = (
@@ -714,6 +1061,14 @@ def execute_prepared_booksim(
                 in _ADAPTIVE_ROUTE_PROFILES)
         except RouteObservationError as exc:
             raise BookSimExecutionError(str(exc)) from exc
+        if prepared.expected_route_ports:
+            from veritx_dse.backend.route_observation import parse_route_dump_rows
+            rows = parse_route_dump_rows(dump_text)
+            for src, dest, port in prepared.expected_route_ports:
+                if rows[(src, dest)].port != port:
+                    raise BookSimExecutionError(
+                        f"executed route port differs at router {src}, terminal {dest}: "
+                        f"{rows[(src, dest)].port} != {port}")
         route_observation = ROUTE_OBSERVATION_OBSERVED
         route_dump_sha256 = hashlib.sha256(dump_text.encode()).hexdigest()
 
@@ -730,6 +1085,103 @@ def execute_prepared_booksim(
         except (OSError, RouteObservationError) as exc:
             raise BookSimExecutionError(f"hybrid runtime routing evidence invalid: {exc}") from exc
         stats["hybrid_route_choices"] = observation
+
+    if (transport != EXECUTION_TRANSPORT_TEST_INJECTED
+            and execution_profile_id == TREE4_PROFILE.profile_id):
+        import hashlib as _hashlib
+        from .route_observation import (
+            RouteObservationError, parse_route_dump_union_rows,
+        )
+        from .tree4_projection import (
+            OBSERVATION_FILE as TREE4_OBSERVATION_FILE, model_topology,
+            verify_runtime as _tree4_runtime, verify_union_table,
+        )
+        union_path = Path(run_dir) / ROUTE_DUMP_FILE
+        try:
+            union_text = union_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"Tree4 legal-choice union dump missing at {union_path} "
+                f"({exc}); the upward parent choice is only certifiable "
+                f"there") from exc
+        try:
+            union = parse_route_dump_union_rows(union_text)
+        except RouteObservationError as exc:
+            raise BookSimExecutionError(str(exc)) from exc
+        assert tree4_vc_count is not None
+        stats["tree4_route_union"] = verify_union_table(
+            union=union, topology=model_topology())
+        observed = Path(run_dir) / TREE4_OBSERVATION_FILE
+        try:
+            runtime_text = observed.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"native Tree4 route-compute dump missing at {observed} "
+                f"({exc}); the executed parent choice is only proven there"
+            ) from exc
+        stats["tree4_route_computations"] = _tree4_runtime(
+            runtime_text, topology=model_topology(),
+            vc_count=tree4_vc_count)
+        route_observation = ROUTE_OBSERVATION_OBSERVED
+        route_dump_sha256 = _hashlib.sha256(
+            union_text.encode()).hexdigest()
+
+    if (transport != EXECUTION_TRANSPORT_TEST_INJECTED
+            and execution_profile_id == RING_PROFILE.profile_id):
+        import hashlib as _hashlib
+        from .ring_projection import (
+            OBSERVATION_FILE as RING_OBSERVATION_FILE,
+            verify_runtime_halves, verify_union_table,
+        )
+        from .route_observation import (
+            RouteObservationError, parse_route_dump_union_rows,
+        )
+        union_path = Path(run_dir) / ROUTE_DUMP_FILE
+        try:
+            union_text = union_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"ring legal-choice union dump missing at {union_path} "
+                f"({exc}); the ring's first-hop law is only certifiable "
+                f"there") from exc
+        try:
+            union = parse_route_dump_union_rows(union_text)
+        except RouteObservationError as exc:
+            raise BookSimExecutionError(str(exc)) from exc
+        assert ring_size is not None
+        stats["ring_route_union"] = verify_union_table(
+            union=union, n=ring_size)
+        observed = Path(run_dir) / RING_OBSERVATION_FILE
+        try:
+            runtime_text = observed.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"native ring route-compute dump missing at {observed} "
+                f"({exc}); the dateline halves are only proven there"
+            ) from exc
+        stats["ring_route_computations"] = verify_runtime_halves(
+            runtime_text, endpoint_count=ring_size)
+        route_observation = ROUTE_OBSERVATION_OBSERVED
+        route_dump_sha256 = _hashlib.sha256(
+            union_text.encode()).hexdigest()
+
+    if (transport != EXECUTION_TRANSPORT_TEST_INJECTED
+            and execution_profile_id == FLY_PROFILE.profile_id):
+        from .fly_projection import (
+            OBSERVATION_FILE as FLY_OBSERVATION_FILE,
+            verify_runtime as _fly_runtime,
+        )
+        observed = Path(run_dir) / FLY_OBSERVATION_FILE
+        try:
+            runtime_text = observed.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"native fly route-compute dump missing at {observed} "
+                f"({exc}); stage advance and the ejection point are only "
+                f"proven there") from exc
+        assert fly_vc_count is not None
+        stats["fly_route_computations"] = _fly_runtime(
+            runtime_text, num_vcs=fly_vc_count)
 
     # ---- Series validation and publish. The emitted dump is read back
     # through the v3 reader (never trusted from the filename): a wrong
@@ -776,6 +1228,20 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(
                 "sampling was requested but the binary emitted no series "
                 "file — refusing an unmeasured sampled run")
+
+    observed_path = Path(run_dir) / "observed_hops.log"
+    if sampling and observed_path.is_file():
+        payload = observed_path.read_bytes()
+        stats["observed_hop_capture"] = {
+            "format": "booksim-watch/v1", "path": "observed_hops.log",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size_bytes": len(payload),
+            "packet_ids": watch_ids,
+            "sample": watch_plan,
+            "scope": ("bounded native watch events for the sampled packet "
+                      "ids only — a stride sample of the run, never a full "
+                      "hop trace"),
+        }
 
     evidence = ScientificBackendEvidence(
         prepared_id=prepared.prepared_id(),
@@ -835,4 +1301,5 @@ __all__ = [
     "assert_execution_gate", "execute_prepared_booksim",
     "materialize_prepared", "parse_booksim_stats", "prepared_file_digests",
     "series_capacity_or_refuse", "series_run_hash",
+    "validate_class_priority_config",
 ]

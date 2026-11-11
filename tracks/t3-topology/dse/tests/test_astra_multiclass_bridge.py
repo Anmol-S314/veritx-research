@@ -10,6 +10,7 @@ where the pinned producer allows; honest refusal otherwise):
 - per-operation byte conservation holds across the three classes;
 - COLL nodes carry operation_id + class sidecars;
 - swapped/collapsed/omitted bindings refuse at normalize;
+- empty per-class counters and non-injective class mappings refuse;
 - unbalanced per-class counts refuse when a producer reports them;
 - contract-ledger STREAM coverage proves the executed schedule (unit
   level with fabricated stderr; live level against the real binary);
@@ -303,6 +304,9 @@ def _evidence_for(context, native, **over):
         native.workload_projection.class_binding_id(),
         "embedded_network_class_abi_version":
         machine.embedded_network_class_abi_version,
+        "embedded_traffic_class_abi_version":
+        machine.embedded_traffic_class_abi_version,
+        "embedded_class_count": machine.embedded_class_count,
         "astra_build_manifest_sha256": "b" * 64,
         "astra_build_recipe_version": "astra-sim+booksim2/v1",
     }
@@ -343,6 +347,52 @@ def test_class_blind_runtime_refuses_multi_class():
     with pytest.raises(AstraExecutionError,
                        match="cross-generation|class-blind|class binding"):
         _normalize(context, native, evidence)
+
+def test_empty_per_class_evidence_refuses_multiclass():
+    """A class binding id is not runtime proof: empty per-class counters
+    must never normalize as EVALUATED."""
+    context, native = _prepared_two_class()
+    evidence = _evidence_for(context, native)
+    assert evidence.per_class_injected == ()
+    assert evidence.per_class_completed == ()
+    with pytest.raises(AstraExecutionError, match="per-class"):
+        _normalize(context, native, evidence)
+
+
+def test_per_class_evidence_missing_a_class_refuses():
+    context, native = _prepared_two_class()
+    evidence = _evidence_for(
+        context, native,
+        per_class_injected=((TP, 10),),
+        per_class_completed=((TP, 10),))
+    with pytest.raises(AstraExecutionError, match="per-class counters"):
+        _normalize(context, native, evidence)
+
+
+def test_non_injective_class_mapping_refuses(monkeypatch):
+    context, native = _prepared_two_class()
+    projection = native.workload_projection
+    monkeypatch.setattr(
+        type(projection), "canonical_class_index",
+        lambda self: ((TP, 0), (EP_D, 0)), raising=False)
+    evidence = _evidence_for(
+        context, native,
+        per_class_injected=((TP, 10), (EP_D, 8)),
+        per_class_completed=((TP, 10), (EP_D, 8)))
+    with pytest.raises(AstraExecutionError, match="not injective"):
+        _normalize(context, native, evidence)
+
+
+def test_class_envelope_mismatch_refuses():
+    context, native = _prepared_two_class()
+    evidence = _evidence_for(
+        context, native,
+        embedded_class_count=native.machine.embedded_class_count + 1,
+        per_class_injected=((TP, 10), (EP_D, 8)),
+        per_class_completed=((TP, 10), (EP_D, 8)))
+    with pytest.raises(AstraExecutionError, match="class envelope"):
+        _normalize(context, native, evidence)
+
 
 def test_unbalanced_per_class_counts_refuse():
     context, native = _prepared_two_class()
@@ -393,9 +443,17 @@ def test_live_two_class_collective_execution(tmp_path):
         evidence = adapter.execute(prepared, _Options())
     except AstraExecutionError as exc:
         assert ("not pinned" in str(exc) or "pin" in str(exc)
-                or "manifest" in str(exc) or "absent" in str(exc)), exc
+                or "manifest" in str(exc) or "absent" in str(exc)
+                or "per-class conservation" in str(exc)), exc
         return
     assert evidence.status == "EXECUTED"
     assert evidence.class_binding_id == \
         native.workload_projection.class_binding_id()
     assert evidence.embedded_network_class_abi_version >= 1
+    assert evidence.embedded_traffic_class_abi_version >= 1
+    assert evidence.embedded_class_count == 2
+    injected = dict(evidence.per_class_injected)
+    completed = dict(evidence.per_class_completed)
+    assert set(injected) == {TP, EP_D}
+    assert injected == completed
+    assert all(count > 0 for count in injected.values())

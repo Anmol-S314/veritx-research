@@ -13,12 +13,15 @@ from veritx_dse.application.authenticated_evaluation import (
 )
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.core.artifact import content_id
+from veritx_dse.optimization.definition import metric_axis_key
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
 )
 from veritx_dse.optimization.metric_registry import (
     CERTIFIED_METRIC_REGISTRY,
+    TRAFFIC_CLASS_DIMENSION,
     CertifiedMetricRegistry,
+    traffic_class_dimensions,
 )
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
@@ -217,6 +220,34 @@ def _objective_question(objective: Any) -> EvaluationQuestion:
         f"a non-question evaluation policy {question!r} — refusing an "
         f"objective that names no federation question")
 
+def _traffic_class_of(item: Any) -> str | None:
+    """The optional canonical traffic-class selector on an objective/constraint."""
+    value = (item.get("traffic_class")
+             if isinstance(item, Mapping)
+             else getattr(item, "traffic_class", None))
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise OptimizationResultError(
+            f"traffic_class must be a canonical non-empty class name or "
+            f"None, got {value!r}")
+    return value
+
+def _axis_key(item: Any) -> str:
+    """The stable ``(metric, traffic_class)`` value-axis key for one item.
+
+    Aggregate items keep the bare metric name (the historical map key);
+    class-scoped items append the asserted selector. See
+    ``definition.metric_axis_key`` for the format.
+    """
+    metric = (item.get("metric") if isinstance(item, Mapping)
+              else getattr(item, "metric", None))
+    if not isinstance(metric, str) or not metric:
+        raise OptimizationResultError(
+            f"optimization item needs a metric name, got "
+            f"{metric!r} ({type(item).__name__})")
+    return metric_axis_key(metric, _traffic_class_of(item))
+
 def _requirement_applicability(req: Any) -> str:
     """Closed applicability for one request requirement (V2 or V3).
 
@@ -339,36 +370,42 @@ Rationale: docs/decisions/modules/optimization.md
     for row in analyses:
         by_question.setdefault(getattr(row, "question", None), row)
 
-    def _check(metric: str, derived: float, where: str) -> None:
-        if metric in port_invalid:
+    def _check(key: str, derived: float, where: str) -> None:
+        if key in port_invalid:
             raise OptimizationResultError(
                 f"certified evaluation for {ev.candidate_id!r} reports "
-                f"federated metric {metric!r} as "
-                f"{port_invalid[metric]} while {where} evidences "
+                f"federated metric axis {key!r} as "
+                f"{port_invalid[key]} while {where} evidences "
                 f"{derived!r} — refusing a misreported metric")
-        if metric in port_measured and port_measured[metric] != derived:
+        if key in port_measured and port_measured[key] != derived:
             raise OptimizationResultError(
                 f"certified evaluation for {ev.candidate_id!r} reports "
-                f"federated metric {metric!r}={port_measured[metric]!r} "
+                f"federated metric axis {key!r}={port_measured[key]!r} "
                 f"but {where} evidences {derived!r} — refusing a "
                 f"misreported metric")
 
-    def _scalar(row: Any, metric: str) -> Any | None:
+    def _scalar(row: Any, metric: str,
+                traffic_class: str | None = None) -> Any | None:
         envelope = getattr(row, "normalized_evidence", None)
         if getattr(row, "status", None) != "EVALUATED" or envelope is None:
             return None
         if not getattr(row, "qualification", None) or \
                 not getattr(row, "native_evidence_id", None):
             return None
+        dimensions = () if traffic_class is None \
+            else traffic_class_dimensions(traffic_class)
         found = [m for m in envelope.metrics
-                 if m.key == metric and m.dimensions == ()]
+                 if m.key == metric and m.dimensions == dimensions]
         return found[0] if found else None
 
     for objective in definition.objectives:
         metric = getattr(objective, "metric", None)
         question = _objective_question(objective)
-        if question is EvaluationQuestion.NETWORK_COMPLETION:
+        traffic_class = _traffic_class_of(objective)
+        if question is EvaluationQuestion.NETWORK_COMPLETION \
+                and traffic_class is None:
             continue
+        key = _axis_key(objective)
         row = by_question.get(question)
         if row is None:
             continue
@@ -376,40 +413,46 @@ Rationale: docs/decisions/modules/optimization.md
         if constraint is not None and \
                 getattr(row, "backend_id", None) != constraint:
             continue
-        found = _scalar(row, metric)
+        found = _scalar(row, metric, traffic_class)
         if found is None:
             continue
         derived = float(found.value)
-        _check(metric, derived, f"the {question.value} evidence")
-        measured[metric] = derived
-        federated_keys.add(metric)
+        _check(key, derived, f"the {question.value} evidence")
+        measured[key] = derived
+        federated_keys.add(key)
     for constraint_def in (definition.constraints or []):
         metric = getattr(constraint_def, "metric", None)
-        if metric in measured or not isinstance(metric, str):
+        traffic_class = _traffic_class_of(constraint_def)
+        key = _axis_key(constraint_def)
+        if key in measured or not isinstance(metric, str):
             continue
         rows = [(q, row) for q, row in by_question.items()
-                if q is not EvaluationQuestion.NETWORK_COMPLETION
-                and _scalar(row, metric) is not None]
+                if (traffic_class is not None
+                    or q is not EvaluationQuestion.NETWORK_COMPLETION)
+                and _scalar(row, metric, traffic_class) is not None]
         if len(rows) != 1:
             continue
         question, row = rows[0]
-        derived = float(_scalar(row, metric).value)
-        _check(metric, derived, f"the {question.value} evidence")
-        measured[metric] = derived
-        federated_keys.add(metric)
+        derived = float(_scalar(row, metric, traffic_class).value)
+        _check(key, derived, f"the {question.value} evidence")
+        measured[key] = derived
+        federated_keys.add(key)
     return measured, federated_keys
 
 def _federated_metric_sources(
-        ev: Any) -> dict[str, list[tuple[Any, float]]]:
-    """Per-metric evidencing sources across non-network analyses.
+        ev: Any) -> dict[str, list[tuple[Any, str | None, float]]]:
+    """Per-metric evidencing sources across the carried analyses.
+
+    Aggregate scalar sources stay non-network only: the authenticated
+    network proof is their authority. Per-class (``traffic_class``)
+    sources may come from the network envelope too — that is where the
+    fork's per-class counters and latency live.
 
 Rationale: docs/decisions/modules/optimization.md
     """
-    sources: dict[str, list[tuple[Any, float]]] = {}
+    sources: dict[str, list[tuple[Any, str | None, float]]] = {}
     for row in getattr(ev, "federated_analyses", None) or ():
         question = getattr(row, "question", None)
-        if question is EvaluationQuestion.NETWORK_COMPLETION:
-            continue
         if getattr(row, "status", None) != "EVALUATED":
             continue
         envelope = getattr(row, "normalized_evidence", None)
@@ -418,13 +461,24 @@ Rationale: docs/decisions/modules/optimization.md
         if not getattr(row, "qualification", None) or \
                 not getattr(row, "native_evidence_id", None):
             continue
-        seen: set[str] = set()
+        seen: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
         for m in getattr(envelope, "metrics", None) or ():
             key = getattr(m, "key", None)
-            if not key or key in seen:
+            if not key:
                 continue
-            if getattr(m, "dimensions", None) != ():
+            dimensions = getattr(m, "dimensions", None) or ()
+            identity = (key, dimensions)
+            if identity in seen:
                 continue
+            if dimensions == ():
+                if question is EvaluationQuestion.NETWORK_COMPLETION:
+                    continue
+                traffic_class = None
+            else:
+                dims = dict(dimensions)
+                if len(dims) != 1 or TRAFFIC_CLASS_DIMENSION not in dims:
+                    continue
+                traffic_class = dims[TRAFFIC_CLASS_DIMENSION]
             try:
                 value = float(getattr(m, "value", None))
             except (TypeError, ValueError):
@@ -432,13 +486,14 @@ Rationale: docs/decisions/modules/optimization.md
             import math
             if not math.isfinite(value):
                 continue
-            seen.add(key)
-            sources.setdefault(key, []).append((question, value))
+            seen.add(identity)
+            sources.setdefault(key, []).append(
+                (question, traffic_class, value))
     return sources
 
 def _resolve_constraint_values(
         definition: Any, measured_all: dict[str, float], registry: Any,
-        claims: Any, sources: dict[str, list[tuple[Any, float]]],
+        claims: Any, sources: dict[str, list[tuple[Any, str | None, float]]],
         ) -> tuple[dict[str, float], dict[str, str]]:
     """Scope every hard constraint to exactly one semantic source.
 
@@ -453,39 +508,65 @@ Rationale: docs/decisions/modules/optimization.md
                       and registry.is_measured(m)}
     for con in definition.constraints or []:
         metric = con.metric if hasattr(con, "metric") else con["metric"]
+        traffic_class = _traffic_class_of(con)
+        key = metric_axis_key(metric, traffic_class)
         candidates: list[tuple[str, float]] = []
-        if metric in proof_keys and metric in measured_all:
-            candidates.append(("NETWORK_COMPLETION",
-                               measured_all[metric]))
-        for question, value in sources.get(metric, []):
+        for source in sources.get(metric, []):
+            if len(source) == 2:
+                question, value = source
+                source_class = None
+            else:
+                question, source_class, value = source
+            if traffic_class is None:
+                if source_class is not None:
+                    continue
+            elif source_class != traffic_class:
+                continue
             name = (question.value if isinstance(
                 question, EvaluationQuestion) else str(question))
             candidates.append((name, value))
+        if traffic_class is None:
+            # The authenticated proof is the AGGREGATE authority. Re-extract
+            # it rather than reading ``measured_all``, which a same-named
+            # per-class objective may have rebound to its class value.
+            if metric in proof_keys and claims is not None:
+                proof_value = _finite_number(registry.extract(
+                    metric, getattr(claims, "verified_result", None)))
+                if proof_value is not None:
+                    candidates.append(("NETWORK_COMPLETION", proof_value))
         if len(candidates) == 1:
-            resolved[metric] = candidates[0][1]
+            resolved[key] = candidates[0][1]
         elif not candidates:
-            unresolved[metric] = (
-                f"constraint metric {metric!r} is not evidenced by "
-                "any semantic source (verified proof or federated "
+            scope = ("aggregate" if traffic_class is None
+                     else f"traffic class {traffic_class!r}")
+            unresolved[key] = (
+                f"constraint metric {metric!r} ({scope}) is not evidenced "
+                "by any semantic source (verified proof or federated "
                 "envelope) — unmeasured, never guessed")
         else:
             names = sorted({name for name, _ in candidates})
-            unresolved[metric] = (
-                f"constraint metric {metric!r} is evidenced by "
+            scope = ("aggregate" if traffic_class is None
+                     else f"traffic class {traffic_class!r}")
+            unresolved[key] = (
+                f"constraint metric {metric!r} ({scope}) is evidenced by "
                 f"{len(candidates)} semantic sources "
                 f"({', '.join(names)}) — refusing to guess across "
                 "models")
     return resolved, unresolved
 
 def _authentic_federated_source(ev: Any, metric: str,
-                                question: Any) -> Any | None:
+                                question: Any,
+                                traffic_class: str | None = None) -> Any | None:
     """The native evidence id backing one non-network objective.
 
     Returns the native id iff an EVALUATED analysis for exactly this
     question carries an envelope, a qualification and a native evidence
-    id evidencing the dimension-free metric — else None (values without
-    evidence never reach Pareto, however finite).
+    id evidencing the requested metric reading (the aggregate row, or the
+    exact traffic-class row) — else None (values without evidence never
+    reach Pareto, however finite).
     """
+    dimensions = () if traffic_class is None \
+        else traffic_class_dimensions(traffic_class)
     for row in getattr(ev, "federated_analyses", None) or ():
         if getattr(row, "question", None) is not question:
             continue
@@ -501,24 +582,35 @@ def _authentic_federated_source(ev: Any, metric: str,
             continue
         for m in getattr(envelope, "metrics", None) or ():
             if getattr(m, "key", None) == metric and \
-                    getattr(m, "dimensions", None) == ():
+                    getattr(m, "dimensions", None) == dimensions:
                 return native
     return None
 
-def _provenance_docs(ev: Any, measured: dict[str, float]
-                     ) -> tuple[dict[str, Any], ...]:
+def _provenance_docs(ev: Any, measured: dict[str, float],
+                     definition: Any = None) -> tuple[dict[str, Any], ...]:
     """Canonical per-objective provenance rows for a candidate record.
 
-    Only bound (measured) metrics carry provenance, in metric order. A
-    float without provenance never reaches the view as an objective.
+    Only bound (measured) axes carry provenance, in axis-key order. A
+    float without provenance never reaches the view as an objective. A
+    class-scoped row names the class it reads, so two classes of one
+    metric stay distinguishable in the array (the aggregate row keeps its
+    historical key set).
     """
     carried = getattr(ev, "objective_provenance", None) or {}
+    classes: dict[str, str | None] = {}
+    if definition is not None:
+        for objective in getattr(definition, "objectives", ()) or ():
+            classes[_axis_key(objective)] = _traffic_class_of(objective)
     docs = []
-    for metric in sorted(measured):
-        row = carried.get(metric)
+    for key in sorted(measured):
+        row = carried.get(key)
         if row is None:
             continue
-        docs.append(row.to_dict() if hasattr(row, "to_dict") else dict(row))
+        doc = row.to_dict() if hasattr(row, "to_dict") else dict(row)
+        traffic_class = classes.get(key)
+        if traffic_class is not None:
+            doc["traffic_class"] = traffic_class
+        docs.append(doc)
     return tuple(docs)
 
 def _enforce_federated_comparability(
@@ -532,31 +624,34 @@ Rationale: docs/decisions/modules/optimization.md
     eligible = [r for r in records if r.pareto_eligible]
     if len(eligible) < 2:
         return records
-    reference = {o.metric if hasattr(o, "metric") else o["metric"]:
-                 _objective_question(o) for o in definition.objectives}
+    reference = {_axis_key(o): _objective_question(o)
+                 for o in definition.objectives}
     prov_index = {}
     for record in eligible:
-        per_metric: dict[str, dict[str, Any]] = {}
+        per_axis: dict[str, dict[str, Any]] = {}
         for doc in record.objective_provenance:
-            per_metric[doc.get("metric_key")] = doc
-        prov_index[record.candidate_id] = per_metric
+            metric = doc.get("metric_key")
+            if not isinstance(metric, str) or not metric:
+                continue
+            key = metric_axis_key(metric, doc.get("traffic_class"))
+            per_axis[key] = doc
+        prov_index[record.candidate_id] = per_axis
     demotions: dict[str, str] = {}
     for objective in definition.objectives:
-        metric = objective.metric if hasattr(objective, "metric") \
-            else objective["metric"]
-        question = reference[metric]
+        key = _axis_key(objective)
+        question = reference[key]
         constraint = getattr(objective, "backend_id", None)
         first_signature: tuple | None = None
         first_id: str | None = None
         for record in eligible:
             if record.candidate_id in demotions:
                 continue
-            doc = prov_index[record.candidate_id].get(metric)
+            doc = prov_index[record.candidate_id].get(key)
             if doc is None:
                 continue
             if doc.get("question") != question.value:
                 demotions[record.candidate_id] = (
-                    f"objective {metric!r} answers "
+                    f"objective {key!r} answers "
                     f"{doc.get('question')!r}, not the definition's "
                     f"{question.value!r} — different semantic families "
                     f"never share an objective axis")
@@ -564,18 +659,18 @@ Rationale: docs/decisions/modules/optimization.md
             if constraint is not None and \
                     doc.get("backend_id") != constraint:
                 demotions[record.candidate_id] = (
-                    f"objective {metric!r} was produced by "
+                    f"objective {key!r} was produced by "
                     f"{doc.get('backend_id')!r}, violating the "
                     f"definition backend constraint {constraint!r}")
                 continue
             if not doc.get("native_evidence_id"):
                 demotions[record.candidate_id] = (
-                    f"objective {metric!r} carries no native evidence "
+                    f"objective {key!r} carries no native evidence "
                     f"id — nothing comparable was measured")
                 continue
             if not doc.get("qualification"):
                 demotions[record.candidate_id] = (
-                    f"objective {metric!r} carries no qualification — "
+                    f"objective {key!r} carries no qualification — "
                     f"an unqualified measurement never compares")
                 continue
             signature = (doc.get("unit"), doc.get("model_fidelity"),
@@ -585,7 +680,7 @@ Rationale: docs/decisions/modules/optimization.md
                     record.candidate_id
             elif signature != first_signature:
                 demotions[record.candidate_id] = (
-                    f"objective {metric!r} is not comparable across the "
+                    f"objective {key!r} is not comparable across the "
                     f"eligible set (unit/fidelity/qualification "
                     f"{signature!r} vs {first_id!r}'s "
                     f"{first_signature!r}) — MODEL DIFFERENCE, not a "
@@ -626,14 +721,26 @@ Rationale: docs/decisions/modules/optimization.md
             f"{ev.candidate_id!r} without a verified result — refusing "
             f"unverifiable derived claims")
     derived = registry.extract_all(verified)
-    needed = {o.metric for o in definition.objectives} | \
-        {c.metric for c in (definition.constraints or [])}
+    needed = {o.metric for o in definition.objectives
+              if _traffic_class_of(o) is None} | \
+        {c.metric for c in (definition.constraints or [])
+         if _traffic_class_of(c) is None}
+    class_scoped = {o.metric for o in definition.objectives
+                    if _traffic_class_of(o) is not None} | \
+        {c.metric for c in (definition.constraints or [])
+         if _traffic_class_of(c) is not None}
     measured_all: dict[str, float] = {}
     for metric in sorted(needed):
         value = _finite_number(derived.get(metric))
         if value is not None:
             measured_all[metric] = value
     for metric in registry.metric_names():
+        if metric in class_scoped and metric not in needed:
+            # Purely class-scoped: the proof extraction is the AGGREGATE
+            # reading, and every class axis is bound from its dimensioned
+            # envelope row below. A metric that is BOTH aggregate and
+            # class-scoped must keep its aggregate authority check.
+            continue
         if metric not in port_measured and metric not in port_invalid:
             continue
         authoritative = _finite_number(derived.get(metric))
@@ -768,15 +875,29 @@ class OptimizationResult:
 Rationale: docs/decisions/modules/optimization.md
         """
         defn = self.definition
+        objectives = []
+        for o in defn.objectives:
+            doc = {"metric": o.metric, "direction": o.direction,
+                   "question": _objective_question(o).value,
+                   "backend_id": getattr(o, "backend_id", None)}
+            traffic_class = _traffic_class_of(o)
+            if traffic_class is not None:
+                doc["traffic_class"] = traffic_class
+                doc["key"] = metric_axis_key(o.metric, traffic_class)
+            objectives.append(doc)
+        constraints = []
+        for c in defn.constraints:
+            doc = {"metric": c.metric, "op": c.op,
+                   "threshold": c.threshold}
+            traffic_class = _traffic_class_of(c)
+            if traffic_class is not None:
+                doc["traffic_class"] = traffic_class
+                doc["key"] = metric_axis_key(c.metric, traffic_class)
+            constraints.append(doc)
         return {
             "definition_id": defn.definition_id(),
-            "objectives": [{"metric": o.metric, "direction": o.direction,
-                            "question": _objective_question(o).value,
-                            "backend_id": getattr(o, "backend_id", None)}
-                           for o in defn.objectives],
-            "constraints": [{"metric": c.metric, "op": c.op,
-                             "threshold": c.threshold}
-                            for c in defn.constraints],
+            "objectives": objectives,
+            "constraints": constraints,
             "method": defn.method,
             "selection": defn.selection,
             "budget": dict(defn.budget),
@@ -892,6 +1013,22 @@ def _derive_completeness(definition: Any, evaluated: int) -> Any:
     from .completeness import derive
     return derive(definition, evaluated)
 
+def _pareto_axes(objectives: Any) -> tuple[dict[str, str], ...]:
+    """Objectives projected onto their stable composite value axes.
+
+    ``pareto.pareto_ids`` reads each objective's ``metric`` slot as a
+    dominance dimension. Projecting only that slot keeps the shared helper
+    and every aggregate name unchanged while giving two traffic classes of
+    one metric independent axes.
+    """
+    out = []
+    for objective in objectives or ():
+        direction = (objective.direction if hasattr(objective, "direction")
+                     else objective["direction"])
+        out.append({"metric": _axis_key(objective),
+                    "direction": direction})
+    return tuple(out)
+
 def _select(records: list[CandidateRecord], definition: Any,
             pareto_ids: tuple[str, ...]) -> tuple[str | None, str | None]:
     """Selection among Pareto members: min first objective (direction-aware).
@@ -905,9 +1042,10 @@ def _select(records: list[CandidateRecord], definition: Any,
                        if r.pareto_eligible
                        and r.candidate_id in set(pareto_ids)]
     for r in feasible_pareto:
-        missing = [o.metric for o in definition.objectives
-                   if o.metric not in r.objective_values
-                   or r.objective_availability.get(o.metric) != "MEASURED"]
+        missing = [_axis_key(o) for o in definition.objectives
+                   if _axis_key(o) not in r.objective_values
+                   or r.objective_availability.get(_axis_key(o))
+                   != "MEASURED"]
         if missing:
             raise OptimizationResultError(
                 f"Pareto member {r.candidate_id!r} carries no measured "
@@ -933,26 +1071,27 @@ def _select(records: list[CandidateRecord], definition: Any,
                       "(all candidates violated a constraint, failed to "
                       "evaluate, or were unmeasurable)")
     first = definition.objectives[0]
+    first_key = _axis_key(first)
     reverse = (first.direction == "MAX")
     if definition.selection == "lexicographic" and len(definition.objectives) > 1:
         def key(r: CandidateRecord):
             return tuple(
-                (-r.objective_values[o.metric] if o.direction == "MAX"
-                 else r.objective_values[o.metric])
+                (-r.objective_values[_axis_key(o)] if o.direction == "MAX"
+                 else r.objective_values[_axis_key(o)])
                 for o in definition.objectives) + (r.candidate_id,)
         ordered = sorted(feasible_pareto, key=key)
     else:
         ordered = sorted(
             feasible_pareto,
-            key=lambda r: ((-(r.objective_values[first.metric])
-                            if reverse else r.objective_values[first.metric]),
+            key=lambda r: ((-(r.objective_values[first_key])
+                            if reverse else r.objective_values[first_key]),
                            r.candidate_id))
     winner = ordered[0]
     tied = [r.candidate_id for r in ordered
-            if r.objective_values[first.metric] ==
-            winner.objective_values[first.metric]]
+            if r.objective_values[first_key] ==
+            winner.objective_values[first_key]]
     rationale = (
-        f"selected {winner.candidate_id} minimizing {first.metric} "
+        f"selected {winner.candidate_id} minimizing {first_key} "
         f"({first.direction}) over {len(feasible_pareto)} Pareto candidate(s); "
         f"policy={definition.selection}; "
         f"values={{{', '.join(f'{k}={v:g}' for k, v in sorted(winner.objective_values.items()))}}}"
@@ -960,24 +1099,62 @@ def _select(records: list[CandidateRecord], definition: Any,
            if len(tied) > 1 else ""))
     return winner.candidate_id, rationale
 
+def _axis_constraints(constraints: Any) -> tuple[dict[str, Any], ...]:
+    """Constraint docs whose ``metric`` is the composite value-axis key.
+
+    ``evaluate_all`` is metric-indexed, and an aggregate metric may now
+    coexist with class-scoped axes of the same metric name. Translating
+    the constraint's metric slot to its stable axis key keeps the shared
+    verdict map collision-free without changing the aggregate key (which
+    stays the bare metric name).
+    """
+    out = []
+    for con in constraints or ():
+        op = con.op if hasattr(con, "op") else con["op"]
+        threshold = (con.threshold if hasattr(con, "threshold")
+                     else con["threshold"])
+        out.append({"metric": _axis_key(con), "op": op,
+                    "threshold": float(threshold),
+                    "traffic_class": _traffic_class_of(con)})
+    return tuple(out)
+
+def _scope_verdict_docs(verdict_docs: dict[str, Any],
+                        constraints: Any) -> None:
+    """Restore the bare metric + optional class on axis-keyed verdict rows."""
+    meta = {}
+    for con in constraints or ():
+        meta[_axis_key(con)] = (
+            con.metric if hasattr(con, "metric") else con["metric"],
+            _traffic_class_of(con))
+    for key, doc in verdict_docs.items():
+        metric, traffic_class = meta.get(key, (key, None))
+        doc["metric"] = metric
+        if traffic_class is not None:
+            doc["traffic_class"] = traffic_class
+
 def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
-    """Per-optimization-constraint bindings in canonical metric order:
-    {metric, operator, required, measured, verdict, margin_or_excess,
-    reason}. This is the auditable reason a candidate satisfied or lost
-    the STUDY's constraints — a different authority from the product
-    RequirementReport — and part of result_id."""
+    """Per-optimization-constraint bindings in canonical axis-key order:
+    {metric, [traffic_class,] operator, required, measured, verdict,
+    margin_or_excess, reason}. This is the auditable reason a candidate
+    satisfied or lost the STUDY's constraints — a different authority from
+    the product RequirementReport — and part of result_id. The class key
+    is emitted only for a class-scoped axis, so aggregate rows keep their
+    historical bytes."""
     out = []
     for metric in sorted(verdict_docs):
         d = verdict_docs[metric] or {}
-        out.append({
-            "metric": metric,
+        row = {
+            "metric": d.get("metric"),
             "operator": d.get("operator"),
             "required": d.get("bound"),
             "measured": d.get("value"),
             "verdict": d.get("verdict"),
             "margin_or_excess": d.get("margin_or_excess"),
             "reason": d.get("reason"),
-        })
+        }
+        if d.get("traffic_class") is not None:
+            row["traffic_class"] = d["traffic_class"]
+        out.append(row)
     return tuple(out)
 
 class Optimizer:
@@ -1118,37 +1295,45 @@ Rationale: docs/decisions/modules/optimization.md
                 else:
                     measured_all[str(key)] = number
             if claims is not None:
+                # Keep the evaluator's OWN reported axes for the
+                # misreport cross-check: the authoritative re-extraction
+                # carries aggregate proof metrics only, while class axes
+                # are re-derived from the carried envelopes.
+                reported_measured = dict(measured_all)
+                reported_invalid = dict(invalid_values)
                 measured_all = _authoritative_metrics(
                     ev, definition, claims, measured_all, invalid_values,
                     registry)
                 invalid_values = {}
                 federated_measured, federated_keys = \
                     _federated_objective_metrics(
-                        ev, definition, measured_all, invalid_values)
+                        ev, definition, reported_measured,
+                        reported_invalid)
                 for key, value in federated_measured.items():
                     if key in measured_all and \
                             measured_all[key] != value:
                         raise OptimizationResultError(
                             f"certified evaluation for "
-                            f"{ev.candidate_id!r} evidences metric "
+                            f"{ev.candidate_id!r} evidences axis "
                             f"{key!r} as {measured_all[key]!r} from the "
                             f"network proof and as {value!r} from "
                             f"federated evidence — two models, one "
-                            f"metric: refusing rather than merging")
+                            f"axis: refusing rather than merging")
                     measured_all[key] = value
             else:
                 federated_keys = set()
+            axis_constraints = _axis_constraints(definition.constraints)
             if ev.status == "EVALUATED":
                 constraint_sources = _federated_metric_sources(ev)
                 if claims is None and not constraint_sources:
-                    verdicts = evaluate_all(definition.constraints,
+                    verdicts = evaluate_all(axis_constraints,
                                             measured_all)
                 else:
                     constraint_values, unresolved = \
                         _resolve_constraint_values(
                             definition, measured_all, registry, claims,
                             constraint_sources)
-                    verdicts = evaluate_all(definition.constraints,
+                    verdicts = evaluate_all(axis_constraints,
                                             constraint_values,
                                             unresolved)
             else:
@@ -1158,17 +1343,23 @@ Rationale: docs/decisions/modules/optimization.md
                     op = c.op if hasattr(c, "op") else c["op"]
                     bound = (c.threshold if hasattr(c, "threshold")
                              else c["threshold"])
-                    unmeasured[metric] = {
+                    key = _axis_key(c)
+                    item = {
                         "metric": metric, "operator": op,
                         "bound": float(bound), "verdict": "UNMEASURABLE",
                         "value": None,
                         "reason": f"evaluation status {ev.status} — "
                                   "no measured value"}
+                    traffic_class = _traffic_class_of(c)
+                    if traffic_class is not None:
+                        item["traffic_class"] = traffic_class
+                    unmeasured[key] = item
                 verdicts = {
                     "verdicts": unmeasured,
                     "feasible": (None if definition.constraints else False)}
                 if not definition.constraints:
                     verdicts["feasible"] = False
+            _scope_verdict_docs(verdicts["verdicts"], definition.constraints)
             constraints_satisfied = verdicts["feasible"]
             constraint_verdicts = {
                 k: str(v.get("verdict"))
@@ -1177,6 +1368,8 @@ Rationale: docs/decisions/modules/optimization.md
             objective_availability: dict[str, str] = {}
             objective_entries: list[dict[str, Any]] = []
             for o in definition.objectives:
+                key = _axis_key(o)
+                traffic_class = _traffic_class_of(o)
                 if ev.status != "EVALUATED":
                     state = "UNMEASURABLE"
                     reason = (f"evaluation status {ev.status} — "
@@ -1184,51 +1377,56 @@ Rationale: docs/decisions/modules/optimization.md
                 elif (claims is not None
                         and _objective_question(o) is
                         EvaluationQuestion.NETWORK_COMPLETION
+                        and traffic_class is None
                         and not _has_metric_authority(
                             registry, o.metric)):
                     state = "UNMEASURABLE"
-                    reason = (f"objective {o.metric} has no registered "
+                    reason = (f"objective {key} has no registered "
                               f"metric authority over the authenticated "
                               f"proof")
                 elif (claims is not None
                         and _objective_question(o) is
                         EvaluationQuestion.NETWORK_COMPLETION
+                        and traffic_class is None
                         and not registry.is_measured(o.metric)):
                     state = "UNMEASURABLE"
-                    reason = (f"objective {o.metric} is an analytical "
+                    reason = (f"objective {key} is an analytical "
                               f"model output, not a backend measurement "
                               f"— certified Pareto measures backends, "
                               f"never models")
-                elif o.metric in invalid_values:
+                elif key in invalid_values:
                     state = "UNMEASURABLE"
-                    reason = (f"objective {o.metric} value "
-                              f"{invalid_values[o.metric]} is not a "
+                    reason = (f"objective {key} value "
+                              f"{invalid_values[key]} is not a "
                               "finite real number")
-                elif o.metric in measured_all:
+                elif key in measured_all:
                     state = "MEASURED"
                     reason = None
                 else:
                     state = "UNMEASURABLE"
                     miss = getattr(
                         ev, "objective_unmeasured_reasons", None) or {}
-                    reason = miss.get(o.metric) or (
-                        f"objective {o.metric} not evidenced by "
+                    reason = miss.get(key) or (
+                        f"objective {key} not evidenced by "
                         "the authenticated proof" if claims is not None
-                        else f"objective {o.metric} not evidenced "
+                        else f"objective {key} not evidenced "
                              "by evaluation")
-                objective_availability[o.metric] = state
+                objective_availability[key] = state
                 if state != "MEASURED":
-                    objective_entries.append({
+                    entry = {
                         "metric": o.metric,
                         "state": state,
                         "measured": None,
                         "reason": reason,
-                    })
+                    }
+                    if traffic_class is not None:
+                        entry["traffic_class"] = traffic_class
+                    objective_entries.append(entry)
             for key in sorted(measured_all):
                 objective_availability.setdefault(key, "MEASURED")
             objective_details = tuple(objective_entries)
             all_objectives_measured = all(
-                objective_availability[o.metric] == "MEASURED"
+                objective_availability[_axis_key(o)] == "MEASURED"
                 for o in definition.objectives)
             eligibility_reasons: list[str] = []
             if ev.status != "EVALUATED":
@@ -1282,22 +1480,22 @@ Rationale: docs/decisions/modules/optimization.md
                             EvaluationQuestion.NETWORK_COMPLETION:
                         continue
                     native = _authentic_federated_source(
-                        ev, o.metric, question)
+                        ev, o.metric, question, _traffic_class_of(o))
                     if native is None:
                         eligibility_reasons.append(
-                            f"objective {o.metric} has no authentic "
+                            f"objective {_axis_key(o)} has no authentic "
                             f"{question.value} evidence binding "
                             "(EVALUATED analysis with envelope, "
                             "qualification and native evidence id) — "
                             "values without evidence never reach Pareto")
                     elif str(native).startswith("fake:"):
                         eligibility_reasons.append(
-                            f"objective {o.metric} binds fake native "
+                            f"objective {_axis_key(o)} binds fake native "
                             "evidence, not authenticated backend "
                             "evidence")
             if not all_objectives_measured:
-                missing = [o.metric for o in definition.objectives
-                           if objective_availability[o.metric]
+                missing = [_axis_key(o) for o in definition.objectives
+                           if objective_availability[_axis_key(o)]
                            != "MEASURED"]
                 eligibility_reasons.append(
                     f"requested objectives not measured: "
@@ -1306,20 +1504,23 @@ Rationale: docs/decisions/modules/optimization.md
                 eligibility_reasons.append(
                     "hard constraints are not all SATISFIED")
             if claims is not None:
-                needed = sorted(
-                    {o.metric for o in definition.objectives
-                     if _objective_question(o) is
-                     EvaluationQuestion.NETWORK_COMPLETION} |
-                    {c.metric if hasattr(c, "metric") else c["metric"]
-                     for c in (definition.constraints or [])})
-                missing_authority = [m for m in needed
-                                     if not _has_metric_authority(registry,
-                                                                  m)
-                                     and m not in federated_keys]
+                needed_axes = []
+                for o in definition.objectives:
+                    if _objective_question(o) is \
+                            EvaluationQuestion.NETWORK_COMPLETION:
+                        needed_axes.append((_axis_key(o), o.metric))
+                for c in (definition.constraints or []):
+                    metric = (c.metric if hasattr(c, "metric")
+                              else c["metric"])
+                    needed_axes.append((_axis_key(c), metric))
+                missing_authority = [
+                    key for key, metric in sorted(set(needed_axes))
+                    if not _has_metric_authority(registry, metric)
+                    and key not in federated_keys]
                 if missing_authority:
                     eligibility_reasons.append(
-                        "metric(s) without a registered metric authority "
-                        "over the authenticated proof: "
+                        "metric axis(es) without a registered metric "
+                        "authority over the authenticated proof: "
                         + ", ".join(missing_authority))
             eligible = not eligibility_reasons
             eligibility_reason = ("; ".join(eligibility_reasons)
@@ -1349,7 +1550,8 @@ Rationale: docs/decisions/modules/optimization.md
                 product_requirement_details=product_details,
                 constraint_details=constraint_details,
                 objective_details=objective_details,
-                objective_provenance=_provenance_docs(ev, measured_all),
+                objective_provenance=_provenance_docs(
+                    ev, measured_all, definition),
                 constraints_satisfied=constraints_satisfied,
                 eligibility_reason=eligibility_reason,
                 out_of_scope_requirement_ids=(
@@ -1359,14 +1561,14 @@ Rationale: docs/decisions/modules/optimization.md
             records.append(record)
             if eligible:
                 feasible_values[cand.candidate_id] = {
-                    o.metric: measured_all[o.metric]
+                    _axis_key(o): measured_all[_axis_key(o)]
                     for o in definition.objectives}
         records = _enforce_federated_comparability(records, definition)
         feasible_values = {
-            r.candidate_id: {o.metric: r.objective_values[o.metric]
+            r.candidate_id: {_axis_key(o): r.objective_values[_axis_key(o)]
                              for o in definition.objectives}
             for r in records if r.pareto_eligible}
-        front = _pareto_ids(feasible_values, definition.objectives)
+        front = _pareto_ids(feasible_values, _pareto_axes(definition.objectives))
         front_set = set(front)
         records = [CandidateRecord(
             candidate_id=r.candidate_id, guided_patch=r.guided_patch,

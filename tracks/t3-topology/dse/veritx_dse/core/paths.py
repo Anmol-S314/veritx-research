@@ -4,6 +4,7 @@ Rationale: docs/decisions/modules/core.md
 """
 
 from pathlib import Path
+import sys
 
 _THIS_DIR = Path(__file__).resolve().parent
 _PARENT = _THIS_DIR.parent
@@ -38,12 +39,13 @@ Rationale: docs/decisions/modules/core.md
     d.mkdir(parents=True)
     return d
 
-BOOKSIM_BIN = BOOKSIM_DIR / "booksim"
+_EXECUTABLE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+BOOKSIM_BIN = BOOKSIM_DIR / f"booksim{_EXECUTABLE_SUFFIX}"
 ASTRA_BS_BIN = (
     ASTRA_DIR / "astra-sim" / "network_frontend"
-    / "booksim2" / "bin" / "AstraSim_BookSim2"
+    / "booksim2" / "bin" / f"AstraSim_BookSim2{_EXECUTABLE_SUFFIX}"
 )
-CHAKRA_TO_ET = ASTRA_DIR / "astra-sim" / "bin" / "chakra_to_et"
+CHAKRA_TO_ET = ASTRA_DIR / "astra-sim" / "bin" / f"chakra_to_et{_EXECUTABLE_SUFFIX}"
 
 def _verify():
     """Check that critical paths exist. Called once at import."""

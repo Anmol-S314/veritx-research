@@ -46,6 +46,68 @@ def _derive(agents, **kw):
     att = derive_attachment(design=cr, inventory=inv, topology=topo)
     return cr, inv, topo, att
 
+def test_named_groups_bind_every_instance_and_round_trip():
+    cr, inv, topo, att = _derive([
+        Agent(kind=AgentKind.COMPUTE_TILE, count=2, group_name="compute"),
+        Agent(kind=AgentKind.HBM_CONTROLLER, count=2, group_name="memory"),
+    ])
+    assert [(e.group_name, e.agent.instance_index) for e in att.endpoints] == [
+        ("compute", 0), ("compute", 1), ("memory", 0), ("memory", 1)]
+    restored = AgentAttachmentArtifact.from_dict(att.to_dict())
+    assert restored == att
+    restored.validate_against(cr, inv, topo)
+
+
+def test_saved_attachment_refuses_same_kind_group_reorder():
+    from dataclasses import replace
+
+    a = Agent(kind=AgentKind.COMPUTE_TILE, count=2, group_name="left")
+    b = replace(a, group_name="right")
+    cr, inv, topo, att = _derive([a, b])
+    reordered = replace(cr, agents=[b, a])
+    with pytest.raises(AttachmentError, match="group_name"):
+        att.validate_against(reordered, build_inventory(reordered), topo)
+
+
+def test_group_rename_changes_attachment_identity():
+    from dataclasses import replace
+
+    a = Agent(kind=AgentKind.COMPUTE_TILE, count=4, group_name="before")
+    *_, before = _derive([a])
+    *_, after = _derive([replace(a, group_name="after")])
+    assert before.attachment_hash() != after.attachment_hash()
+
+
+def test_group_name_tampering_is_hash_bound():
+    *_, att = _derive([
+        Agent(kind=AgentKind.COMPUTE_TILE, count=4, group_name="compute")])
+    doc = att.to_dict()
+    doc["endpoints"][0]["group_name"] = "other"
+    with pytest.raises(AttachmentError):
+        AgentAttachmentArtifact.from_dict(doc)
+
+
+def test_unnamed_attachment_serialization_keeps_legacy_hash():
+    from veritx_dse.core.artifact import content_id
+
+    *_, att = _derive([Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
+    legacy = att.canonical_dict()
+    for endpoint in legacy["endpoints"]:
+        assert "group_name" not in endpoint
+    assert att.attachment_hash() == content_id("srota/AgentAttachment/v3", legacy)
+    assert AgentAttachmentArtifact.from_dict(att.to_dict()) == att
+
+
+def test_named_design_rejects_unbound_legacy_attachment():
+    from dataclasses import replace
+
+    a = Agent(kind=AgentKind.COMPUTE_TILE, count=4)
+    cr, inv, topo, att = _derive([a])
+    named = replace(cr, agents=[replace(a, group_name="compute")])
+    with pytest.raises(AttachmentError, match="group_name"):
+        att.validate_against(named, inv, topo)
+
+
 def test_every_agent_gets_an_endpoint():
     _cr_a, inv, _t, att = _derive([Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
     assert att.endpoint_count == 4 == inv.agent_count

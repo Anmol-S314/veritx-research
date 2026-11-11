@@ -237,6 +237,13 @@ def optimization_capabilities() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "guided_parameters": [p.to_dict() for p in params],
+        "workload_parameters": [
+            {"name": name, "field": f"workload.{name}", "kind": "int",
+             "value_constraint": "positive integer; rank geometry and lowering validate each candidate",
+             "reason": "Changes canonical collective groups, not opaque replay traces. "
+                       "Authored compute stages and memory operands are preserved, not automatically rescaled. "
+                       "Per-candidate backend support and readiness still apply."}
+            for name in ("tp", "ep", "dp", "pp")],
         "search_methods": list(SEARCH_METHODS),
         "selection_policies": list(SELECTION_POLICIES),
         "certified_metrics": metrics,

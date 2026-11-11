@@ -7,14 +7,18 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from veritx_dse.core.errors import SemanticError
 from veritx_dse.model.compile_model import (
     AddressMap, Agent, CompileRequestV3, CompileRequestV3SchemaError,
     DependencyGraph, PhysicalContext, RequirementV3, TopologyFamily,
-    WorkloadV3, _strict_keys, _as_tuple,
+    _legacy_physical_context,
+    TrafficProfile, WorkloadV3, _strict_keys, _as_tuple,
+)
+from veritx_dse.model.agent_intent_v4 import (
+    AgentIntentV4, TrafficPolicyV4, agent_intents_from_dict,
 )
 from veritx_dse.model.noc_controls import (
     NocControls, NocControlsError, noc_controls_from_dict,
@@ -43,6 +47,7 @@ _TOP_V4_KEYS = frozenset({
     "requirements", "agents", "dependencies", "topology", "noc_controls",
     "address_map", "physical", "synthesis_provenance",
     "migration_provenance", "design_hash", "guardrail_hash",
+    "agent_intents", "traffic_policy",
     "_comment", "_docs",
 })
 
@@ -69,11 +74,15 @@ class CompileRequestV4:
     noc_controls: NocControls = field(default_factory=NocControls)
     compute: ComputeIntent = field(default_factory=ComputeIntent)
     address_map: AddressMap = field(default_factory=AddressMap)
-    physical: PhysicalContext = field(default_factory=PhysicalContext)
+    physical: PhysicalContext = field(default_factory=_legacy_physical_context)
     synthesis_provenance: Any = None
     migration_provenance: Any = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V4
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V4
+    # STAGE 1 (D3): new top-level Optional intent blocks. Both default-empty
+    # and enter the semantic dict only when non-empty (absent ≡ empty).
+    agent_intents: tuple[AgentIntentV4, ...] = ()
+    traffic_policy: TrafficPolicyV4 = field(default_factory=TrafficPolicyV4)
 
     def __post_init__(self):
         if not isinstance(self.workload, WorkloadV3):
@@ -81,6 +90,43 @@ class CompileRequestV4:
         object.__setattr__(self, "requirements",
                            _as_tuple("requirements", self.requirements))
         object.__setattr__(self, "agents", _as_tuple("agents", self.agents))
+        for i, agent in enumerate(self.agents):
+            if not isinstance(agent, Agent):
+                raise ValueError(f"agents[{i}] must be an Agent, got {type(agent).__name__}")
+        named = [(i, a.group_name) for i, a in enumerate(self.agents)
+                 if a.group_name is not None]
+        if named:
+            if len(named) != len(self.agents):
+                raise ValueError(
+                    "group_name must be declared on EVERY agent group when any is declared; "
+                    f"groups missing it: {[i for i, a in enumerate(self.agents) if a.group_name is None]}")
+            names = [name for _, name in named]
+            if len(set(names)) != len(names):
+                dupes = sorted({n for n in names if names.count(n) > 1})
+                raise ValueError(f"group_name values must be unique; duplicates: {dupes}")
+        intents = _as_tuple("agent_intents", self.agent_intents)
+        for intent in intents:
+            if not isinstance(intent, AgentIntentV4):
+                raise ValueError(
+                    "agent_intents must contain AgentIntentV4, got "
+                    f"{type(intent).__name__}")
+        indices = [intent.agent_idx for intent in intents]
+        if len(set(indices)) != len(indices):
+            dupes = sorted(i for i in indices if indices.count(i) > 1)
+            raise ValueError(
+                f"agent_intents has duplicate agent_idx values {dupes}")
+        for intent in intents:
+            if intent.agent_idx >= len(self.agents):
+                raise ValueError(
+                    f"agent_intent references group {intent.agent_idx}, "
+                    f"but the request has {len(self.agents)} agent groups")
+        object.__setattr__(
+            self, "agent_intents",
+            tuple(sorted(intents, key=lambda intent: intent.agent_idx)))
+        if not isinstance(self.traffic_policy, TrafficPolicyV4):
+            raise ValueError(
+                "traffic_policy must be a TrafficPolicyV4, got "
+                f"{type(self.traffic_policy).__name__}")
         if self.topology is None:
             raise ValueError(
                 "a v4 request MUST declare its topology explicitly: there is "
@@ -135,7 +181,13 @@ Rationale: docs/decisions/modules/model.md
         )
 
     def _workload_dict(self) -> dict:
-        return CompileRequestV3._workload_dict(self)      # type: ignore[arg-type]
+        d = CompileRequestV3._workload_dict(self)         # type: ignore[arg-type]
+        if self.workload.traffic_profiles:
+            # Absent ≡ empty: a v4 document without profiles must serialize
+            # byte-identically to the pre-profile freeze.
+            d["traffic_profiles"] = [p.to_dict()
+                                     for p in self.workload.traffic_profiles]
+        return d
 
     def _physical_dict(self) -> dict:
         return CompileRequestV3._physical_dict(self)      # type: ignore[arg-type]
@@ -154,6 +206,11 @@ Rationale: docs/decisions/modules/model.md
                                        for r in self.address_map.ranges]},
             "physical": self._physical_dict(),
         }
+        if not self.traffic_policy.is_empty():
+            d["traffic_policy"] = self.traffic_policy.to_dict()
+        if self.agent_intents:
+            d["agent_intents"] = [intent.to_dict()
+                                  for intent in self.agent_intents]
         if not self.compute.is_empty():
             d["compute"] = self.compute.to_dict()
         return d
@@ -211,8 +268,8 @@ Rationale: docs/decisions/modules/model.md
                 f"this v4 reader speaks schema "
                 f"v{COMPILE_REQUEST_SCHEMA_VERSION_V4}, got "
                 f"{d.get('schema_version')!r}. A v2/v3 document must be "
-                "MIGRATED (migrate_v2_to_v4/migrate_v3_to_v4); it is never "
-                "upgraded implicitly during parsing.")
+                "MIGRATED (migrate_v2_to_v3, then migrate_v3_to_v4); it is "
+                "never upgraded implicitly during parsing.")
         _strict_keys_v4(d, _TOP_V4_KEYS, "CompileRequestV4")
         if d.get("compiler_semantics_version") \
                 != COMPILER_SEMANTICS_VERSION_V4:
@@ -224,7 +281,29 @@ Rationale: docs/decisions/modules/model.md
             "topology", "noc_controls", "compute", "schema_version",
             "compiler_semantics_version", "synthesis_provenance",
             "migration_provenance",
+            "agent_intents", "traffic_policy",
             "design_hash", "guardrail_hash")}
+        traffic_profiles: tuple[TrafficProfile, ...] = ()
+        workload_doc = shared.get("workload")
+        if isinstance(workload_doc, dict) \
+                and "traffic_profiles" in workload_doc:
+            # v3 does not know this field (its schema is frozen). Strip it
+            # BEFORE the v3 body parse, then parse it here under v4 rules.
+            workload_doc = dict(workload_doc)
+            raw_profiles = workload_doc.pop("traffic_profiles")
+            if not isinstance(raw_profiles, list):
+                raise CompileRequestV4SchemaError(
+                    "workload.traffic_profiles must be a JSON array")
+            parsed_profiles = []
+            for i, row in enumerate(raw_profiles):
+                try:
+                    parsed_profiles.append(TrafficProfile.from_dict(row))
+                except (ValueError, KeyError) as e:
+                    raise CompileRequestV4SchemaError(
+                        f"invalid workload.traffic_profiles[{i}]: {e}"
+                    ) from e
+            traffic_profiles = tuple(parsed_profiles)
+            shared["workload"] = workload_doc
         shared["schema_version"] = 3
         shared["compiler_semantics_version"] = 3
         shared["noc_config"] = {"topology_family": "mesh"}
@@ -233,6 +312,14 @@ Rationale: docs/decisions/modules/model.md
         except CompileRequestV3SchemaError as e:
             raise CompileRequestV4SchemaError(
                 f"invalid v4 request body: {e}") from e
+        try:
+            workload = v3.workload
+            if traffic_profiles:
+                workload = replace(v3.workload,
+                                   traffic_profiles=traffic_profiles)
+        except ValueError as e:
+            raise CompileRequestV4SchemaError(
+                f"invalid workload.traffic_profiles: {e}") from e
 
         if "topology" not in d or d["topology"] is None:
             raise CompileRequestV4SchemaError(
@@ -248,10 +335,16 @@ Rationale: docs/decisions/modules/model.md
         except NocControlsError as e:
             raise CompileRequestV4SchemaError(
                 f"invalid noc_controls: {e}") from e
+        try:
+            intents = agent_intents_from_dict(d.get("agent_intents", []))
+            policy_obj = TrafficPolicyV4.from_dict(d.get("traffic_policy"))
+        except ValueError as e:
+            raise CompileRequestV4SchemaError(
+                f"invalid stage-1 intent: {e}") from e
 
         try:
             obj = cls(
-                workload=v3.workload,
+                workload=workload,
                 requirements=v3.requirements,
                 agents=v3.agents,
                 dependencies=v3.dependencies,
@@ -268,6 +361,8 @@ Rationale: docs/decisions/modules/model.md
                                       else None),
                 schema_version=d["schema_version"],
                 compiler_semantics_version=d["compiler_semantics_version"],
+                agent_intents=intents,
+                traffic_policy=policy_obj,
             )
         except ValueError as e:
             raise CompileRequestV4SchemaError(
@@ -420,25 +515,9 @@ def _intent_agrees_with_legacy(intent: TopologyIntent,
         return isinstance(intent, ExplicitTopologyIntent)
     return intent.kind in ("gec", "fattree")
 
-def migrate_v2_to_v4(
-        request: Any, *, collective_specs: Any,
-        source_ref: Any = None,
-        topology_intent: TopologyIntent | None = None,
-) -> CompileRequestV4:
-    """v2 -> v4, COMPOSED: the existing v2 -> v3 workload migration followed
-    by v3 -> v4. No migration logic is duplicated here, so the two steps can
-    never disagree about what a v2 document meant.
-
-Rationale: docs/decisions/modules/model.md
-    """
-    from veritx_dse.model.compile_model import migrate_v2_to_v3
-    v3 = migrate_v2_to_v3(request, collective_specs=collective_specs,
-                          source_ref=source_ref)
-    return migrate_v3_to_v4(v3, topology_intent=topology_intent)
-
 __all__ = [
     "CompileRequestV4", "CompileRequestV4SchemaError",
     "CompileRequestV4MigrationError",
     "COMPILE_REQUEST_SCHEMA_VERSION_V4", "COMPILER_SEMANTICS_VERSION_V4",
-    "migrate_v3_to_v4", "migrate_v2_to_v4",
+    "migrate_v3_to_v4",
 ]

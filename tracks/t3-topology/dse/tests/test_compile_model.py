@@ -578,9 +578,11 @@ class TestAddressMap:
 class TestPhysicalContext:
     """PRD §10: Physical implementation context."""
 
-    def test_physical_defaults(self):
+    def test_physical_requires_an_explicit_clock(self):
         from veritx_dse.model.compile_model import PhysicalContext
-        p = PhysicalContext()
+        with pytest.raises(TypeError):
+            PhysicalContext()
+        p = PhysicalContext(default_clock_freq_mhz=1000.0)
         assert p.default_clock_freq_mhz == 1000.0
         assert p.default_data_width == 256
         assert p.process_node_nm == 7
@@ -593,7 +595,7 @@ class TestPhysicalContext:
 
     def test_physical_immutable(self):
         from veritx_dse.model.compile_model import PhysicalContext
-        p = PhysicalContext()
+        p = PhysicalContext(default_clock_freq_mhz=1000.0)
         with pytest.raises(AttributeError):
             p.default_clock_freq_mhz = 500.0
 

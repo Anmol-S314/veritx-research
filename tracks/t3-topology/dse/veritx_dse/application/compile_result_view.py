@@ -49,6 +49,11 @@ def compile_result_is_current(payload: Any) -> bool:
         return False
     if payload.get("contract_version") != CONTRACT_VERSION:
         return False
+    groups = payload.get("groups") or {}
+    routing = groups.get("routing") or {}
+    topology = (groups.get("fabric") or {}).get("topology") or {}
+    if topology.get("shared_links") and not routing.get("shared_route"):
+        return False  # Older inspectors silently dropped the v3 route relation.
     certificate = payload.get("certificate")
     if certificate is None:
         return True
@@ -363,6 +368,11 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
     entries = dict(getattr(route, "entries", {}) or {})
     topology = getattr(bundle, "topology", None)
     classes = [c.id for c in getattr(route, "routing_classes", ())]
+    shared_route = None
+    if getattr(route, "schema_version", None) == 3 and hasattr(route, "canonical_dict"):
+        shared_route = route.canonical_dict()
+        shared_route["artifact_id"] = route.route_artifact_id()
+        classes = [route.routing_class]
 
     route_entries = [
         {"routing_class": cls, "src": src, "dst": dst, "channel_id": channel}
@@ -396,6 +406,7 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
         "entry_count": len(route_entries),
         "entries": route_entries,
         "channel_hops": channel_hops,
+        "shared_route": shared_route,
         "observation": observation,
         "observation_note": (
             "expected and observed are separate facts: the canonical route "
@@ -470,6 +481,11 @@ def _resources(bundle: Any, certificate: Any) -> dict[str, Any]:
         "editable": False,
     }
 
+def _wire_int(value):
+    if type(value) is not int:
+        return value
+    return value if value <= (1 << 53) - 1 else str(value)
+
 def _address_decode(bundle: Any) -> dict[str, Any]:
     """Gate 8 §50 — ranges -> memory agent -> endpoint.
 
@@ -491,8 +507,8 @@ def _address_decode(bundle: Any) -> dict[str, Any]:
         kind = getattr(agent, "kind", None) if agent else None
         rows.append({
             "name": getattr(entry, "name", None),
-            "base": getattr(entry, "base", None),
-            "size": getattr(entry, "size", None),
+            "base": _wire_int(getattr(entry, "base", None)),
+            "size": _wire_int(getattr(entry, "size", None)),
             "target_agent_kind": getattr(kind, "value", kind),
             "target_agent_instance": (
                 getattr(agent, "instance_index", None) if agent else None),
@@ -736,6 +752,24 @@ def _capability_consequences(request: Any,
         }
     return build_consequences(doc, compilation)
 
+def _stage1_payload(compilation: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    """STAGE 1 (M1–M4) verdicts + findings carried on a Compilation.
+
+    Additive and null-safe: older Compilation-shaped objects without the
+    fields read as empty, never crash. Verdict rows are copied so the
+    frozen payload cannot alias a live compilation tuple.
+    """
+    raw_verdicts = getattr(compilation, "stage1_verdicts", None) or ()
+    verdicts: list[dict[str, Any]] = []
+    for verdict in raw_verdicts:
+        if isinstance(verdict, dict):
+            verdicts.append(dict(verdict))
+        else:
+            verdicts.append({"module": str(verdict)})
+    findings = [str(f) for f in (
+        getattr(compilation, "findings", None) or ())]
+    return verdicts, findings
+
 def build_compile_result(revision: dict[str, Any],
                          compilation: Any,
                          topology_view: dict[str, Any] | None,
@@ -749,6 +783,7 @@ def build_compile_result(revision: dict[str, Any],
     certificate = getattr(compilation, "certificate", None)
     request = getattr(compilation, "request", None)
     obligations = _obligations(certificate)
+    stage1_verdicts, stage1_findings = _stage1_payload(compilation)
 
     if bundle is None:
         return {
@@ -756,6 +791,8 @@ def build_compile_result(revision: dict[str, Any],
             "available": False,
             "reason": getattr(compilation, "error", None)
             or "no bundle exists for this revision",
+            "stage1_verdicts": stage1_verdicts,
+            "stage1_findings": stage1_findings,
             "groups": {name: {"available": False} for name in GROUPS},
             "certificate": None,
         }
@@ -767,6 +804,8 @@ def build_compile_result(revision: dict[str, Any],
         "display_name": revision.get("display_name"),
         "compiled_at": revision.get("created_at"),
         "design_hash": _h(revision.get("design_hash")),
+        "stage1_verdicts": stage1_verdicts,
+        "stage1_findings": stage1_findings,
         "certificate": {
             **_projection_for_obligations(obligations),
             "claim_shape_version": CLAIM_SHAPE_VERSION,

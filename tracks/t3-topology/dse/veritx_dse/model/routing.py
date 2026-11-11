@@ -13,7 +13,10 @@ from veritx_dse.core.route_artifact import (
     RouteArtifact,
     RouteArtifactError,
 )
-from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS
+from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, QTREE_NCA
+from veritx_dse.core.route_artifact import TREE4_NCA
+from veritx_dse.core.route_artifact import RING_DATELINE
+from veritx_dse.core.route_artifact import FLY_DEST_TAG
 from veritx_dse.model.routing_materialize import (
     WEIGHTED_SHORTEST_PATH,
 )
@@ -23,9 +26,13 @@ _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.MESH: DOR_XY,
     MaterializedFamily.CONCENTRATED_MESH: DOR_XY,
     MaterializedFamily.TORUS: DOR_TORUS_XY,
+    MaterializedFamily.RING_NATIVE: RING_DATELINE,
     MaterializedFamily.FLATFLY: FLATFLY_MIN,
     MaterializedFamily.GEC_EXPRESS: ANYNET_MIN_HOPS,
     MaterializedFamily.CUSTOM: ANYNET_MIN_HOPS,
+    MaterializedFamily.QTREE: QTREE_NCA,
+    MaterializedFamily.TREE4_NATIVE: TREE4_NCA,
+    MaterializedFamily.FLY_NATIVE: FLY_DEST_TAG,
 }
 
 def _weighted_shortest_path_policy() -> Any:
@@ -284,6 +291,18 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
             "independent directed channels, so no route can be derived "
             "without inventing one")
     policy_id = routing_policy_for(topology)
+    if policy_id == QTREE_NCA:
+        return RouteArtifact.from_topology(
+            topology, name="srota-compile", routing_classes=(QTREE_NCA,))
+    if policy_id == RING_DATELINE:
+        return RouteArtifact.from_topology(
+            topology, name="srota-compile", routing_classes=(RING_DATELINE,))
+    if policy_id == TREE4_NCA:
+        return RouteArtifact.from_topology(
+            topology, name="srota-compile", routing_classes=(TREE4_NCA,))
+    if policy_id == FLY_DEST_TAG:
+        return RouteArtifact.from_topology(
+            topology, name="srota-compile", routing_classes=(FLY_DEST_TAG,))
     if policy_id == DOR_XY:
         return RouteArtifact.from_topology(
             topology, name="srota-compile", routing_classes=(DOR_XY,))

@@ -126,7 +126,6 @@ def test_projection_and_execution_and_qualification_are_independent():
     assert "qualify_native_mesh_dor_class_vcs" in \
         qualification_of(class_vc).qualifier
 
-
 def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     """mesh's PROJECTABLE authority names the preparer and the prepared id,
     not merely the selected profile."""
@@ -274,8 +273,9 @@ def test_fully_progressing_families_are_product_wired():
                      "gec_multidrop", "gec_mesh", "gec_hybrid", "srota",
                      "flatfly", "fattree", "fat_tree",
                      "flattened_butterfly",
-                     "dragonfly", "qtree", "tree4", "torus",
-                     "concentrated_mesh"}
+                     "dragonfly", "qtree", "qtree_native", "tree4",
+                     "torus", "concentrated_mesh", "ring_native",
+                     "tree4_native", "fly_native"}
 
 def test_qualification_is_NOT_bound_to_request_generation():
     """The qualified interface is the CANONICAL ARTIFACTS downstream of

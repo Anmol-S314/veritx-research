@@ -114,6 +114,71 @@ def parse_route_dump_rows(text: str) -> dict[tuple[int, int], RouteDumpRow]:
         raise RouteObservationError("route dump is empty")
     return rows
 
+_UNION_HEADER = "# VeritX routing realization dump (legal first-hop choice union v2)"
+_UNION_RE = re.compile(
+    r"^src_router (\d+) dst_node (\d+) choice (\d+) next_router (\d+) "
+    r"port (\d+)((?:\s+\S+)*)$")
+
+
+def parse_route_dump_union_rows(
+        text: str) -> dict[tuple[int, int], tuple[tuple[int, int], ...]]:
+    """Parse the fork's legal-choice UNION dump (versioned header required).
+
+    The deterministic format has one row per (router, destination); a routing
+    function whose midpoint tie is a real coin cannot produce that, so the
+    union format emits one row per DISTINCT observed outcome and a versioned
+    header. The header is required rather than sniffed: silently reading a
+    union dump as a deterministic table would drop every choice but the last
+    and claim a determinism the producer explicitly refused.
+    """
+    header_seen = False
+    choices: dict[tuple[int, int], dict[int, tuple[int, int]]] = {}
+    for line_no, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            if line == _UNION_HEADER:
+                header_seen = True
+            continue
+        if not header_seen:
+            raise RouteObservationError(
+                f"route dump line {line_no} appears before the legal-choice "
+                "union header; refusing to read an unidentified dialect")
+        match = _UNION_RE.match(line)
+        if match is None:
+            raise RouteObservationError(
+                f"union dump line {line_no} is malformed: {line!r}")
+        tokens = match.group(6).split()
+        if len(tokens) % 2:
+            raise RouteObservationError(
+                f"union dump line {line_no} has a dangling trailer key: "
+                f"{line!r}")
+        for i in range(0, len(tokens), 2):
+            if not _TRAILER_VALUE_RE.match(tokens[i + 1]):
+                raise RouteObservationError(
+                    f"union dump line {line_no} trailer {tokens[i]!r} has "
+                    f"non-integer value {tokens[i + 1]!r}")
+        src, dst = int(match.group(1)), int(match.group(2))
+        index = int(match.group(3))
+        row = (int(match.group(4)), int(match.group(5)))
+        per_pair = choices.setdefault((src, dst), {})
+        if index in per_pair:
+            raise RouteObservationError(
+                f"union dump repeats choice {index} for "
+                f"(src_router={src}, dst_node={dst})")
+        per_pair[index] = row
+    if not choices:
+        raise RouteObservationError("union route dump is empty")
+    out: dict[tuple[int, int], tuple[tuple[int, int], ...]] = {}
+    for key, per_pair in choices.items():
+        if sorted(per_pair) != list(range(len(per_pair))):
+            raise RouteObservationError(
+                f"union dump choices for {key} are not dense 0..n-1")
+        out[key] = tuple(row for _index, row in sorted(per_pair.items()))
+    return out
+
+
 @dataclass(frozen=True)
 class RouteObservationResult:
     routing_class: str

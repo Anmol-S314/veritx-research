@@ -1,7 +1,7 @@
 """ResourceStore tests — typed, write-once, verified, atomic, concurrent.
 
 Covers the 25B durability boundary: four resource kinds, canonical JSON,
-unique-temp + fsync + os.replace, cross-process write lock, idempotence,
+unique-temp + fsync + atomic replace, cross-process write lock, idempotence,
 conflict refusal, corruption refusal, commit-point semantics, and restart.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from veritx_dse.core import atomic
 from veritx_dse.application import store as store_module
 from veritx_dse.application.compile_intent import (
     CompileIntent, derive_compile_request,
@@ -449,7 +450,7 @@ def test_write_path_flushes_fsyncs_and_replaces(tmp_path, monkeypatch):
     store = _store(tmp_path)
     events: list[str] = []
     real_flush = store_module._flush_and_sync
-    real_replace = store_module.os.replace
+    real_replace = atomic._replace
     real_sync_dir = store_module._sync_directory
 
     def record_flush(handle):
@@ -465,7 +466,7 @@ def test_write_path_flushes_fsyncs_and_replaces(tmp_path, monkeypatch):
         return real_sync_dir(directory)
 
     monkeypatch.setattr(store_module, "_flush_and_sync", record_flush)
-    monkeypatch.setattr(store_module.os, "replace", record_replace)
+    monkeypatch.setattr(atomic, "_replace", record_replace)
     monkeypatch.setattr(store_module, "_sync_directory", record_sync_dir)
     store.put_design(design)
     assert events == ["flush+fsync_file", "replace", "fsync_dir"]
@@ -482,7 +483,7 @@ def test_publish_failure_cleans_temp_and_preserves_existing(tmp_path,
     def boom(src, dst):
         raise OSError("injected publish failure")
 
-    monkeypatch.setattr(store_module.os, "replace", boom)
+    monkeypatch.setattr(atomic, "_replace", boom)
     with pytest.raises(ResourceStoreError) as excinfo:
         store.put_design(design_b)
     assert isinstance(excinfo.value.__cause__, OSError)
@@ -496,7 +497,7 @@ def test_commit_point_failure_then_idempotent_retry(tmp_path, monkeypatch):
     store = _store(tmp_path)
     root = tmp_path / "store"
     resolution_name = f"{intent.intent_id()}.json"
-    real_replace = store_module.os.replace
+    real_replace = atomic._replace
     state = {"fail": True}
 
     def selective_replace(src, dst):
@@ -506,7 +507,7 @@ def test_commit_point_failure_then_idempotent_retry(tmp_path, monkeypatch):
             raise OSError("injected commit-point failure")
         return real_replace(src, dst)
 
-    monkeypatch.setattr(store_module.os, "replace", selective_replace)
+    monkeypatch.setattr(atomic, "_replace", selective_replace)
     with pytest.raises(ResourceStoreError):
         store.commit_resolution(intent=intent, design=design,
                                 resolved_fabric=resolved)
@@ -616,12 +617,14 @@ def test_store_module_source_sentinels():
                       "os.environ", "uuid", "datetime", "time.time",
                       "getenv"):
         assert forbidden not in source, forbidden
-    for expected in ("fcntl", "tempfile", "os.replace", "os.fsync",
+    for expected in ("lock_exclusive(fd)", "unlock(fd)", "tempfile", "atomic_replace", "os.fsync",
                      "sort_keys=True"):
         assert expected in source, expected
     modules, _ = _imported_modules(store_module)
     local = {name for name in modules if name.startswith("veritx_dse")}
     assert local == {
+        "veritx_dse.core.atomic",
+        "veritx_dse.core.file_lock",
         "veritx_dse.application.compile_intent",
         "veritx_dse.application.resources",
         "veritx_dse.model.compile_model",

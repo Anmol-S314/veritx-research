@@ -210,7 +210,11 @@ def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
     assert doc["schema_version"] == 2
     assert doc["release_sha"]
     assert doc["schema_versions"]["prepared_booksim"] == 5
-    assert doc["schema_versions"]["backend_evidence"] == 3
+    # Bound to the emitter, not to a remembered number: the evidence
+    # schema is versioned in `backend/evidence.py` and the release manifest
+    # reports whatever that module declares.
+    from veritx_dse.backend.evidence import EVIDENCE_SCHEMA_VERSION
+    assert doc["schema_versions"]["backend_evidence"] == EVIDENCE_SCHEMA_VERSION
     assert doc["container"]["pinned_by_digest"] is False
     assert doc["tools"]["cxx"]["requested"] == cxx
     assert doc["tools"]["cxx"]["path"] == str(Path(cxx).resolve())

@@ -171,12 +171,37 @@ def _route_complete(bundle: Any) -> ObligationResult:
         # demand a table the route never claimed to be.
         nodes = len(route.terminal_to_router)
         expected = len(classes) * n * nodes
+        domain_label = "router x terminal"
     else:
-        expected = len(classes) * n * (n - 1)
+        # A class may declare its own pair domain: a fabric whose flows are
+        # addressed to terminals rather than routers cannot route to every
+        # router. The domain comes from the class's construction, so a table
+        # that drops a required pair still fails.
+        from veritx_dse.core.route_artifact import (
+            RouteArtifact, routing_pair_domain,
+        )
+        domain = (routing_pair_domain(route.routing_classes[0],
+                                      bundle.topology)
+                  if isinstance(route, RouteArtifact)
+                  and len(route.routing_classes) == 1 else None)
+        if domain is None:
+            expected = len(classes) * n * (n - 1)
+            domain_label = "every ordered router pair"
+        else:
+            expected = len(classes) * len(domain)
+            domain_label = "declared class pair domain"
     got = len(_shared_route_pairs(route)) if _is_shared_route(route) \
         else len(route.entries)
+    # The default pair domains are identified by the existing count fields.
+    # Emitting their human label unconditionally changed every classic
+    # certificate's identity (and every downstream system_hash) without a
+    # semantic change. Keep the label only where it distinguishes a DECLARED
+    # class pair domain from the ordinary complete-router-pair domain; that
+    # is the case the label exists to explain.
     ev = {"routing_classes": classes, "routers": n,
           "expected_entries": expected, "entries": got}
+    if domain_label == "declared class pair domain":
+        ev["domain"] = domain_label
     if got != expected:
         return _fail("ROUTE_COMPLETE", "entry-coverage/v1",
                      f"{got} entries != {expected} required", ev)

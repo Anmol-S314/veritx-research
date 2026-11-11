@@ -45,7 +45,7 @@ _REQUIREMENT_KEYS = frozenset({
 _AGENT_KEYS = frozenset({
     "kind", "count", "data_width", "addr_width", "protocol",
     "clock_domain", "power_domain", "ip_template_id",
-    "ip_template_version", "ip_instance_id",
+    "ip_template_version", "ip_instance_id", "group_name",
 })
 _DEPENDENCY_KEYS = frozenset({"source", "target", "kind"})
 _NOC_KEYS = frozenset({
@@ -105,6 +105,33 @@ def _as_int(name: str, value: Any, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         raise ValueError(f"{name} must be >= {minimum}, got {value}")
     return value
+
+_U53_LIMIT = 1 << 53
+_MAX_U64 = (1 << 64) - 1
+_V4_LEGACY_WIRE_CLOCK_MHZ = 1000.0
+STAMPED_CATALOG_IDS = frozenset({"hbm3e-memory", "csr-config-controller", "pcie-cxl-root"})
+
+def _as_exact_int(name: str, value: Any, minimum: int | None = None) -> int:
+    if type(value) is int:
+        number = value
+    elif type(value) is str:
+        text = value.strip()
+        if not text.isascii() or not text.isdigit():
+            raise ValueError(
+                f"{name} must be a decimal unsigned 64-bit integer, got {value!r}")
+        number = int(text, 10)
+    else:
+        raise ValueError(
+            f"{name} must be an int or a decimal unsigned 64-bit integer string, "
+            f"got {type(value).__name__} {value!r}")
+    if number < 0 or number > _MAX_U64:
+        raise ValueError(f"{name} must be an unsigned 64-bit integer, got {number}")
+    if minimum is not None and number < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {number}")
+    return number
+
+def _exact_wire(value: int) -> int | str:
+    return value if value <= _U53_LIMIT - 1 else str(value)
 
 def _as_real(name: str, value: Any, minimum: float | None = None) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -216,6 +243,7 @@ class Agent:
     protocol: str = "AXI"
     clock_domain: str | None = None
     power_domain: str | None = None
+    group_name: str | None = None
     ip_template_id: str | None = None
     ip_template_version: str | None = None
     ip_instance_id: str | None = None
@@ -229,6 +257,12 @@ class Agent:
             _as_str("clock_domain", self.clock_domain, allow_empty=False)
         if self.power_domain is not None:
             _as_str("power_domain", self.power_domain, allow_empty=False)
+        if self.group_name is not None:
+            _as_str("group_name", self.group_name, allow_empty=False)
+            if not all(ch.isalnum() or ch in "-_" for ch in self.group_name):
+                raise ValueError(
+                    "group_name must be alphanumeric plus hyphen and "
+                    f"underscore, got {self.group_name!r}")
         ip_identity = (self.ip_template_id, self.ip_template_version,
                        self.ip_instance_id)
         if any(value is not None for value in ip_identity):
@@ -239,10 +273,10 @@ class Agent:
             for name, value in zip(("ip_template_id", "ip_template_version",
                                     "ip_instance_id"), ip_identity):
                 _as_str(name, value, allow_empty=False)
-            if self.ip_template_id != "hbm3e-memory":
+            if self.ip_template_id not in STAMPED_CATALOG_IDS:
                 raise ValueError(
-                    "only the explicitly materialized hbm3e-memory catalog "
-                    "template may carry stamped Agent identity")
+                    f"only the explicitly materialized catalog templates "
+                    f"{sorted(STAMPED_CATALOG_IDS)} may carry stamped Agent identity")
             from veritx_dse.model.ip_catalog import get_ip_template
             template = get_ip_template(self.ip_template_id)
             if (self.ip_template_version != template.version
@@ -603,13 +637,19 @@ class AddressRange:
 
     def __post_init__(self):
         _as_str("AddressRange.name", self.name, allow_empty=False)
-        _as_int("AddressRange.base", self.base, minimum=0)
-        _as_int("AddressRange.size", self.size, minimum=1)
+        object.__setattr__(self, "base",
+                           _as_exact_int("AddressRange.base", self.base, minimum=0))
+        object.__setattr__(self, "size",
+                           _as_exact_int("AddressRange.size", self.size, minimum=1))
         _as_int("AddressRange.target_agent_idx", self.target_agent_idx,
                 minimum=0)
         if self.target_instance_index is not None:
             _as_int("AddressRange.target_instance_index",
                     self.target_instance_index, minimum=0)
+        if self.interleave_bytes is not None:
+            interleave = _as_exact_int("AddressRange.interleave_bytes",
+                                       self.interleave_bytes, minimum=1)
+            object.__setattr__(self, "interleave_bytes", interleave)
         if self.selection_policy not in (None, "FIXED_INSTANCE", "STRIPED"):
             raise ValueError("AddressRange.selection_policy must be FIXED_INSTANCE or STRIPED")
         if self.selection_policy == "FIXED_INSTANCE":
@@ -618,8 +658,6 @@ class AddressRange:
         elif self.selection_policy == "STRIPED":
             if self.target_instance_index is not None:
                 raise ValueError("STRIPED cannot specify target_instance_index")
-            _as_int("AddressRange.interleave_bytes", self.interleave_bytes,
-                    minimum=1)
             if self.interleave_bytes & (self.interleave_bytes - 1):
                 raise ValueError("AddressRange.interleave_bytes must be a power of two")
             if self.base % self.interleave_bytes:
@@ -734,13 +772,16 @@ Rationale: docs/decisions/modules/model.md
                 )
         return errors
 
+def _legacy_physical_context() -> "PhysicalContext":
+    return PhysicalContext(default_clock_freq_mhz=_V4_LEGACY_WIRE_CLOCK_MHZ)
+
 @dataclass(frozen=True)
 class PhysicalContext:
     """Physical implementation context: clock, reset, power domains.
 
 Rationale: docs/decisions/modules/model.md
     """
-    default_clock_freq_mhz: float = 1000.0
+    default_clock_freq_mhz: float
     default_data_width: int = 256
     num_power_domains: int = 1
     process_node_nm: int = 7
@@ -866,7 +907,7 @@ Rationale: docs/decisions/modules/model.md
     dependencies: DependencyGraph
     noc_config: NocConfig
     address_map: AddressMap = field(default_factory=AddressMap)
-    physical: PhysicalContext = field(default_factory=PhysicalContext)
+    physical: PhysicalContext = field(default_factory=_legacy_physical_context)
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION
 
@@ -928,6 +969,8 @@ Rationale: docs/decisions/modules/model.md
              "data_width": a.data_width, "addr_width": a.addr_width,
              "protocol": a.protocol, "clock_domain": a.clock_domain,
              "power_domain": a.power_domain}
+        if a.group_name is not None:
+            d["group_name"] = a.group_name
         if a.ip_template_id is not None:
             d.update({"ip_template_id": a.ip_template_id,
                       "ip_template_version": a.ip_template_version,
@@ -941,14 +984,14 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _address_dict(r: AddressRange) -> dict:
-        d = {"name": r.name, "base": r.base, "size": r.size,
+        d = {"name": r.name, "base": _exact_wire(r.base), "size": _exact_wire(r.size),
              "target_agent_idx": r.target_agent_idx}
         if r.selection_policy is not None:
             d["selection_policy"] = r.selection_policy
             if r.target_instance_index is not None:
                 d["target_instance_index"] = r.target_instance_index
             if r.interleave_bytes is not None:
-                d["interleave_bytes"] = r.interleave_bytes
+                d["interleave_bytes"] = _exact_wire(r.interleave_bytes)
         return d
 
     def _noc_dict(self) -> dict:
@@ -1135,6 +1178,7 @@ Rationale: docs/decisions/modules/model.md
                 protocol=a.get("protocol", "AXI"),
                 clock_domain=a.get("clock_domain"),
                 power_domain=a.get("power_domain"),
+                group_name=a.get("group_name"),
                 ip_template_id=a.get("ip_template_id"),
                 ip_template_version=a.get("ip_template_version"),
                 ip_instance_id=a.get("ip_instance_id"),
@@ -1182,7 +1226,7 @@ Rationale: docs/decisions/modules/model.md
         ph_d = d.get("physical", {})
         _strict_keys(ph_d, _PHYSICAL_KEYS, "physical")
         physical = PhysicalContext(
-            default_clock_freq_mhz=ph_d.get("clock_freq_mhz", 1000.0),
+            default_clock_freq_mhz=ph_d.get("clock_freq_mhz", _V4_LEGACY_WIRE_CLOCK_MHZ),
             default_data_width=ph_d.get("data_width", 256),
             num_power_domains=ph_d.get("num_power_domains", 1),
             process_node_nm=ph_d.get("process_node_nm", 7),
@@ -1647,6 +1691,9 @@ _COLLECTIVE_V3_KEYS = frozenset({
     "kind", "dimension", "payload_bytes", "traffic_class",
     "source_rank",
 })
+_TRAFFIC_PROFILE_KEYS = frozenset({
+    "src_rank", "dst_rank", "traffic_class", "payload_bytes",
+})
 _COHERENCE_V3_KEYS = frozenset({
     "pattern", "home_rank", "writer_rank", "sharers",
     "line_bytes", "lines", "traffic_class",
@@ -1723,6 +1770,51 @@ Rationale: docs/decisions/modules/model.md
             payload_bytes=d["payload_bytes"],
             traffic_class=d["traffic_class"],
             source_rank=d.get("source_rank"),
+        )
+
+@dataclass(frozen=True)
+class TrafficProfile:
+    """v4-only workload intent: one declared initiator→target transfer.
+
+    A profile fixes the P2P volume/mix row (source, target, traffic class,
+    bytes). It lowers to exactly one KIND_P2P TRANSFER operation. Rate,
+    burst and outstanding-request schedules are deliberately NOT modelled
+    here: this layer states volume and class, never a temporal schedule.
+    """
+    src_rank: int
+    dst_rank: int
+    traffic_class: str
+    payload_bytes: int
+
+    def __post_init__(self):
+        _as_int("src_rank", self.src_rank, minimum=0)
+        _as_int("dst_rank", self.dst_rank, minimum=0)
+        _as_str("traffic_class", self.traffic_class, allow_empty=False)
+        _as_int("payload_bytes", self.payload_bytes, minimum=1)
+        if self.src_rank == self.dst_rank:
+            raise ValueError(
+                "TrafficProfile src_rank and dst_rank must differ")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "src_rank": self.src_rank,
+            "dst_rank": self.dst_rank,
+            "traffic_class": self.traffic_class,
+            "payload_bytes": self.payload_bytes,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> TrafficProfile:
+        _strict_keys_v3(d, _TRAFFIC_PROFILE_KEYS, "traffic_profile")
+        missing = sorted(_TRAFFIC_PROFILE_KEYS - set(d))
+        if missing:
+            raise CompileRequestV3SchemaError(
+                f"missing required field traffic_profile.{missing[0]}")
+        return cls(
+            src_rank=d["src_rank"],
+            dst_rank=d["dst_rank"],
+            traffic_class=d["traffic_class"],
+            payload_bytes=d["payload_bytes"],
         )
 
 class CoherencePattern(Enum):
@@ -1915,6 +2007,7 @@ Rationale: docs/decisions/modules/model.md
     collectives: tuple[CollectiveIntent, ...] = ()
     coherence: tuple[CoherenceIntent, ...] = ()
     source_ref: WorkloadSourceRef | None = None
+    traffic_profiles: tuple[TrafficProfile, ...] = ()
 
     def __post_init__(self):
         _as_enum("model_family", self.model_family, ModelFamily)
@@ -1933,8 +2026,30 @@ Rationale: docs/decisions/modules/model.md
                 raise ValueError(
                     "coherence must contain CoherenceIntent, got "
                     f"{type(c).__name__}")
+        object.__setattr__(self, "traffic_profiles",
+                           _as_tuple("traffic_profiles",
+                                     self.traffic_profiles))
+        for p in self.traffic_profiles:
+            if not isinstance(p, TrafficProfile):
+                raise ValueError(
+                    "traffic_profiles must contain TrafficProfile, got "
+                    f"{type(p).__name__}")
         for field_name in ("tp", "pp", "ep", "dp"):
             _as_int(field_name, getattr(self, field_name), minimum=1)
+        world_size = self.world_size
+        seen_profiles: set[tuple[int, int, str]] = set()
+        for p in self.traffic_profiles:
+            if p.src_rank >= world_size or p.dst_rank >= world_size:
+                raise ValueError(
+                    f"traffic profile {p.src_rank}->{p.dst_rank} addresses "
+                    f"a rank outside world_size={world_size} "
+                    "(tp*pp*ep*dp)")
+            key = (p.src_rank, p.dst_rank, p.traffic_class)
+            if key in seen_profiles:
+                raise ValueError(
+                    "duplicate traffic profile (src_rank, dst_rank, "
+                    f"traffic_class)={key}")
+            seen_profiles.add(key)
         _as_str("model_name", self.model_name)
         if self.source_ref is not None and \
                 not isinstance(self.source_ref, WorkloadSourceRef):
@@ -2026,7 +2141,7 @@ Rationale: docs/decisions/modules/model.md
     dependencies: DependencyGraph
     noc_config: NocConfig
     address_map: AddressMap = field(default_factory=AddressMap)
-    physical: PhysicalContext = field(default_factory=PhysicalContext)
+    physical: PhysicalContext = field(default_factory=_legacy_physical_context)
     explicit_topology: "TopologyIR | None" = None
     synthesis_provenance: Any = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V3
@@ -2035,6 +2150,12 @@ Rationale: docs/decisions/modules/model.md
     def __post_init__(self):
         if not isinstance(self.workload, WorkloadV3):
             raise ValueError("workload must be a WorkloadV3")
+        if self.workload.traffic_profiles:
+            raise ValueError(
+                "workload.traffic_profiles is a v4-only intent: schema 3 "
+                "has no document field for it, so a v3 request must never "
+                "carry profiles its own identity cannot express — migrate "
+                "the request to v4")
         object.__setattr__(self, 'requirements',
                            _as_tuple('requirements', self.requirements))
         object.__setattr__(self, 'agents',
@@ -2109,6 +2230,8 @@ Rationale: docs/decisions/modules/model.md
              "data_width": a.data_width, "addr_width": a.addr_width,
              "protocol": a.protocol, "clock_domain": a.clock_domain,
              "power_domain": a.power_domain}
+        if a.group_name is not None:
+            d["group_name"] = a.group_name
         if a.ip_template_id is not None:
             d.update({"ip_template_id": a.ip_template_id,
                       "ip_template_version": a.ip_template_version,
@@ -2122,14 +2245,14 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _address_dict(r: AddressRange) -> dict:
-        d = {"name": r.name, "base": r.base, "size": r.size,
+        d = {"name": r.name, "base": _exact_wire(r.base), "size": _exact_wire(r.size),
              "target_agent_idx": r.target_agent_idx}
         if r.selection_policy is not None:
             d["selection_policy"] = r.selection_policy
             if r.target_instance_index is not None:
                 d["target_instance_index"] = r.target_instance_index
             if r.interleave_bytes is not None:
-                d["interleave_bytes"] = r.interleave_bytes
+                d["interleave_bytes"] = _exact_wire(r.interleave_bytes)
         return d
 
     def _noc_dict(self) -> dict:
@@ -2373,6 +2496,7 @@ Rationale: docs/decisions/modules/model.md
                     protocol=a.get("protocol", "AXI"),
                     clock_domain=a.get("clock_domain"),
                     power_domain=a.get("power_domain"),
+                    group_name=a.get("group_name"),
                     ip_template_id=a.get("ip_template_id"),
                     ip_template_version=a.get("ip_template_version"),
                     ip_instance_id=a.get("ip_instance_id"),
@@ -2432,7 +2556,7 @@ Rationale: docs/decisions/modules/model.md
         _strict_keys_v3(ph_d, _PHYSICAL_KEYS, "physical")
         try:
             physical = PhysicalContext(
-                default_clock_freq_mhz=ph_d.get("clock_freq_mhz", 1000.0),
+                default_clock_freq_mhz=ph_d.get("clock_freq_mhz", _V4_LEGACY_WIRE_CLOCK_MHZ),
                 default_data_width=ph_d.get("data_width", 256),
                 num_power_domains=ph_d.get("num_power_domains", 1),
                 process_node_nm=ph_d.get("process_node_nm", 7),
@@ -2494,7 +2618,9 @@ Rationale: docs/decisions/modules/model.md
     return tuple(sorted({c.traffic_class
                          for c in request.workload.collectives} |
                         {c.traffic_class
-                         for c in request.workload.coherence}))
+                         for c in request.workload.coherence} |
+                        {p.traffic_class
+                         for p in request.workload.traffic_profiles}))
 
 def migrate_v2_to_v3(request: CompileRequest, *,
                      collective_specs: Any,
@@ -2800,6 +2926,23 @@ def hybrid_policy_vc_floor(request: Any) -> int | None:
     return None
 
 
+def dateline_vc_floor(request: Any) -> int | None:
+    """The VC count a dateline-partitioned ring/torus requires, or None.
+
+    The native ring executes the fork's 1-D dimension-order function, and
+    the native torus executes the 2-D wraparound function; both integer-
+    halve the VC range (``available_vcs = (vcEnd - vcBegin + 1) / 2`` and
+    assert it is positive). One VC therefore cannot run the declared
+    discipline at all: the dateline IS the second half. This is a property
+    of the FABRIC, not of the dependency graph — a workload with no cyclic
+    dependency still needs both halves on either wraparound topology.
+    """
+    intent = getattr(request, "topology", None)
+    if getattr(intent, "kind", None) in ("ring_native", "torus"):
+        return 2
+    return None
+
+
 def shape_policy_vc_floor(request: Any) -> int | None:
     """The VC count SROTA's two-shape policy requires, or None.
 
@@ -2863,6 +3006,11 @@ Rationale: docs/decisions/modules/model.md
     if multidrop is not None:
         vc_count = max(vc_count, multidrop)
     # Two direct shapes need one VC set each, or their union re-opens RT-R7.
+    # A dateline-partitioned ring integer-halves the VC range, so its two
+    # halves are a fabric requirement rather than a cycle allowance.
+    dateline_floor = dateline_vc_floor(request)
+    if dateline_floor is not None:
+        vc_count = max(vc_count, dateline_floor)
     shape_floor = shape_policy_vc_floor(request)
     if shape_floor is not None:
         vc_count = max(vc_count, shape_floor)
@@ -2937,6 +3085,41 @@ Rationale: docs/decisions/modules/model.md
         f"cycle_separated={separated}; no_concurrent_collective_floor"
     )
     class_map_v3 = {cls: [vc] for cls, vc in va.per_class_vc.items()}
+    # SROTA's rank/shape VC sets and GEC's tap VC slices are ROUTING
+    # resources, not per-class isolation. A multi-class workload on either
+    # fabric therefore declares that every canonical class may use the whole
+    # envelope; the fork executes exactly one envelope per class anyway, and
+    # the previous one-VC-per-class map would make the lowerer refuse a
+    # design whose classes share a VC subset. Keep the default map for
+    # point-to-point families, where class->VC separation is a real claim.
+    declared_classes = list(derive_v3_traffic_classes(request))
+    # v4 carries a typed topology intent; v3 carries the legacy noc_config
+    # (or no typed topology at all). Only a typed SROTA/GEC intent needs the
+    # full-envelope rewrite; a v3 request never reaches this branch.
+    #
+    # Plane C is the exception: its coherence classes ride a SECOND subnet
+    # whose VC space is independent. Flattening the primary to a full
+    # envelope would make the flat admission accept traffic that only the
+    # multi-plane binding is allowed to place. Keep the per-class primary map
+    # when Plane C is declared; the binding owns the cross-plane admission.
+    _topology = getattr(request, "topology", None)
+    topology_kind = getattr(_topology, "kind", None)
+    # SrotaIntent stores planes as SrotaPlane enum members; normalize to
+    # their canonical letters before asking whether Plane C is declared.
+    _plane_values = {
+        getattr(plane, "value", plane)
+        for plane in getattr(_topology, "planes", ())}
+    srota_has_plane_c = (
+        topology_kind == "srota" and "c" in _plane_values)
+    if (len(set(declared_classes)) >= 2
+            and topology_kind in ("srota", "gec")
+            and not srota_has_plane_c):
+        class_map_v3 = {
+            cls: list(range(va.vc_count))
+            for cls in va.per_class_vc}
+        derivation += (
+            f"; multi-class-full-envelope({sorted(set(declared_classes))}"
+            f" over 0..{va.vc_count - 1})")
     hybrid_floor = hybrid_policy_vc_floor(request)
     if hybrid_floor is not None:
         from veritx_dse.model.gec_hybrid_route import GecHybridParams
@@ -2960,6 +3143,17 @@ Rationale: docs/decisions/modules/model.md
         from veritx_dse.core.route_artifact import DOR_TORUS_XY as _DT
     except Exception:
         _DT = None
+    try:
+        from veritx_dse.core.route_artifact import RING_DATELINE as _RD
+    except Exception:
+        _RD = None
+    if (_RD is not None and list(classes) == [_RD] and va.vc_count == 2):
+        # Both dateline halves carry the same routing class: the fork picks
+        # the half per flow, not per class, so every traffic class may use
+        # either. Leaving the default one-VC-per-class map would hand a ring
+        # class [0] only and make the upper half unroutable.
+        class_map_v3 = {cls: [0, 1] for cls in va.per_class_vc}
+        derivation += "; dateline-full-envelope(classeserved-over-(0,1))"
     if (_DT is not None and list(classes) == [_DT]
             and va.vc_count == 2):
         class_map_v3 = {cls: [0, 1] for cls in va.per_class_vc}

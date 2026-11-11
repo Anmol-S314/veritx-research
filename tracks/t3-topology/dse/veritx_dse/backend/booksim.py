@@ -108,6 +108,7 @@ BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
     "deadlock_warn_timeout", "print_activity", "viewer_trace", "sim_power",
     "max_samples", "sim_type", "latency_thres",
     "traffic", "sample_period", "seed", "routing_dump_file",
+    "trace_packet_log",
 )
 
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
@@ -1121,9 +1122,6 @@ def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
     return {"routers": graph.n_routers, "nodes": graph.n_nodes,
             "directed_edges": len(expected_edges)}
 
-_DUMP_RE = re.compile(
-    r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
-
 def expected_route_table(bundle: ResolvedFabricBundle,
                          config: BackendConfigArtifact
                          ) -> dict[tuple[int, int], int]:
@@ -1171,21 +1169,18 @@ def compare_route_realization(
         raise BookSimRouteError(
             f"BookSim produced no route dump at {dump_path} ({exc}); the "
             "certified profile requires executed-route evidence") from exc
-    executed: dict[tuple[int, int], int] = {}
-    for line_no, line in enumerate(text.splitlines(), 1):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = _DUMP_RE.match(line)
-        if not m:
-            raise BookSimRouteError(
-                f"route dump line {line_no} is malformed: {line!r}")
-        src, node, nxt, _port = (int(g) for g in m.groups())
-        key = (src, node)
-        if key in executed:
-            raise BookSimRouteError(
-                f"route dump repeats (src_router={src}, dst_node={node})")
-        executed[key] = nxt
+    # One parser for the fork's dump dialect: route_observation owns the
+    # fixed fields plus the extensible `key value` trailer pairs (`drop`,
+    # `lanes`, `vc_start`, `vc_end`). Reusing it here keeps the first-hop
+    # table from drifting from the observation module that already tests
+    # trailer additions.
+    from veritx_dse.backend.route_observation import (
+        RouteObservationError, parse_route_dump,
+    )
+    try:
+        executed = parse_route_dump(text)
+    except RouteObservationError as exc:
+        raise BookSimRouteError(str(exc)) from exc
 
     expected = expected_route_table(bundle, config)
 

@@ -681,7 +681,8 @@
         "channels": 24,
         "endpoints": 36,
         "routers": 9,
-        "seats": 36
+        "seats": 36,
+        "shared_links": 0
       },
       "design_hash": "sha256:835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
       "endpoints": [
@@ -975,7 +976,11 @@
         }
       ],
       "family": "concentrated_mesh",
+      "island_columns": [],
       "physical_links": [],
+      "planes": [
+        "d"
+      ],
       "revision_id": "fixture-concentrated",
       "routers": [
         {
@@ -1051,6 +1056,7 @@
           "seat_capacity": 4
         }
       ],
+      "shared_links": [],
       "topology_hash": "sha256:24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc"
     }
   },

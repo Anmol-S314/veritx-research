@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from contextlib import contextmanager
 
+from veritx_dse.core.atomic import atomic_replace
+
 
 @contextmanager
 def temporary_directory(prefix: str = "veritx_"):
@@ -26,7 +28,7 @@ def atomic_write(path: Path):
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     try:
         yield tmp_path
-        tmp_path.replace(path)
+        atomic_replace(tmp_path, path)
     except Exception:
         if tmp_path.exists():
             tmp_path.unlink()

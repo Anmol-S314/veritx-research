@@ -74,7 +74,8 @@ MESHDOR_CONFIG_KEY_ORDER: tuple[str, ...] = (
     "acc_stopping_thres", "include_queuing", "print_csv_results",
     "deadlock_warn_timeout", "print_activity", "viewer_trace", "sim_power",
     "max_samples", "sim_type", "latency_thres",
-    "traffic", "sample_period", "seed", "routing_dump_file",
+    "traffic", "sample_period", "trace_packet_log", "seed",
+    "routing_dump_file",
 )
 
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",

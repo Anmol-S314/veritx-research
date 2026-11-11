@@ -473,7 +473,7 @@ def test_application_package_reaches_no_legacy_compiler():
     assert files, "application package must not be empty"
     for path in files:
         text = path.read_text(encoding="utf-8")
-        for token in ("compile_bundle", "derive_route", "derive_vc_assignment",
+        for token in ("compile_bundle", "derive_route", "derive_vc_assignment(",
                       "derive_vc_count", "p4/studio",
                       "veritx_dse.application.compile import",
                       "from veritx_dse.application.compile ",

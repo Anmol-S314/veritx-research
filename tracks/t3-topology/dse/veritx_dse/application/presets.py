@@ -119,19 +119,24 @@ def _fattree16_request():
     return _typed_request(
         FatTreeIntent(switch_radix=4, level_count=2), endpoints=16, tp=16)
 
-def _gec_mecs16_request():
-    """GEC multidrop (MECS): o*d == k-1 with d > 1, so the wires are SHARED.
+def _gec_shared_request(mode: str, *, concentration: int = 1):
+    """Canonical 4x4 shared-wire fabric; concentration determines tile count.
 
-    k=4, o=1, d=3: one express wire per dimension, three taps per wire, one
-    VC per tap. Payload must divide by the tile count; 16*128 is exact.
+    This is not the native research config: the compiler owns attachment,
+    shared-resource routes, VC derivation, and the execution profile.
     """
     from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
+    endpoints = 16 * concentration
     return _typed_request(
         GecTopologyIntent(
-            mode=GecMode.MULTIDROP, grid_side_length=4, concentration=1,
+            mode=GecMode(mode), grid_side_length=4, concentration=concentration,
             express_channel_groups_per_dimension=1,
             destinations_per_express_channel=3),
-        endpoints=16, tp=16, payload_bytes=16 * 128)
+        endpoints=endpoints, tp=endpoints, payload_bytes=endpoints * 128)
+
+
+def _gec_mecs16_request():
+    return _gec_shared_request("multidrop")
 
 
 def _gec_express16_request():
@@ -150,13 +155,7 @@ def _gec_mesh64_request():
 
 def _gec_hybrid16_request():
     """4x4 hybrid: mesh + MECS, ranked union, six X/Y phase/tap VCs."""
-    from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
-    return _typed_request(
-        GecTopologyIntent(mode=GecMode.HYBRID, grid_side_length=4,
-                          concentration=1,
-                          express_channel_groups_per_dimension=1,
-                          destinations_per_express_channel=3),
-        endpoints=16, tp=16, payload_bytes=2048)
+    return _gec_shared_request("hybrid")
 
 
 def _srota32_request():
@@ -173,6 +172,16 @@ def _srota32_request():
                     sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
                     tel_latency=8),
         endpoints=32, tp=32)
+
+
+def _srota64_request():
+    """8x8 express fabric, one endpoint per router, two direct rank VC sets."""
+    from dataclasses import replace
+    base = _srota32_request()
+    return _typed_request(
+        replace(base.topology, side_length=8, concentration=1,
+                path_shapes=frozenset({'row', 'column'}), vc_policy='rank'),
+        endpoints=64, tp=64)
 
 
 def _srota32_rank_request():
@@ -219,7 +228,11 @@ def _plane_c_workload(tp: int, *, payload_bytes: int):
     """A carrier workload with TWO traffic classes, one per packet plane.
 
     Plane C needs traffic of its own: a single-class workload would leave
-    the second subnet idle, which is not a multi-plane run.
+    the second subnet idle, which is not a multi-plane run. The control
+    class uses the ``control:<suffix>`` namespace the binding pins to Plane
+    C (``model/multi_plane_vc.py``); the TP collective is data and stays on
+    Plane D. The pre-namespace spelling ``control_collective`` is still
+    recognized so requests saved before this vocabulary keep their plane.
     """
     from veritx_dse.model.compile_model import (
         CollectiveDimension, CollectiveIntent, CollectiveKind, ModelFamily,
@@ -238,7 +251,7 @@ def _plane_c_workload(tp: int, *, payload_bytes: int):
                 kind=CollectiveKind.ALLGATHER,
                 dimension=CollectiveDimension.TP,
                 payload_bytes=payload_bytes,
-                traffic_class="control_collective"),
+                traffic_class="control:collective"),
         ))
 
 
@@ -313,6 +326,26 @@ def _flattened_butterfly16_request():
         endpoints=16, tp=16)
 
 
+def _qtree_native64_request():
+    from veritx_dse.model.topology_intent import QTreeIntent
+    return _typed_request(QTreeIntent(radix=4, levels=3), endpoints=64, tp=64)
+
+
+def _tree4_native64_request():
+    from veritx_dse.model.topology_intent import Tree4Intent
+    return _typed_request(Tree4Intent(radix=4, levels=3), endpoints=64, tp=64)
+
+
+def _fly_native64_request():
+    from veritx_dse.model.topology_intent import FlyIntent
+    return _typed_request(FlyIntent(radix=4, levels=3), endpoints=64, tp=64)
+
+
+def _ring_native64_request():
+    from veritx_dse.model.topology_intent import RingIntent
+    return _typed_request(RingIntent(router_count=64), endpoints=64, tp=64)
+
+
 def _qtree7_request():
     # Equal-chunk ring lowering needs payload % TP == 0; 8192 % 7 != 0.
     return _structured_request(
@@ -357,8 +390,11 @@ TYPED_PRESET_BUILDERS = {
     "gec_express16": _gec_express16_request,
     "gec_mecs16": _gec_mecs16_request,
     "gec_hybrid16": _gec_hybrid16_request,
+    "gec_mecs64": lambda: _gec_shared_request("multidrop", concentration=4),
+    "gec_hybrid64": lambda: _gec_shared_request("hybrid", concentration=4),
     "gec_mesh64": _gec_mesh64_request,
     "srota32": _srota32_request,
+    "srota64": _srota64_request,
     "srota32_rank": _srota32_rank_request,
     "srota32_islands": _srota32_islands_request,
     "srota32_plane_c": _srota32_plane_c_request,
@@ -368,6 +404,10 @@ TYPED_PRESET_BUILDERS = {
     "fat_tree4": _fat_tree4_request,
     "flattened_butterfly16": _flattened_butterfly16_request,
     "qtree7": _qtree7_request,
+    "qtree_native64": _qtree_native64_request,
+    "ring_native64": _ring_native64_request,
+    "tree4_native64": _tree4_native64_request,
+    "fly_native64": _fly_native64_request,
     "tree4_7": _tree4_7_request,
 }
 
@@ -379,6 +419,10 @@ _TYPED_PRESET_DESCRIPTIONS = {
     "fat_tree4": "4-tile fat tree (radix 2 x 2 tiers)",
     "flattened_butterfly16": "16-tile flattened butterfly (radix 4 x 2 dimensions)",
     "qtree7": "7-tile qtree (radix 2 x 2 tiers)",
+    "qtree_native64": "64-terminal native QTree (21 routers, leaf-only attachment, NCA routing)",
+    "ring_native64": "64-router native ring (one wraparound dimension, per-flow dateline halves)",
+    "tree4_native64": "64-terminal native Tree4 (4 roots, 8 middles, 16 leaves, NCA upward choice)",
+    "fly_native64": "64-terminal native 4-ary 3-stage fly (terminals inject at stage 0, eject at stage 2, dest-tag routing)",
     "tree4_7": "7-tile tree4 (radix 2 x 2 tiers)",
     "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
     "fattree16": "16-tile fat tree (switch radix 4 x 2 tiers)",
@@ -386,7 +430,10 @@ _TYPED_PRESET_DESCRIPTIONS = {
     "gec_mecs16": "16-tile GEC multidrop MECS (one shared wire per dimension, 3 taps, 3 VCs)",
     "gec_mesh64": "64-tile GEC nearest-neighbor mesh (canonical mesh profile)",
     "gec_hybrid16": "16-tile GEC hybrid (mesh + MECS, ranked candidate union, 6 phase/tap VCs)",
+    "gec_mecs64": "64-tile canonical GEC MECS (4x4 routers, concentration 4; shared-resource route/profile)",
+    "gec_hybrid64": "64-tile canonical GEC hybrid (4x4 routers, concentration 4; ranked mesh/MECS union)",
     "srota32": "32-tile SROTA Plane D (4x4 concentrators, row-first, MECS)",
+    "srota64": "64-tile SROTA Plane D (8x8, concentration 1, row/column MECS, rank VC policy)",
     "srota32_rank": "32-tile SROTA Plane D (4x4, all shapes, hop-rank VC policy, Valiant)",
     "srota32_islands": "32-tile SROTA Plane D with a QoS island column (colfirst rule, shape VC policy)",
     "srota32_plane_c": "32-tile SROTA Plane D + Plane C (second subnet, REQ/RSP/SNP VCs, XY)",

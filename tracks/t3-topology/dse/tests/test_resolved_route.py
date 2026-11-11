@@ -151,10 +151,13 @@ def test_identity_domains_are_explicit(mesh4):
         "srota/ResolvedRouteArtifact/endpoint-table/v2", rows)
 
 def test_artifact_stores_no_expanded_table():
+    # `endpoint_routing_router` is a compact per-endpoint ADDRESS (the router a
+    # flow is routed toward when that is not the router it attaches to), not
+    # the expanded (src, dst, class, channel) table: that stays a hash.
     assert {f.name for f in dataclasses.fields(ResolvedRouteArtifact)} == {
         "topology_hash", "attachment_hash", "router_route_hash",
-        "endpoint_to_router", "routing_classes", "endpoint_route_table_hash",
-        "schema_version", "artifact_hash"}
+        "endpoint_to_router", "endpoint_routing_router", "routing_classes",
+        "endpoint_route_table_hash", "schema_version", "artifact_hash"}
 
 def test_local_ejection_rows_for_same_router_endpoints(local4):
     topo, att = local4

@@ -27,6 +27,7 @@ class _MockState:
     def __init__(self):
         self.requests: list[dict] = []
         self.content: str = ""
+        self.rate_limits = 0
 
 
 def _handler(state: _MockState):
@@ -35,6 +36,16 @@ def _handler(state: _MockState):
             pass
 
         def do_POST(self):
+            if state.rate_limits > 0:
+                state.rate_limits -= 1
+                body = b'{"error":"rate limited"}'
+                self.send_response(429)
+                self.send_header("Retry-After", "0")
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             state.requests.append({
@@ -43,6 +54,7 @@ def _handler(state: _MockState):
                 "messages": body.get("messages"),
                 "response_format": body.get("response_format"),
                 "authorization": self.headers.get("Authorization"),
+                "user_agent": self.headers.get("User-Agent"),
             })
             envelope = json.dumps(
                 {"choices": [{"message": {"content": state.content}}]}).encode()
@@ -90,6 +102,9 @@ def test_mock_provider_connection_identity_and_consent(client, mock_provider,
     assert only["path"] == "/chat/completions"
     assert only["model"] == "mock-model"
     assert only["authorization"] is None  # loopback mock needs no key
+    # A Cloudflare-fronted provider rejects Python's default UA before it
+    # checks the key; every provider call must send a stable client identity.
+    assert only["user_agent"].startswith("SrotaStudio/")
     assert any(m.get("role") == "user" and "summarize" in m.get("content", "")
                for m in only["messages"])
 
@@ -98,6 +113,19 @@ def test_mock_provider_connection_identity_and_consent(client, mock_provider,
                           json={"message": "summarize this design",
                                 "allow_model": False})
     assert refused.status_code != 200
+    assert len(mock_provider.requests) == 1
+
+
+def test_rate_limit_is_retried_not_failed(client, mock_provider):
+    """A transient 429 must not discard an otherwise valid model call."""
+    pid = project(client)
+    mock_provider.content = "Mock analysis after a rate limit."
+    mock_provider.rate_limits = 1
+    chat = client.post(f"/api/v1/projects/{pid}/agent/chat",
+                       json={"message": "summarize this design",
+                             "allow_model": True})
+    assert chat.status_code == 200, chat.text
+    assert chat.json()["text"] == "Mock analysis after a rate limit."
     assert len(mock_provider.requests) == 1
 
 

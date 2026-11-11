@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,6 +58,30 @@ def _stage(tmp_path, projection, ns, *, stem="workload", granularity=None):
     return ans.stage_endpoint_workload(
         workload=projection, namespace=ns, source_directory=src,
         target_directory=tmp_path / "run", stem=stem)
+
+def test_supervised_astra_runner_persists_partial_logs_on_timeout(tmp_path):
+    command = (sys.executable, "-c",
+               "import sys,time; print('partial-out', flush=True); "
+               "print('partial-err', file=sys.stderr, flush=True); "
+               "time.sleep(2)")
+    outcome = ax._supervised_runner(command, tmp_path, 0.1,
+                                    os.environ.copy())
+
+    assert outcome.timed_out
+    assert outcome.stdout == "partial-out\n"
+    assert outcome.stderr == "partial-err\n"
+    manifest = json.loads((tmp_path / "astra-process-logs.json").read_text())
+    assert manifest["timed_out"] is True
+    assert manifest["logs"]["stdout"]["sha256"] == hashlib.sha256(
+        outcome.stdout.encode()).hexdigest()
+    assert manifest["logs"]["stderr"]["sha256"] == hashlib.sha256(
+        outcome.stderr.encode()).hexdigest()
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+    bundle = finalize_run_bundle(tmp_path)
+    assert "astra.stdout.log" in bundle["files"]
+    assert "astra.stderr.log" in bundle["files"]
+    assert "astra-process-logs.json" in bundle["files"]
+
 
 def test_permuted_mapping_is_not_identity():
     _, _, _, binding, ns = _namespace()

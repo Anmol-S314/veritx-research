@@ -36,17 +36,41 @@ from .vc_assignment import VCAssignmentArtifact
 MULTI_PLANE_VC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/MultiPlaneVCAssignment"
 
-#: Traffic classes in the coherence namespace ride Plane C, never the data
-#: plane. The class vocabulary is author-declared (any non-empty string), so
-#: the binding recognizes exactly ``coherence`` and the ``coherence:`` prefix;
-#: anything else keeps the round-robin deal below. Alphabetical luck must
-#: never decide which plane carries coherence.
+#: Plane C is the SROTA control plane (``control_plane.py``: REQ/RSP/SNP on
+#: plain XY), and coherence is its other traffic family. Class names are
+#: author-declared strings, so the binding recognizes a namespace exactly —
+#: ``control`` / ``control:*`` and ``coherence`` / ``coherence:*`` — never a
+#: loose substring. Matching is case-sensitive: a class name is
+#: identity-bearing, so folding case would merge two distinct declarations.
+#: ``control_collective`` is the shipped preset's pre-namespace spelling and
+#: stays recognized so a request saved before this vocabulary keeps its
+#: plane; new authoring should use ``control:<suffix>``.
+CONTROL_CLASS = "control"
+CONTROL_CLASS_PREFIX = "control:"
+COHERENCE_CLASS = "coherence"
 COHERENCE_CLASS_PREFIX = "coherence:"
+LEGACY_CONTROL_CLASSES = frozenset({"control_collective"})
+
+
+def is_control_class(cls: str) -> bool:
+    """Whether a traffic class names control traffic (Plane C traffic)."""
+    if not isinstance(cls, str):
+        return False
+    return (cls == CONTROL_CLASS
+            or cls.startswith(CONTROL_CLASS_PREFIX)
+            or cls in LEGACY_CONTROL_CLASSES)
 
 
 def is_coherence_class(cls: str) -> bool:
     """Whether a traffic class names coherence traffic (Plane C traffic)."""
-    return cls == "coherence" or cls.startswith(COHERENCE_CLASS_PREFIX)
+    if not isinstance(cls, str):
+        return False
+    return cls == COHERENCE_CLASS or cls.startswith(COHERENCE_CLASS_PREFIX)
+
+
+def is_control_plane_class(cls: str) -> bool:
+    """Whether a traffic class belongs on Plane C (control or coherence)."""
+    return is_control_class(cls) or is_coherence_class(cls)
 
 
 class MultiPlaneVCError(ValueError, SemanticError):
@@ -263,15 +287,16 @@ def materialize_multi_plane_vc(
 ) -> MultiPlaneVCAssignment | None:
     """Bind classes to subnets when the topology declares Plane C, else None.
 
-    Plane D is subnet 0 and Plane C is subnet 1. Non-coherence classes are
-    dealt round robin in sorted order, so the first class stays on the data
-    plane; this is the SAME rule the BookSim projection renders as
+    Plane D is subnet 0 and Plane C is subnet 1. Control and coherence
+    classes (``is_control_plane_class``) are pinned to Plane C instead of
+    dealt: round-robin order must not decide which plane carries control or
+    coherence traffic. Every other class is genuinely data traffic and is
+    dealt round robin in sorted order, so the first data class stays on the
+    data plane; this is the SAME rule the BookSim projection renders as
     ``class_subnet``, now derived once here instead of separately at the
-    renderer. Coherence-namespace classes (``is_coherence_class``) are
-    pinned to Plane C instead of dealt: round-robin order must not decide
-    which plane carries coherence. A coherence class without Plane C is
-    refused here, and a fabric with nothing left on a plane is refused by
-    the per-plane check below.
+    renderer. Without Plane C this returns None and the flat single-plane
+    admission stays in force; with Plane C the per-plane check below refuses
+    a fabric that leaves either plane empty.
     """
     _require_assignment(primary, "primary")
     planes = getattr(topology, "planes", ())
@@ -288,8 +313,10 @@ def materialize_multi_plane_vc(
         # stays structural and the renderer owns that refusal.
         return None
     subnet_count = 1 + 1  # primary + the single declared Plane C subnet
-    data = tuple(cls for cls in classes if not is_coherence_class(cls))
-    pinned = tuple(cls for cls in classes if is_coherence_class(cls))
+    data = tuple(sorted(cls for cls in classes
+                        if not is_control_plane_class(cls)))
+    pinned = tuple(sorted(cls for cls in classes
+                          if is_control_plane_class(cls)))
     binding = tuple((cls, idx % subnet_count)
                     for idx, cls in enumerate(data))
     binding += tuple((cls, control_plane.subnet) for cls in pinned)
@@ -307,10 +334,16 @@ def materialize_multi_plane_vc(
 
 
 __all__ = [
+    "CONTROL_CLASS",
+    "CONTROL_CLASS_PREFIX",
+    "COHERENCE_CLASS",
     "COHERENCE_CLASS_PREFIX",
+    "LEGACY_CONTROL_CLASSES",
     "MULTI_PLANE_VC_SCHEMA_VERSION",
     "MultiPlaneVCError",
     "MultiPlaneVCAssignment",
+    "is_control_class",
+    "is_control_plane_class",
     "is_coherence_class",
     "materialize_multi_plane_vc",
     "plane_c_vc_assignment",

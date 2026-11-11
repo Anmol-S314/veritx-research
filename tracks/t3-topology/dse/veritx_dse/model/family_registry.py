@@ -184,6 +184,22 @@ def _tree_edges(v: dict[str, Any]) -> int | None:
     return None if k is None or n is None else n * k ** n
 
 
+def _qtree_edges(v: dict[str, Any]) -> int | None:
+    k, n = _int(v, "k"), _int(v, "n")
+    if (k, n) != (4, 3):
+        return None
+    return sum(k**level for level in range(1, n))
+
+
+def _tree4_native_edges(v: dict[str, Any]) -> int | None:
+    k, n = _int(v, "k"), _int(v, "n")
+    if (k, n) != (4, 3):
+        return None
+    # roots -> every middle (4*8), middles -> their four leaves (8*4),
+    # middles -> every root (8*4), leaves -> their two middles (16*2).
+    return 4 * 8 + 8 * 4 + 8 * 4 + 16 * 2
+
+
 def _dragonfly_edges(v: dict[str, Any]) -> int | None:
     p = _int(v, "k")
     if p is None:
@@ -257,12 +273,30 @@ TOPOLOGY_FAMILIES: dict[str, dict[str, Any]] = {
                   "nodes": _dragonfly, "edges": _dragonfly_edges},
     "qtree": {"backend": "qtree", "ir_kinds": (), "routing": "min",
               "analytical": None, "nodes": _k_n, "edges": _tree_edges},
+    "ring_native": {"backend": "torus", "ir_kinds": (), "routing": "dim_order",
+                    "analytical": None, "nodes": _k_n,
+                    "edges": lambda v: (2 * _k_n(v) if _k_n(v) else None)},
+    "qtree_native": {"backend": "qtree", "ir_kinds": (), "routing": "nca",
+                      "analytical": None, "nodes": _k_n,
+                      "edges": _qtree_edges},
+    # fly.cpp: switches = n*k^(n-1), channels = (n-1)*k^n. Placed AFTER the
+    # measured "fly" row so `family_for_backend("fly")` keeps returning the
+    # primary declared family.
+    # fly.cpp: switches = n*k^(n-1) = 2*k^n, channels = (n-1)*k^n = 2*k^n.
+    # Every channel is one-directional (stage s -> s+1), so the distinct
+    # connected router pairs are the channels themselves, not half of them.
+    "fly_native": {"backend": "fly", "ir_kinds": (), "routing": "dest_tag",
+                   "analytical": None, "nodes": _k_n,
+                   "edges": lambda v: (2 * _k_n(v) if _k_n(v) else None)},
     "custom": {"backend": "anynet", "ir_kinds": ("anynet", "custom"),
                "routing": "min", "analytical": None,
                "nodes": None, "edges": None, "rendered_graph": True},
     # Not in the declared registry. Recorded so the gaps are measured.
     "tree4": {"backend": "tree4", "ir_kinds": (), "routing": "min",
               "analytical": None, "nodes": _k_n, "edges": _tree_edges},
+    "tree4_native": {"backend": "tree4", "ir_kinds": (), "routing": "nca",
+                     "analytical": None, "nodes": _k_n,
+                     "edges": _tree4_native_edges},
     "star": {"backend": "anynet", "ir_kinds": ("star",),
              "routing": "min", "analytical": "Switch",
              "nodes": None, "edges": None, "rendered_graph": True},
@@ -327,7 +361,8 @@ def spec_for(name: str) -> dict[str, Any]:
 #: Families with a `MaterializedFamily` member (they can reach an artifact).
 MATERIALIZED_FAMILIES = frozenset({
     "mesh", "torus", "ring", "concentrated_mesh", "flatfly", "gec_express",
-    "gec_mecs", "gec_hybrid", "srota", "custom",
+    "gec_mecs", "gec_hybrid", "srota", "custom", "qtree_native", "ring_native",
+    "tree4_native", "fly_native",
 })
 
 
@@ -348,7 +383,11 @@ DEFAULT_PARAMS: dict[str, dict[str, Any]] = {
     "flattened_butterfly": {"k": 4, "n": 3},
     "dragonfly": {"k": 2},
     "qtree": {"k": 4, "n": 3},
+    "qtree_native": {"k": 4, "n": 3},
+    "tree4_native": {"k": 4, "n": 3},
+    "ring_native": {"k": 64, "n": 1},
     "tree4": {"k": 4, "n": 3},
+    "fly_native": {"k": 4, "n": 3},
     "custom": {},
     "star": {},
     "switch": {},

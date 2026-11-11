@@ -277,12 +277,14 @@ def _federated_study_record(svc, pid, revision, patch):
             "seed": None},
         "study": {
             "contract_version": 2,
+            "base_design_hash": revision["design_hash"],
             "candidates": [{
                 "candidate_id": candidate.candidate_id,
                 "guided_patch": dict(candidate.guided_patch),
-                "design_hash": candidate.request.design_hash(),
+                "evaluation_ids": {"design_hash": candidate.request.design_hash()},
                 "compilation_status": "COMPILED",
                 "evaluation_status": "EVALUATED",
+                "pareto_eligible": True,
                 "objective_provenance": [{
                     "metric_key": "system_makespan_cycles",
                     "question": "SYSTEM_MAKESPAN",

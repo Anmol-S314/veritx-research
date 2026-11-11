@@ -236,13 +236,23 @@ def test_consequences_come_from_the_registry():
         assert consequence["wiring"] == row["wiring"]
         assert set(consequence["stages"]) == set(registry.STAGES)
 
-def test_concentration_above_one_is_a_consequence_not_an_error():
+def test_concentration_above_one_is_a_family_choice_finding():
+    """Concentration > 1 is a FAMILY choice, not a mesh knob or a warning.
+
+    The design view must still carry the FAB-002 capability consequence, but
+    materialization now refuses the invalid family and the validation surface
+    must make that refusal blocking with the concentrated_mesh hint.
+    """
     doc = _doc()
     doc["noc_config"]["concentration"] = 2
     view = _view(doc)
     assert any(c["capability_id"] == "FAB-002"
                for c in view["capability_consequences"])
-    assert not any(f["blocking"] for f in view["validation_findings"])
+    blocking = [f for f in view["validation_findings"] if f["blocking"]]
+    assert blocking
+    assert any("concentration" in str(f).lower()
+               and "concentrated_mesh" in str(f).lower()
+               for f in blocking), blocking
 
 def test_multiple_clock_domains_are_a_declared_consequence():
     doc = _doc()

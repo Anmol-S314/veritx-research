@@ -16,7 +16,10 @@ sys.path.insert(0, str(DSE))
 sys.path.insert(0, str(TESTS))
 
 from test_backend_booksim_projection import _parents  # noqa: E402
+from test_trace_evaluation import _request  # noqa: E402
 
+from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
+from veritx_dse.backend import booksim as bs  # noqa: E402
 from veritx_dse.backend import booksim_projection as bp  # noqa: E402
 from veritx_dse.backend.route_observation import (  # noqa: E402
     RouteObservationError, compare_route_realization, expected_route_rows,
@@ -129,6 +132,27 @@ def test_transplanted_route_dump_refuses():
         compare_route_realization(
             expected_rows=prepared.expected_route_rows,
             dump_text=_dump_from(other.expected_route_rows))
+
+def test_booksim_route_comparison_accepts_drop_lanes_trailer(tmp_path):
+    """The certified comparison uses the same trailer-aware parser.
+
+    Regression: the standalone comparison had its own four-field regex and
+    refused the fork's real ``drop -1 lanes 1`` trailer even though
+    ``route_observation`` already accepted it.
+    """
+    compiled = FabricCompiler().compile(_request())
+    assert compiled.status == "COMPILED" and compiled.bundle is not None
+    config = bs.lower_booksim_standalone(compiled.bundle)
+    expected = bs.expected_route_table(compiled.bundle, config)
+    dump = tmp_path / "routing.dump"
+    dump.write_text("\n".join(
+        f"src_router {r} dst_node {n} next_router {x} port 0 "
+        f"drop -1 lanes 1"
+        for (r, n), x in expected.items()) + "\n")
+    result = bs.compare_route_realization(compiled.bundle, config, dump)
+    assert result["status"] == "EXACT"
+    assert result["pairs_compared"] == len(expected)
+
 
 def test_drop_lanes_trailer_parses():
     """The AnyNet fork spelling (`drop N lanes N`) parses to the same

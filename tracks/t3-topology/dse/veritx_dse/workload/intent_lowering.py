@@ -20,6 +20,7 @@ from veritx_dse.model.compile_model import (
     CompileRequestV3,
     CompileRequestV3SchemaError,
     ModelFamily,
+    TrafficProfile,
     derive_v3_traffic_classes,
 )
 from veritx_dse.model.placement import ParallelismShape, rank_of
@@ -28,6 +29,7 @@ from veritx_dse.workload.graph import (
     WorkloadSemantics,
     coherence_detail,
     collective_detail,
+    p2p_detail,
 )
 from veritx_dse.workload.collectives import collective_schedule
 from veritx_dse.workload.messages import (
@@ -54,13 +56,17 @@ Rationale: docs/decisions/modules/workload.md
         if not isinstance(self.design_hash, str) or not self.design_hash:
             raise InvalidInput("design_hash must be a non-empty string")
         pairs = tuple(self.traffic_class_by_operation)
+        p2p_transfers = [
+            op for op in self.graph.of_kind("P2P")
+            if op.detail.get("role") == "TRANSFER"]
         op_ids = [op.operation_id
                   for op in (*self.graph.of_kind("COLLECTIVE"),
-                             *self.graph.of_kind("COHERENCE"))]
+                             *self.graph.of_kind("COHERENCE"),
+                             *p2p_transfers)]
         if sorted(op for op, _ in pairs) != sorted(op_ids):
             raise InvalidInput(
-                "traffic_class_by_operation must name every COLLECTIVE and "
-                "COHERENCE operation exactly once")
+                "traffic_class_by_operation must name every COLLECTIVE, "
+                "COHERENCE and P2P TRANSFER operation exactly once")
         if [op for op, _ in pairs] != sorted(op for op, _ in pairs):
             raise InvalidInput(
                 "traffic_class_by_operation must be sorted by operation id")
@@ -87,7 +93,8 @@ Rationale: docs/decisions/modules/workload.md
             if op == operation_id:
                 return cls
         raise InvalidInput(
-            f"operation {operation_id!r} is not a lowered collective")
+            f"operation {operation_id!r} is not a lowered class-bearing "
+            "operation")
 
 def _intent_kind_name(intent: CollectiveIntent) -> str:
     """Canonical (uppercase) collective name for the graph detail."""
@@ -188,21 +195,26 @@ Rationale: docs/decisions/modules/workload.md
     wl = request.workload
     declared = tuple(getattr(wl, "collectives", ()) or ())
     coherence_declared = tuple(getattr(wl, "coherence", ()) or ())
+    profiles_declared = tuple(getattr(wl, "traffic_profiles", ()) or ())
     if wl.model_family not in (ModelFamily.DENSE_TRANSFORMER,
-                               ModelFamily.MOE) and not declared:
+                               ModelFamily.MOE) and not declared \
+            and not profiles_declared:
         raise UnsupportedSemantics(
             f"model_family={wl.model_family.value} declares no collectives "
             "— a non-transformer family has no implicit intent→collective "
             "mapping, so it must state its collectives explicitly (kind, "
-            "dimension, payload_bytes, traffic_class)")
+            "dimension, payload_bytes, traffic_class) or declare "
+            "workload.traffic_profiles")
     compute = getattr(request, "compute", None)
     compute_stages = tuple(getattr(compute, "stages", ()) or ())
-    if not declared and not coherence_declared and not compute_stages:
+    if not declared and not coherence_declared and not compute_stages \
+            and not profiles_declared:
         raise InvalidInput(
             "intent declares no collectives, no coherence and no compute "
             "— an empty workload specifies nothing to lower (compute is "
             "DECLARED, never inferred: fabricating durations or memory "
-            "operands would be dishonest)")
+            "operands would be dishonest; a profile-only workload must "
+            "declare workload.traffic_profiles)")
     parallelism = ParallelismShape(tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp)
     participant_count = parallelism.world_size
 
@@ -300,6 +312,25 @@ Rationale: docs/decisions/modules/workload.md
             label=f"coherence {intent.pattern.value} home {intent.home_rank}",
         ))
         class_pairs.append((op_id, intent.traffic_class))
+        prev_op_id = op_id
+    for i, profile in enumerate(profiles_declared):
+        if not isinstance(profile, TrafficProfile):
+            raise InvalidInput(
+                f"traffic profile #{i} must be a TrafficProfile")
+        op_id = f"t{i:03d}_p2p"
+        operations.append(OperationNode(
+            operation_id=op_id,
+            kind="P2P",
+            deps=(prev_op_id,) if prev_op_id is not None else (),
+            detail=p2p_detail(
+                role="TRANSFER",
+                src_rank=profile.src_rank,
+                dst_rank=profile.dst_rank,
+                payload_bytes=profile.payload_bytes,
+                participant_count=participant_count),
+            label=f"profile {profile.src_rank} -> {profile.dst_rank}",
+        ))
+        class_pairs.append((op_id, profile.traffic_class))
         prev_op_id = op_id
 
     # Compute provenance survives lowering: the durations in the COMPUTE

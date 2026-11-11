@@ -134,6 +134,22 @@ def _defn(**kw):
     base.update(kw)
     return OptimizationDefinition(**base)
 
+def _link_only_defn(**kw):
+    """A supported guided axis for a mesh.
+
+    Concentration is a FAMILY choice (mesh -> concentrated_mesh), not a mesh
+    knob; the mesh materializer now refuses concentration>1 with that hint.
+    Optimizer mechanics tests therefore use link_width alone.
+    """
+    base = dict(
+        domain=(DomainParam("link_width", (32, 128)),),
+        objectives=(Objective("latency", "MIN"), Objective("area", "MIN")),
+        constraints=(Constraint("latency", "<=", 600.0),),
+        method="grid",
+    )
+    base.update(kw)
+    return OptimizationDefinition(**base)
+
 class _CertifiedEvaluator:
     """Test double declaring CERTIFIED_BACKEND authority.
 
@@ -352,7 +368,7 @@ class TestFakeEvaluator:
     def test_locked_consequences_match_direct_recompilation(self):
         from veritx_dse.application.fabric_compiler import FabricCompiler
         base = _base()
-        cand = make_candidate(base, {"link_width": 128, "concentration": 2})
+        cand = make_candidate(base, {"link_width": 128})
         ev = FakeDeterministicEvaluator(seed=7).evaluate(cand)
         assert ev.status == "EVALUATED"
         direct = FabricCompiler().compile(cand.request)
@@ -469,18 +485,19 @@ class TestGridStudyEndToEnd:
         return base, defn, result
 
     def test_grid_yields_table_pareto_selection(self):
-        base, defn, result = self._study()
-        assert len(result.records) == 4
+        base = _certified_base()
+        defn = _link_only_defn()
+        result = _optimize(base, defn, _CertifiedEvaluator())
+        assert len(result.records) == 2
         by = {r.candidate_id: r for r in result.records}
         feasible = sorted(r.candidate_id for r in result.records
                           if all(v == "SATISFIED"
                                  for v in r.constraint_verdicts.values()))
-        assert len(feasible) == 2
+        assert feasible
         assert set(result.pareto_ids) <= set(feasible)
         assert len(result.pareto_ids) == 1
         winner = by[result.pareto_ids[0]]
-        assert winner.guided_patch == {"concentration": 1,
-                                        "link_width": 128}
+        assert winner.guided_patch == {"link_width": 128}
         assert result.selected_candidate_id == result.pareto_ids[0]
         assert result.selection_rationale
         for r in result.records:
@@ -606,13 +623,10 @@ class TestGridStudyEndToEnd:
         from veritx_dse.application.fabric_compiler import FabricCompiler
         from veritx_dse.model.compile_model import derive_vc_assignment
         base = _base()
-        defn = _defn(domain=(
-            DomainParam("link_width", (32, 128)),
-            DomainParam("concentration", (1, 2)),
-        ))
+        defn = _link_only_defn()
         result = _optimize(
             base, defn, FakeDeterministicEvaluator(seed=7))
-        assert len(result.records) == 4
+        assert len(result.records) == 2
         for r in result.records:
             assert not (set(r.guided_patch)
                         & {"routing", "vc_count", "turn_restrictions",

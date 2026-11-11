@@ -137,10 +137,9 @@ def test_tax_6b_checker_passes():
     assert r.returncode == 0, r.stdout + r.stderr
     assert "TAX-1..TAX-6" in r.stdout
 
-def test_tax_6c_checker_detects_drift(tmp_path, monkeypatch):
-    """A registry that claims an unhonourable stage must FAIL the checker."""
+def _run_checker(tmp_path: Path, mutate) -> subprocess.CompletedProcess:
     bad = yaml.safe_load(REGISTRY.read_text())
-    bad["families"]["dragonfly"]["stages"]["AUTHORABLE"] = "YES"
+    mutate(bad["families"])
     p = tmp_path / "reg.yaml"
     p.write_text(yaml.safe_dump(bad))
     src = (ROOT / "scripts/check_topology_family_registry.py").read_text()
@@ -152,10 +151,38 @@ def test_tax_6c_checker_detects_drift(tmp_path, monkeypatch):
     import os
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).parent.parent)
-    r = subprocess.run([sys.executable, str(script)],
-                       capture_output=True, text=True, env=env)
+    return subprocess.run([sys.executable, str(script)],
+                          capture_output=True, text=True, env=env)
+
+
+def test_tax_6c_checker_detects_drift(tmp_path, monkeypatch):
+    """A registry that claims an unhonourable stage must FAIL the checker.
+
+    The subject is `ring`: the legacy line-shaped test fixture. It has no
+    typed intent and no `MaterializedFamily` member, so AUTHORABLE=YES there
+    is a claim the code cannot honour. (`dragonfly` is NOT usable as the
+    subject any more: it is a structured family, so a typed
+    `StructuredTopologyIntent(family="dragonfly", ...)` genuinely declares
+    it and AUTHORABLE=YES is then an under-description, not drift.)
+    """
+    r = _run_checker(tmp_path, lambda families:
+                     families["ring"]["stages"].__setitem__("AUTHORABLE", "YES"))
     assert r.returncode == 1
-    assert "dragonfly" in r.stdout
+    assert "ring" in r.stdout
+
+
+def test_tax_6c_structured_families_carry_declaration_authority(tmp_path):
+    """Positive control: the checker is not "reject every YES".
+
+    Structured graph families declare through `StructuredTopologyIntent`,
+    so the same AUTHORABLE=YES that is drift for `ring` is honoured for
+    `dragonfly`. Both halves together show the rule discriminates on
+    authority rather than on the family's name.
+    """
+    r = _run_checker(tmp_path, lambda families:
+                     families["dragonfly"]["stages"].__setitem__(
+                         "AUTHORABLE", "YES"))
+    assert r.returncode == 0, r.stdout + r.stderr
 
 def test_unknown_family_fails_closed(reg):
     assert "hypercube" not in reg["families"]

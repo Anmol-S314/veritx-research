@@ -37,6 +37,10 @@ Rationale: docs/decisions/modules/model.md
     MESH = "mesh"
     TORUS = "torus"
     RING = "ring"
+    RING_NATIVE = "ring_native"
+    QTREE = "qtree_native"
+    TREE4_NATIVE = "tree4_native"
+    FLY_NATIVE = "fly_native"
     CONCENTRATED_MESH = "concentrated_mesh"
     FLATFLY = "flatfly"
     GEC_EXPRESS = "gec_express"
@@ -59,35 +63,62 @@ def _need(d: dict[str, Any], key: str, where: str) -> Any:
 
 @dataclass(frozen=True)
 class Router:
+    """One fabric router: coordinates, ingress seats, optional egress slots.
+
+    `seat_capacity` is the number of TERMINAL-FACING INGRESS slots. On a
+    symmetric fabric the same slots also eject, so nothing else is needed.
+    A fabric whose terminals inject at one router and eject at another (the
+    multi-stage Fly) declares `egress_seat_capacity` instead: a separate,
+    direction-specific slot namespace on that router. `None` means "egress
+    uses the ingress slots", which is what every pre-existing fabric means,
+    so its serialized bytes and hashes are unchanged.
+    """
     router_id: int
     coordinates: tuple[int, ...]
     seat_capacity: int
+    egress_seat_capacity: int | None = None
 
     def __post_init__(self):
         _as_int("router_id", self.router_id, minimum=0)
-        _as_int("seat_capacity", self.seat_capacity, minimum=1)
+        _as_int("seat_capacity", self.seat_capacity, minimum=0)
+        if self.egress_seat_capacity is not None:
+            _as_int("egress_seat_capacity", self.egress_seat_capacity,
+                    minimum=0)
         if not isinstance(self.coordinates, tuple) or not all(
                 type(c) is int and c >= 0 for c in self.coordinates):
             raise TopologyError(
                 f"router {self.router_id} coordinates must be a tuple of "
                 "non-negative ints")
 
+    @property
+    def ejection_capacity(self) -> int:
+        """Slots a terminal may eject through on this router."""
+        return (self.seat_capacity if self.egress_seat_capacity is None
+                else self.egress_seat_capacity)
+
     def to_dict(self) -> dict[str, Any]:
-        return {"router_id": self.router_id,
-                "coordinates": list(self.coordinates),
-                "seat_capacity": self.seat_capacity}
+        d = {"router_id": self.router_id,
+             "coordinates": list(self.coordinates),
+             "seat_capacity": self.seat_capacity}
+        if self.egress_seat_capacity is not None:
+            # Emitted ONLY when a fabric has a direction-specific ejection
+            # namespace, so symmetric fabrics keep their exact old bytes.
+            d["egress_seat_capacity"] = self.egress_seat_capacity
+        return d
 
     @classmethod
     def from_dict(cls, d: Any) -> Router:
-        _strict_keys(d, frozenset({"router_id", "coordinates", "seat_capacity"}),
-                     "router")
+        _strict_keys(d, frozenset({"router_id", "coordinates",
+                                   "seat_capacity",
+                                   "egress_seat_capacity"}), "router")
         coords = _need(d, "coordinates", "router")
         if not isinstance(coords, list) or not all(
                 type(c) is int and c >= 0 for c in coords):
             raise TopologyError("router.coordinates must be a list of ints")
         return cls(router_id=_need(d, "router_id", "router"),
                    coordinates=tuple(coords),
-                   seat_capacity=_need(d, "seat_capacity", "router"))
+                   seat_capacity=_need(d, "seat_capacity", "router"),
+                   egress_seat_capacity=d.get("egress_seat_capacity"))
 
 @dataclass(frozen=True)
 class DirectedChannel:
@@ -477,6 +508,86 @@ def _concentration_of(family: MaterializedFamily, noc: NocConfig) -> int:
         return _as_int("concentration", noc.concentration, minimum=1)
     return _CONCENTRATION_DEFAULT[family.value]
 
+def _refuse_mesh_concentration(*, concentration: int,
+                               side_length: int | None = None) -> None:
+    """A mesh with >1 seat/router is the CONCENTRATED_MESH family, not a knob.
+
+    The mesh and concentrated-mesh materializers build the same router grid
+    and channels, but the certified backend profiles are family-specific:
+    mesh-DOR proves seat_capacity 1 only, while cmesh-DOR proves seats 2/4.
+    Refusing here names the right intent family instead of letting the user
+    hit the misleading "mesh-DOR covers seat_capacity 1 only" refusal later.
+    The declared intent is NOT rewritten, so its design identity is stable.
+    """
+    shape = (f"side_length={side_length}, " if side_length is not None else "")
+    replacement = (
+        f"ConcentratedMeshIntent(side_length={side_length}, "
+        f"concentration={concentration})"
+        if side_length is not None else
+        f"ConcentratedMeshIntent(side_length=..., "
+        f"concentration={concentration})")
+    raise TopologyError(
+        "UNSUPPORTED: "
+        f"MeshIntent({shape}concentration={concentration}) declares the "
+        "mesh family with more than one seat per router, but the certified "
+        "mesh-DOR profile covers seat_capacity 1 only: concentration is a "
+        "FAMILY choice, not a mesh knob. Declare "
+        f"kind='concentrated_mesh' / {replacement} instead — the router "
+        "grid and channels are identical, and this refusal leaves the "
+        "declared design identity unchanged (no silent family rewrite).")
+
+def _refuse_torus_concentration(*, concentration: int,
+                                side_length: int | None = None) -> None:
+    """A torus with >1 seat/router has NO certified native profile.
+
+    The only certified native torus profile is torus-DOR, and it covers
+    seat_capacity 1 per router. There is no concentrated-torus family and no
+    multi-seat torus proof to redirect to, so the supported alternatives are
+    a concentration-1 torus or a different multi-seat family. The declared
+    intent is NOT rewritten, so its design identity is stable.
+    """
+    shape = (f"side_length={side_length}, " if side_length is not None else "")
+    raise TopologyError(
+        "UNSUPPORTED: "
+        f"TorusIntent({shape}concentration={concentration}) declares the "
+        "torus family with more than one seat per router, but the certified "
+        "native torus-DOR profile covers concentration 1 only: no multi-seat "
+        "native torus profile exists. Use concentration 1 "
+        "(TorusIntent(concentration=1)), or declare "
+        "kind='concentrated_mesh' / ConcentratedMeshIntent(...) if you "
+        "actually want multi-seat grouping — concentrated_mesh is a "
+        "different, non-wrapping fabric. This refusal leaves the declared "
+        "design identity unchanged (no silent family rewrite).")
+
+def _refuse_flatfly_concentration(*, concentration: int,
+                                  radix_per_dimension: int | None = None,
+                                  dimension_count: int | None = None) -> None:
+    """A flatfly with >1 seat/router has NO certified native profile.
+
+    The only certified native flatfly profile is flatfly-min v1, and it
+    covers concentration 1 only (identity node -> router). There is no
+    concentrated-flatfly family and no multi-seat flatfly proof to redirect
+    to, so the supported alternatives are a concentration-1 flatfly or a
+    different multi-seat family. The declared intent is NOT rewritten.
+    """
+    fields = []
+    if radix_per_dimension is not None:
+        fields.append(f"radix_per_dimension={radix_per_dimension}")
+    if dimension_count is not None:
+        fields.append(f"dimension_count={dimension_count}")
+    fields.append(f"concentration={concentration}")
+    raise TopologyError(
+        "UNSUPPORTED: "
+        f"FlatFlyIntent({', '.join(fields)}) declares the flatfly family "
+        "with more than one seat per router, but the certified native "
+        "flatfly-min profile covers concentration 1 only: no multi-seat "
+        "native flatfly profile exists. Use concentration 1 "
+        "(FlatFlyIntent(..., concentration=1)), or declare "
+        "kind='concentrated_mesh' / ConcentratedMeshIntent(...) if you "
+        "actually want multi-seat grouping — concentrated_mesh is a "
+        "different fabric, not a flatfly variant. This refusal leaves the "
+        "declared design identity unchanged (no silent family rewrite).")
+
 def _grid_adjacency(k: int, wrap: bool) -> dict[int, list[int]]:
     """Symmetric mesh/torus adjacency in canonical row-major numbering."""
     adj: dict[int, set[int]] = {r: set() for r in range(k * k)}
@@ -568,22 +679,26 @@ def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
                      width_bits, latency_cycles)
 
 def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
-              coordinates: dict[int, tuple[int, ...]], concentration: int,
+              coordinates: dict[int, tuple[int, ...]], concentration: int | dict[int, int],
               width_bits: int, latency_cycles: int) -> TopologyArtifact:
     """Shared canonical construction: routers, ports, dense channel ids.
 
-    One construction path for every family, so canonical ordering cannot
-    drift between materializers.
+    Uniform and indirect fabrics share one port construction. Internal
+    routers may have zero local seats; their transit ports still exist.
     """
+    capacities = (dict(concentration) if isinstance(concentration, dict)
+                  else {r: concentration for r in adj})
+    if set(capacities) != set(adj):
+        raise TopologyError("seat capacities must name every router exactly once")
     routers = tuple(
         Router(router_id=r, coordinates=coordinates[r],
-               seat_capacity=concentration)
+               seat_capacity=capacities[r])
         for r in sorted(adj)
     )
     link_port: dict[tuple[int, int], int] = {}
     for r in sorted(adj):
         for i, nb in enumerate(adj[r]):
-            link_port[(r, nb)] = concentration + i
+            link_port[(r, nb)] = capacities[r] + i
     raw = sorted(
         (r, link_port[(r, nb)], nb, link_port[(nb, r)])
         for r in sorted(adj) for nb in adj[r]
@@ -997,6 +1112,37 @@ def flattened_butterfly_graph(*, radix: int, dimensions: int):
     })
 
 
+def kncube_graph(*, radix: int, dimensions: int, wrap: bool):
+    """Canonical k-ary n-cube mesh/torus as an explicit router graph."""
+    k, n = int(radix), int(dimensions)
+    if k < 2 or n < 1 or type(wrap) is not bool:
+        raise TopologyError(
+            f"KNCube needs radix >= 2, dimensions >= 1 and boolean wrap, "
+            f"got radix={k}, dimensions={n}, wrap={wrap!r}")
+    total = k ** n
+    links: set[tuple[int, int]] = set()
+    for node in range(total):
+        digits = []
+        rest = node
+        for _ in range(n):
+            digits.append(rest % k)
+            rest //= k
+        for dim in range(n):
+            if digits[dim] + 1 >= k and not wrap:
+                continue
+            peer_digits = list(digits)
+            peer_digits[dim] = (peer_digits[dim] + 1) % k
+            peer = sum(value * k ** d for d, value in enumerate(peer_digits))
+            links.add((min(node, peer), max(node, peer)))
+    return _ir_from_dict({
+        "name": f"kncube_k{k}_n{n}_{'torus' if wrap else 'mesh'}",
+        "kind": "custom",
+        "nodes": total,
+        "links": [list(edge) for edge in sorted(links)],
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+
+
 def dragonfly_graph(*, radix: int, group_count: int):
     """Canonical dragonfly: `group_count` groups of `radix` routers.
 
@@ -1032,10 +1178,13 @@ def dragonfly_graph(*, radix: int, group_count: int):
 def k_ary_tree_graph(*, radix: int, tiers: int):
     """k-ary tree of `tiers` levels above the leaves, as a `TopologyIR`.
 
-    Covers `qtree` and `tree4`, which are the same graph generator at
-    different fixed radices. Nodes are numbered breadth-first: the root is
-    0, and each internal node i has children k*i+1 .. k*i+k. Leaves are the
-    last k^tiers nodes. Source form: networks/qtree.cpp, networks/tree4.cpp.
+    Existing structured `qtree` and `tree4` intents use this same balanced
+    graph. This is NOT the native BookSim QTree/Tree4 wiring or endpoint
+    placement: those indirect networks attach terminals only at the leaves,
+    and Tree4 has multiple roots/parents. Preserve existing document identity;
+    exact native networks need their own lossless intent and attachment law.
+    Nodes are numbered breadth-first: the root is 0 and each internal node i
+    has children k*i+1 .. k*i+k. Leaves are the last k^tiers nodes.
     """
     k, t = int(radix), int(tiers)
     if k < 2 or t < 1:
@@ -1071,6 +1220,13 @@ STRUCTURED_FAMILIES: dict[str, dict[str, Any]] = {
         "build": lambda p: dragonfly_graph(
             radix=p["radix"], group_count=p["group_count"]),
         "booksim": "dragonflynew",
+    },
+    "kncube": {
+        "fields": ("radix", "dimensions", "wrap"),
+        "minimums": {"dimensions": 1},
+        "bool_fields": ("wrap",),
+        "build": lambda p: kncube_graph(
+            radix=p["radix"], dimensions=p["dimensions"], wrap=p["wrap"]),
     },
     "qtree": {
         "fields": ("radix", "tiers"),
@@ -1374,25 +1530,74 @@ Rationale: docs/decisions/modules/model.md
         FlatFlyIntent, GecTopologyIntent, MeshIntent, SrotaIntent,
         TorusIntent,
     )
+    if getattr(intent, "kind", None) == "qtree_native":
+        from .indirect_tree import materialize_qtree
+        return materialize_qtree(intent, width_bits=width_bits, latency_cycles=latency_cycles)
+    if getattr(intent, "kind", None) == "ring_native":
+        from .ring_net import materialize_ring
+        return materialize_ring(intent, width_bits=width_bits,
+                                latency_cycles=latency_cycles)
+    if getattr(intent, "kind", None) == "tree4_native":
+        from .tree4_net import materialize_tree4
+        return materialize_tree4(intent, width_bits=width_bits,
+                                 latency_cycles=latency_cycles)
+    if getattr(intent, "kind", None) == "fly_native":
+        from .fly_net import materialize_fly
+        return materialize_fly(k=intent.radix, n=intent.levels,
+                               width_bits=width_bits,
+                               latency_cycles=latency_cycles)
     if isinstance(intent, ExplicitTopologyIntent):
         return materialize_ir(intent.graph, width_bits=width_bits,
                               latency_cycles=latency_cycles)
     if getattr(intent, "kind", None) == "structured":
         seats = STRUCTURED_FAMILIES[intent.family].get("seat_capacity")
+        coordinates = None
+        if intent.family == "kncube":
+            k, n = intent.params["radix"], intent.params["dimensions"]
+            wrap = intent.params["wrap"]
+            if n == 2:
+                family = (MaterializedFamily.TORUS if wrap
+                          else MaterializedFamily.MESH)
+                return materialize_family(
+                    family, endpoint_count=inventory.agent_count,
+                    concentration=1, radix=k, width_bits=width_bits,
+                    latency_cycles=latency_cycles)
+            coordinates = {}
+            for router in range(k ** n):
+                remaining = router
+                digits = []
+                for _ in range(n):
+                    digits.append(remaining % k)
+                    remaining //= k
+                coordinates[router] = tuple(digits)
         return materialize_ir(
             structured_graph(intent.family, intent.params),
             width_bits=width_bits, latency_cycles=latency_cycles,
-            seat_capacity=(seats(intent.params) if seats else 1))
+            seat_capacity=(seats(intent.params) if seats else 1),
+            coordinates=coordinates)
     if isinstance(intent, MeshIntent):
+        if intent.concentration > 1:
+            _refuse_mesh_concentration(
+                concentration=intent.concentration,
+                side_length=intent.side_length)
         family, radix, conc = (MaterializedFamily.MESH, intent.side_length,
                                intent.concentration)
     elif isinstance(intent, ConcentratedMeshIntent):
         family, radix, conc = (MaterializedFamily.CONCENTRATED_MESH,
                                intent.side_length, intent.concentration)
     elif isinstance(intent, TorusIntent):
+        if intent.concentration > 1:
+            _refuse_torus_concentration(
+                concentration=intent.concentration,
+                side_length=intent.side_length)
         family, radix, conc = (MaterializedFamily.TORUS, intent.side_length,
                                intent.concentration)
     elif isinstance(intent, FlatFlyIntent):
+        if intent.concentration > 1:
+            _refuse_flatfly_concentration(
+                concentration=intent.concentration,
+                radix_per_dimension=intent.radix_per_dimension,
+                dimension_count=intent.dimension_count)
         return materialize_flatfly(
             k=intent.radix_per_dimension, n=intent.dimension_count,
             concentration=intent.concentration, width_bits=width_bits,
@@ -1524,6 +1729,12 @@ Rationale: docs/decisions/modules/model.md
         raise TopologyError("expected a CompileRequest or NocConfig")
     family = _family_of(noc)
     concentration = _concentration_of(family, noc)
+    if family is MaterializedFamily.MESH and concentration > 1:
+        _refuse_mesh_concentration(
+            concentration=concentration, side_length=noc.radix)
+    if family is MaterializedFamily.TORUS and concentration > 1:
+        _refuse_torus_concentration(
+            concentration=concentration, side_length=noc.radix)
     width = noc.link_width if noc.link_width is not None else _DEFAULT_LINK_WIDTH_BITS
     return materialize_family(
         family, endpoint_count=inventory.agent_count,

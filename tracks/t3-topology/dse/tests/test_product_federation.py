@@ -39,6 +39,7 @@ SMALL = REPO / "tracks/t3-topology/examples/dense_1b_16tiles-v3.json"
 
 NETWORK = EvaluationQuestion.NETWORK_COMPLETION
 SYSTEM = EvaluationQuestion.SYSTEM_MAKESPAN
+DRAM_TIMING = EvaluationQuestion.DRAM_TIMING
 
 class _ScriptedAdapter:
     """A deterministic federation citizen for product-level tests."""
@@ -53,6 +54,7 @@ class _ScriptedAdapter:
         self._support = support
         self._reason = reason
         self._fail_execute = fail_execute
+        self.prepared: list[EvaluationQuestion] = []
         self.executed: list[EvaluationQuestion] = []
 
     @property
@@ -88,6 +90,7 @@ class _ScriptedAdapter:
             limitations=())
 
     def prepare(self, context, question, **kwargs):
+        self.prepared.append(question)
         return PreparedExecution(
             backend_id=self._id, projection_identity="wp-scripted",
             qualification_identity="m-scripted",
@@ -235,6 +238,10 @@ def test_multi_question_execution_has_independent_outcomes(tmp_path):
     assert job["state"] == "COMPLETED"
     run = svc.get_run(job["result"]["run_id"])
     assert run["status"] == "EVALUATED"
+    compiled_hash = revision["compilation"]["artifact_hashes"][
+        "compiled_system_hash"]
+    assert run["stored_compiled_system_hash"] == compiled_hash
+    assert run["executed_compiled_system_hash"] == compiled_hash
     by_question = {a["question"]: a for a in run["analyses"]}
     assert set(by_question) == {"SYSTEM_MAKESPAN",
                                 "COMMUNICATION_EXPOSURE"}
@@ -264,7 +271,53 @@ def test_partial_execution_when_one_leg_refuses(tmp_path):
     assert by_question["SYSTEM_MAKESPAN"]["status"] == "EVALUATED"
     assert by_question["PER_RANK_COMPLETION"]["status"] == "UNSUPPORTED"
     assert by_question["PER_RANK_COMPLETION"]["backend_id"] is None
+    assert astra.executed == [SYSTEM]
     assert run["reason"] is not None
+
+def test_blocked_backend_is_never_prepared_or_executed(tmp_path):
+    adapter = _ScriptedAdapter(
+        "RAMULATOR2_HBM3_V1", (DRAM_TIMING,),
+        readiness=BackendReadiness.BLOCKED, reason="no memory demand")
+    svc = _service(tmp_path, registry=BackendRegistry((adapter,)))
+    revision = _compiled_revision(svc)
+    job = _submit_and_finish(
+        svc, revision["revision_id"], questions=("DRAM_TIMING",))
+    assert job["state"] == "REFUSED"
+    run = svc.get_run(job["result"]["run_id"])
+    assert run["status"] == "UNSUPPORTED"
+    assert run["analyses"][0]["status"] == "UNSUPPORTED"
+    assert adapter.prepared == []
+    assert adapter.executed == []
+
+def test_gateway_restart_fails_only_nonterminal_jobs(tmp_path):
+    svc = _service(tmp_path)
+    project_id = svc.create_project(
+        name="recovery", workload_id=WORKLOAD)["project"]["project_id"]
+    common = {
+        "schema_version": 1, "project_id": project_id,
+        "kind": "EVALUATION", "revision_id": "revision",
+        "submitted_at": "2026-11-10T00:00:00Z",
+        "updated_at": "2026-11-10T00:00:00Z",
+        "error_code": None, "error_message": None, "result": None,
+    }
+    svc.store.create_job(project_id, {
+        **common, "job_id": "interrupted-job", "state": "RUNNING"})
+    svc.store.create_job(project_id, {
+        **common, "job_id": "completed-job", "state": "COMPLETED",
+        "result": {"run_id": "run-kept"}})
+    svc.jobs.shutdown()
+
+    restarted = ProductService(svc.config)
+    try:
+        interrupted = restarted.store.load_job(project_id, "interrupted-job")
+        completed = restarted.store.load_job(project_id, "completed-job")
+        assert interrupted["state"] == "FAILED"
+        assert interrupted["error_message"] == "interrupted by gateway restart"
+        assert interrupted["result"] is None
+        assert completed["state"] == "COMPLETED"
+        assert completed["result"] == {"run_id": "run-kept"}
+    finally:
+        restarted.jobs.shutdown()
 
 def test_failed_execution_is_failed_not_infeasible(tmp_path):
     from veritx_dse.backend.astra_execution import AstraExecutionError

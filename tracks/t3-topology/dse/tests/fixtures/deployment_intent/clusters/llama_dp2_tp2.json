@@ -1,0 +1,24 @@
+{
+  "num_nodes": 1,
+  "nodes": [
+    {
+      "num_instances": 2,
+      "instances": [
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "pd_type": null,
+          "tp_size": 2,
+          "dp_group": "A"
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "pd_type": null,
+          "tp_size": 2,
+          "dp_group": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -41,7 +41,7 @@ from typing import Any
 
 from veritx_dse.core.errors import SemanticError, UnsupportedSemantics
 from veritx_dse.model.compile_model import (
-    AddressMap, AddressRange, Agent, AgentKind,
+    AddressMap, AddressRange, Agent, AgentKind, STAMPED_CATALOG_IDS,
 )
 from veritx_dse.model.compile_request_v5 import AgentIntentV5, CompileRequestV5
 from veritx_dse.model.access_policy import (
@@ -59,6 +59,62 @@ NOT_PROVIDED = "NOT PROVIDED"
 
 class IpCatalogError(ValueError, SemanticError):
     """A catalog entry cannot be represented as authored."""
+
+
+#: Capabilities the server can substantiate from landed artifacts and
+#: their tests. Everything absent here stays refused with the id named.
+READY_CAPABILITIES = frozenset({
+    "address.decode",
+    "agent.interface",
+    "cdc.async_fifo",
+    "cdc.crossing",
+    "fabric.multiplane",
+    "generate.rtl",
+    "router.vc_allocation",
+    "sideband.connectivity",
+    "sideband.interface",
+    "transaction.outstanding",
+    "transaction.splitting",
+})
+
+#: Templates with a checked-design materializer today. A template whose
+#: requirements are READY is not stampable until its role has one.
+MATERIALIZERS = STAMPED_CATALOG_IDS
+
+ROADMAP: tuple[tuple[str, str, str, str | None], ...] = (
+    ("npu-tensor-core", "WORKLOAD_COMPUTE_ARCHITECTURE_MODEL_ABSENT",
+     "no compute-tile internal model; execution semantics cannot be stamped.",
+     "tracks/t3-topology/dse/veritx_dse/workload/"),
+    ("vector-coprocessor", "WORKLOAD_COMPUTE_ARCHITECTURE_MODEL_ABSENT",
+     "no compute-tile internal model; execution semantics cannot be stamped.",
+     "tracks/t3-topology/dse/veritx_dse/workload/"),
+    ("streaming-dma-engine", "BIDIRECTIONAL_ROLE_NOT_REALIZABLE",
+     "interface_role=BIDIRECTIONAL refused at the v5 product ATTACHMENT "
+     "boundary (product publishes no bidirectional role); no dual-path stamp "
+     "exists; a window would misrepresent a bus master.",
+     "tracks/t3-topology/dse/veritx_dse/model/compile_request_v5.py"),
+    ("telemetry-atb-trace-hub", "STREAM_PROTOCOL_NOT_REALIZED",
+     "catalog names AXI but the product realizes no STREAM family and the "
+     "v5 ATTACHMENT boundary refuses interface_role; no adapter exists.",
+     "tracks/t3-topology/dse/veritx_dse/model/compile_request_v5.py"),
+    ("cdc-async-fifo-bridge", "STRUCTURAL_NOT_ENDPOINT",
+     "realization is CdcCell generation, not a port stamp.",
+     "tracks/t3-topology/dse/veritx_dse/product/cdc_cell_rtl.py"),
+    ("pipeline-retiming-stage", "STRUCTURAL_NOT_ENDPOINT",
+     "realization is pipeline RTL, not a port stamp.",
+     None),
+    ("rcu-collective", "ROUTER_RCU_NOT_CONSUMED",
+     "ROUTE-011 is FUTURE_CONTRACT; rcu_enabled has no consumed artifact.",
+     "docs/product/capability-registry.yaml"),
+    ("ucie-d2d-chiplet", "BIDIRECTIONAL_ROLE_NOT_REALIZABLE",
+     "UCIE is a BIDIRECTIONAL bridge; interface_role refused at the v5 "
+     "product ATTACHMENT boundary; no PHY or width-conversion model.",
+     "tracks/t3-topology/dse/veritx_dse/model/compile_request_v5.py"),
+    ("concentrated-router", "CATEGORY_ERROR_ROUTER_IS_FABRIC_STRUCTURE",
+     "NIC stand-in cannot stamp a router; concentration seats co-located "
+     "per router and the composed wrapper cannot connect them.",
+     "tracks/t3-topology/dse/veritx_dse/model/topology_intent.py"),
+)
 
 
 class IpCategory(Enum):
@@ -226,13 +282,15 @@ class IpTemplate:
 
     @property
     def stampable_now(self) -> bool:
-        """False when a named capability still gates this primitive.
+        """True only for a template the server can honestly materialize now:
+        both a checked-design materializer and every capability READY.
 
         This is a *catalog* verdict about requirements the server must still
         make READY. It is deliberately not a capability status: the registry
         in :mod:`veritx_dse.application.loom_capability` owns status.
         """
-        return not self.capability_requirements
+        return self.id in MATERIALIZERS and not (
+            set(self.capability_requirements) - READY_CAPABILITIES)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -603,43 +661,21 @@ def _resolve_template(template: str | IpTemplate) -> IpTemplate:
         f"{type(template).__name__}")
 
 
-def stamp_ip_template(
-        template: str | IpTemplate,
-        design: CompileRequestV5 | None = None,
-        *, instance_id: str | None = None, address_base: int | None = None,
-        address_size: int | None = None, clock_domain: str | None = None,
-        power_domain: str | None = None,
-        initiator_group_index: int | None = None,
-        access_permission: AccessPermission | str | None = None) -> (
-            CompileRequestV5):
-    """Materialize the supported HBM3E catalog abstraction into a new design.
+def _resolve_canonical(resolved):
+    canonical = get_ip_template(resolved.id)
+    if resolved != canonical:
+        raise IpCatalogError(
+            f"IP template {resolved.id!r} stamping accepts only the "
+            "server-owned catalog template")
+    return canonical
 
-    The stamped object is a canonical HBM_CONTROLLER Agent group with stable
-    template/version/instance identity and an explicit address window. It is
-    not vendor IP and this operation provides no HBM3E timing/PPA model.
-    Other catalog rows remain unmaterializable until their own semantics and
-    consumers exist.
-    """
-    resolved = _resolve_template(template)
-    if resolved.id == "hbm3e-memory":
-        canonical = get_ip_template("hbm3e-memory")
-        if resolved != canonical:
-            raise IpCatalogError(
-                "HBM3E stamping accepts only the server-owned catalog template")
-        resolved = canonical
-    if resolved.id != "hbm3e-memory":
-        if not resolved.stampable_now:
-            unmet = ", ".join(resolved.capability_requirements)
-            raise UnsupportedSemantics(
-                f"IP template {resolved.id!r} cannot be stamped: capability "
-                f"requirement(s) {unmet} are unmet; no matching materializer "
-                "or downstream semantic consumer exists.")
-        raise UnsupportedSemantics(
-            f"IP template {resolved.id!r} has no canonical instance "
-            "materializer or downstream semantic consumer.")
+
+def _stamp_target(resolved, design, *, instance_id, address_base,
+                  address_size, clock_domain, power_domain,
+                  initiator_group_index, access_permission):
     if not isinstance(design, CompileRequestV5):
         raise IpCatalogError(
-            "hbm3e-memory stamping requires an immutable CompileRequestV5")
+            f"{resolved.id} stamping requires an immutable CompileRequestV5")
     base_design = design.base_v4
     instance_id = _as_str("instance_id", instance_id)
     clock_domain = _as_str("clock_domain", clock_domain)
@@ -647,7 +683,8 @@ def stamp_ip_template(
     base = _as_int("address_base", address_base, minimum=0)
     size = _as_int("address_size", address_size, minimum=1)
     if base + size > 1 << resolved.address_width_bits:
-        raise IpCatalogError("stamped HBM3E address window exceeds template address width")
+        raise IpCatalogError(
+            f"stamped {resolved.id} address window exceeds template address width")
     if any(a.ip_instance_id == instance_id for a in base_design.agents):
         raise IpCatalogError(f"duplicate stamped IP instance id {instance_id!r}")
     for existing in base_design.address_map.ranges:
@@ -670,7 +707,7 @@ def stamp_ip_template(
     if initiator_group_index is None or type(initiator_group_index) is not int \
             or not 0 <= initiator_group_index < len(base_design.agents):
         raise IpCatalogError(
-            "V5 HBM3E stamping requires an explicit existing initiator_group_index")
+            f"V5 {resolved.id} stamping requires an explicit existing initiator_group_index")
     if clock_domain not in {domain.id for domain in design.clock_domains}:
         raise IpCatalogError(
             f"V5 transaction clock domain {clock_domain!r} must be declared")
@@ -700,8 +737,108 @@ def stamp_ip_template(
                    access_policy=policy)
 
 
+def _stamp_initiator(resolved, design, *, instance_id, clock_domain,
+                     power_domain, address_base, address_size,
+                     initiator_group_index, access_permission):
+    if address_base is not None or address_size is not None \
+            or initiator_group_index is not None or access_permission is not None:
+        raise IpCatalogError(
+            f"{resolved.id} is an initiator template: it takes no address "
+            "window, target access rule or initiator binding; the stamped "
+            "group IS the initiator")
+    if not isinstance(design, CompileRequestV5):
+        raise IpCatalogError(
+            f"{resolved.id} stamping requires an immutable CompileRequestV5")
+    base_design = design.base_v4
+    instance_id = _as_str("instance_id", instance_id)
+    clock_domain = _as_str("clock_domain", clock_domain)
+    power_domain = _as_str("power_domain", power_domain)
+    if any(a.ip_instance_id == instance_id for a in base_design.agents):
+        raise IpCatalogError(f"duplicate stamped IP instance id {instance_id!r}")
+    group_index = len(base_design.agents)
+    agent = Agent(
+        kind=resolved.agent_kind, count=1,
+        data_width=resolved.data_width_bits,
+        addr_width=resolved.address_width_bits,
+        protocol=resolved.protocol,
+        clock_domain=clock_domain, power_domain=power_domain,
+        ip_template_id=resolved.id, ip_template_version=resolved.version,
+        ip_instance_id=instance_id)
+    stamped_base = replace(base_design, agents=(*base_design.agents, agent))
+    if clock_domain not in {domain.id for domain in design.clock_domains}:
+        raise IpCatalogError(
+            f"V5 transaction clock domain {clock_domain!r} must be declared")
+    declared_power_domains = (
+        {agent.power_domain for agent in base_design.agents
+         if agent.power_domain is not None}
+        | {domain.id for domain in design.power_domains}
+        | {"DEFAULT"})
+    if power_domain not in declared_power_domains:
+        raise IpCatalogError(
+            f"power domain {power_domain!r} is not declared by the base design")
+    intent = AgentIntentV5(agent_group_index=group_index,
+                           transaction_clock_domain=clock_domain)
+    return replace(design, base_v4=stamped_base,
+                   agent_intents=(*design.agent_intents, intent))
+
+
+def stamp_ip_template(
+        template: str | IpTemplate,
+        design: CompileRequestV5 | None = None,
+        *, instance_id: str | None = None, address_base: int | None = None,
+        address_size: int | None = None, clock_domain: str | None = None,
+        power_domain: str | None = None,
+        initiator_group_index: int | None = None,
+        access_permission: AccessPermission | str | None = None) -> (
+            CompileRequestV5):
+    """Materialize a stampable catalog template into a new design.
+
+    Target templates gain a canonical HBM/PERIPHERAL-class Agent group, its
+    address window and an access rule from the named initiator. Initiator
+    templates gain a NIC-class Agent group with an initiator intent.
+    Neither is vendor IP and neither carries a timing/PPA model.
+    """
+    resolved = _resolve_template(template)
+    canonical = _resolve_canonical(resolved)
+    unmet = sorted(set(canonical.capability_requirements) - READY_CAPABILITIES)
+    if unmet:
+        raise UnsupportedSemantics(
+            f"IP template {resolved.id!r} cannot be stamped: capability "
+            f"requirement(s) {', '.join(unmet)} are not READY; no matching "
+            "materializer or downstream semantic consumer exists.")
+    if resolved.id in ("hbm3e-memory", "csr-config-controller"):
+        return _stamp_target(
+            canonical, design, instance_id=instance_id,
+            address_base=address_base, address_size=address_size,
+            clock_domain=clock_domain, power_domain=power_domain,
+            initiator_group_index=initiator_group_index,
+            access_permission=access_permission)
+    if resolved.id == "pcie-cxl-root":
+        return _stamp_initiator(
+            canonical, design, instance_id=instance_id,
+            clock_domain=clock_domain, power_domain=power_domain,
+            address_base=address_base, address_size=address_size,
+            initiator_group_index=initiator_group_index,
+            access_permission=access_permission)
+    structural = {
+        "npu-tensor-core": "no compute-tile internal model exists; exporting an initiator port with no execution semantics would be a fabricated contract",
+        "vector-coprocessor": "no vector execution model exists; exporting an initiator port with no execution semantics would be a fabricated contract",
+        "streaming-dma-engine": "BIDIRECTIONAL endpoints have no materializer; a window would misrepresent a bus master as a target",
+        "telemetry-atb-trace-hub": "STREAM_SINK endpoints have no protocol realization (the catalog names AXI but the product realizes no STREAM family)",
+        "cdc-async-fifo-bridge": "structural element, not an endpoint; its realization is CdcCell generation, not a port stamp",
+        "pipeline-retiming-stage": "structural element, not an endpoint; its realization is pipeline RTL, not a port stamp",
+        "rcu-collective": "router.rcu has no consumed artifact; stamping one would be a claim without an artifact",
+        "ucie-d2d-chiplet": "bridge materializer not implemented; a UCIe port is not a SerDes and this stamp claims no PHY",
+        "concentrated-router": "a router is fabric structure, not an agent; stamping one would be a category error",
+    }
+    raise UnsupportedSemantics(
+        f"IP template {resolved.id!r} has no materializer: "
+        f"{structural.get(resolved.id, 'no canonical instance materializer exists for this role/shape')}")
+
+
 __all__ = [
     "SCHEMA_VERSION", "NOT_PROVIDED", "IpCatalogError", "IpCategory",
     "InterfaceRole", "IpTemplate", "IP_CATALOG", "get_ip_template",
     "list_ip_templates", "stamp_ip_template",
+    "READY_CAPABILITIES", "MATERIALIZERS", "ROADMAP",
 ]

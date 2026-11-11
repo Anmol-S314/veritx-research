@@ -32,24 +32,27 @@ _MESH_DOR_LOWERER_VERSION = "DORXY/1"
 _MESH_DOR_ROUTING_FUNCTION = "dim_order"
 
 _CMESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
-_CMESH_DOR_SEMANTICS_VERSION = "booksim2-fork+cmesh-terminal-bijection+prepared-v2"
+_CMESH_DOR_SEMANTICS_VERSION = (
+    "booksim2-fork+cmesh-terminal-bijection+prepared-v2+multi-class/v1")
 _CMESH_DOR_LOWERER_VERSION = "DORXY/1"
 _CMESH_DOR_ROUTING_FUNCTION = "dor_no_express"
 
 _GEC_MECS_PROFILE_ID = "CERTIFIED_BOOKSIM_GEC_MECS_V1"
-_GEC_MECS_SEMANTICS_VERSION = "booksim2-fork+G1-gecmecs-dump+prepared-v1"
+_GEC_MECS_SEMANTICS_VERSION = (
+    "booksim2-fork+G1-gecmecs-dump+prepared-v1+multi-class/v1")
 _GEC_MECS_LOWERER_VERSION = "DORGECMECS/1"
 _GEC_MECS_ROUTING_FUNCTION = "dor_gec"
 _GEC_MECS_ROUTING_CLASS = "DOR_GEC_MECS"
 
 _GEC_HYBRID_PROFILE_ID = "CERTIFIED_BOOKSIM_GEC_HYBRID_V1"
-_GEC_HYBRID_SEMANTICS_VERSION = "booksim2-fork+GH1-ranked-union+runtime-choices-v1"
+_GEC_HYBRID_SEMANTICS_VERSION = (
+    "booksim2-fork+GH1-ranked-union+runtime-choices-v1+multi-class/v1")
 _GEC_HYBRID_LOWERER_VERSION = "HYBRIDGECPHASETAP/1"
 GEC_HYBRID_OBSERVATION_FILE = "hybrid.observations"
 
 _SROTA_ROW_FIRST_PROFILE_ID = "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1"
-_SROTA_ROW_FIRST_SEMANTICS_VERSION = \
-    "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2"
+_SROTA_ROW_FIRST_SEMANTICS_VERSION = (
+    "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2+multi-class/v1")
 _SROTA_ROW_FIRST_LOWERER_VERSION = "SROTAO1TURN1/1"
 _SROTA_ROW_FIRST_ROUTING_FUNCTION = "o1turn"
 _SROTA_ROW_FIRST_ROUTING_CLASS = "SROTA_O1TURN_ROW_FIRST"
@@ -156,9 +159,13 @@ _A = ParameterOwner
 CONFIG_KEY_ORDER = (
     "topology", "k", "n", "c", "x", "y", "xr", "yr", "use_noc_latency",
     "network_file",
-    "routing_function", "routing_dump_file", "hybrid_gec_observation_file",
+    "routing_function", "routing_dump_file", "routing_dump_choice_probes",
+    "hybrid_gec_observation_file",
+    "native_route_observation_file",
     "num_vcs", "classes", "mesh_class_vc_begin", "mesh_class_vc_end",
-    "router", "priority", "link_failures",
+    "router", "priority", "vc_priority_donation", "vc_allocator",
+    "sw_allocator", "alloc_iters",
+    "class_priority", "link_failures",
     "subnets", "vc_buf_size", "o", "d", "mesh", "hybrid", "routing_delay",
     "srota_planes", "srota_mecs", "srota_path_en", "srota_vc_policy",
     "srota_d_num_vcs", "srota_cdg_radix", "srota_island_col_map",
@@ -228,9 +235,55 @@ _AUDIT: tuple[ConfigRead, ...] = (
                     "drain and drops packets from conservation"),
 )
 
+_MULTI_CLASS_NOTE = (
+    "number of canonical traffic classes in the executed workload; the "
+    "fork's per-class replay filter and per-class conservation make the "
+    "count execute as declared")
+
+def _multi_class_audit(audit: tuple[ConfigRead, ...]
+                       ) -> tuple[ConfigRead, ...]:
+    """Make ``classes`` a live canonical read instead of a pin to 1.
+
+    A profile that owns multi-class traffic must execute the class count the
+    workload declares. The single-class entry point of the same profile keeps
+    its own refusal (the ``multi_class`` qualifier flag); this audit only
+    stops the render from lying about the count once that path is selected.
+    A row already DERIVED (SROTA) is left verbatim.
+    """
+    rows: list[ConfigRead] = []
+    found = False
+    for row in audit:
+        if row.name != "classes":
+            rows.append(row)
+            continue
+        found = True
+        if row.owner is _A.DERIVED:
+            rows.append(row)
+        else:
+            rows.append(ConfigRead(
+                "classes", _A.CANONICAL, row.source,
+                note=_MULTI_CLASS_NOTE))
+    if not found:
+        rows.append(ConfigRead(
+            "classes", _A.CANONICAL, "trafficmanager.cpp",
+            note=_MULTI_CLASS_NOTE))
+    return tuple(rows)
+
 ANYNET_PROFILE = BookSimProfile(
     profile_id=_ANYNET_PROFILE_ID, semantics_version=_ANYNET_SEMANTICS_VERSION,
     audit=_AUDIT)
+
+#: The multi-class AnyNet surface is a DISTINCT profile. The sealed AnyNet
+#: profile above must keep its pre-multi-class semantics and prepared bytes;
+#: a catalog fat-tree (or other explicit graph) selects this one only when the
+#: workload declares two or more canonical classes.
+_ANYNET_MC_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_MC_V1"
+_ANYNET_MC_SEMANTICS_VERSION = (
+    "booksim2-fork+B3.7b-anynet-dump+prepared-v2+multi-class/v1")
+ANYNET_MC_PROFILE = BookSimProfile(
+    profile_id=_ANYNET_MC_PROFILE_ID,
+    semantics_version=_ANYNET_MC_SEMANTICS_VERSION,
+    audit=_multi_class_audit(_AUDIT))
 
 def _mesh_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native mesh surface.
@@ -319,7 +372,8 @@ Rationale: docs/decisions/modules/backend.md
 
 CMESH_DOR_PROFILE = BookSimProfile(
     profile_id=_CMESH_DOR_PROFILE_ID,
-    semantics_version=_CMESH_DOR_SEMANTICS_VERSION, audit=_cmesh_audit())
+    semantics_version=_CMESH_DOR_SEMANTICS_VERSION,
+    audit=_multi_class_audit(_cmesh_audit()))
 
 _ML_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1"
 _ML_DOR_SEMANTICS_VERSION = "booksim2-fork+P3-meshdor-mc+prepared-v1"
@@ -354,6 +408,82 @@ MESH_DOR_CLASS_VC_PROFILE = BookSimProfile(
         note="canonical class VC range, applied at injection and routing")
         for name in ("mesh_class_vc_begin", "mesh_class_vc_end")))
 
+_CLASS_PRIORITY_PROFILE_ID = (
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_PRIORITY_V1")
+_CLASS_PRIORITY_SEMANTICS_VERSION = (
+    "booksim2-fork+mesh-dor-class-vc+qos-priority/v1")
+
+#: The only QoS ranking this profile executes. The order is DECLARED here,
+#: not inferred from class names: higher integer = higher BookSim ``f->pri``.
+#: A class that never declared a QoS requirement gets no rank and therefore
+#: no priority profile (see ``class_priority_plan``). Changing this mapping
+#: is a semantics change and needs a new profile semantics version.
+QOS_PRIORITY_RANK: dict[str, int] = {
+    "latency_critical": 2,
+    "bandwidth": 1,
+    "best_effort": 0,
+}
+
+def _class_priority_audit() -> tuple[ConfigRead, ...]:
+    """The class-VC audit with a LIVE per-class priority surface.
+
+    ``priority = class`` makes ``trafficmanager.cpp`` stamp every flit with
+    ``class_priority[cl]``; ``trafficmanager.cpp`` reads the scalar only when
+    the array is absent, so the profile always renders the array. The switch
+    allocator is the stock priority-honouring ``select`` allocator: iSLIP
+    (the compiled default, still used for VC allocation) ignores request
+    priority entirely.
+    """
+    rows: list[ConfigRead] = []
+    for row in _mc_audit():
+        if row.name == "priority":
+            rows.append(ConfigRead(
+                "priority", _A.BACKEND_PROFILE,
+                "trafficmanager.cpp:90-110; vc.cpp:57-68", "class",
+                note="class_based priority: each flit carries its traffic "
+                     "class's declared rank"))
+            continue
+        rows.append(row)
+    extras = (
+        ConfigRead(
+            "vc_priority_donation", _A.BACKEND_PROFILE, "vc.cpp:70",
+            0, note="no donation: a rank belongs to its class's head flit, "
+                    "not to whichever flit happens to sit behind it"),
+        ConfigRead(
+            "vc_allocator", _A.BACKEND_PROFILE,
+            "routers/iq_router.cpp:100", "islip",
+            note="VC allocation is unchanged; iSLIP ignores priority"),
+        ConfigRead(
+            "sw_allocator", _A.BACKEND_PROFILE,
+            "routers/iq_router.cpp:118; allocators/allocator.cpp:477-479",
+            "select",
+            note="SelAlloc compares request priority; iSLIP does not"),
+        ConfigRead(
+            "alloc_iters", _A.BACKEND_PROFILE,
+            "allocators/allocator.cpp:450,453,462,477-479", 1,
+            note="one select-allocator iteration, as certified"),
+        ConfigRead(
+            "class_priority", _A.DERIVED,
+            "trafficmanager.cpp:254-258,996-999",
+            note="dense per-traffic-class rank derived from the request's "
+                 "RequirementV3.qos_class; higher wins, no implicit default"),
+        ConfigRead(
+            "mesh_class_vc_begin", _A.CANONICAL, "routefunc.cpp",
+            note="canonical class VC range, applied at injection and routing"),
+        ConfigRead(
+            "mesh_class_vc_end", _A.CANONICAL, "routefunc.cpp",
+            note="canonical class VC range, applied at injection and routing"),
+    )
+    for extra in extras:
+        rows = [row for row in rows if row.name != extra.name]
+        rows.append(extra)
+    return tuple(rows)
+
+MESH_DOR_CLASS_PRIORITY_PROFILE = BookSimProfile(
+    profile_id=_CLASS_PRIORITY_PROFILE_ID,
+    semantics_version=_CLASS_PRIORITY_SEMANTICS_VERSION,
+    audit=_class_priority_audit())
+
 _MIN_ADAPT_PROFILE_ID = "CERTIFIED_BOOKSIM_MIN_ADAPT_MESH_V1"
 _MIN_ADAPT_SEMANTICS_VERSION = "booksim2-fork+A1-minadaptmesh+prepared-v1"
 _MIN_ADAPT_LOWERER_VERSION = "MINADAPT/1"
@@ -373,9 +503,16 @@ MIN_ADAPT_MESH_PROFILE = BookSimProfile(
     audit=_min_adapt_audit())
 
 _TORUS_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
-_TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v2"
+_TORUS_DOR_SEMANTICS_VERSION = (
+    "booksim2-fork+T1-torusdor-dump+prepared-v2+multi-class/v1")
 _TORUS_DOR_LOWERER_VERSION = "DORTORUS/1"
 _TORUS_DOR_ROUTING_FUNCTION = "dim_order"
+_TREE4_NCA_PROFILE_ID = "CERTIFIED_BOOKSIM_TREE4_NCA_V1"
+_TREE4_NCA_LOWERER_VERSION = "TREE4NCA/1"
+_RING_DATELINE_PROFILE_ID = "CERTIFIED_BOOKSIM_RING_DATELINE_V1"
+_RING_DATELINE_LOWERER_VERSION = "RINGDATELINE/1"
+_FLY_DEST_TAG_PROFILE_ID = "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1"
+_FLY_DEST_TAG_LOWERER_VERSION = "FLYDESTTAG/1"
 
 def _torus_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native torus (KNCube) surface.
@@ -412,7 +549,7 @@ Rationale: docs/decisions/modules/backend.md
 TORUS_DOR_PROFILE = BookSimProfile(
     profile_id=_TORUS_DOR_PROFILE_ID,
     semantics_version=_TORUS_DOR_SEMANTICS_VERSION,
-    audit=_torus_audit())
+    audit=_multi_class_audit(_torus_audit()))
 
 def _gec_hybrid_audit() -> tuple[ConfigRead, ...]:
     rows = [row for row in _gec_mecs_audit() if row.name != "num_vcs"]
@@ -586,20 +723,21 @@ def _gec_mecs_audit() -> tuple[ConfigRead, ...]:
 GEC_HYBRID_PROFILE = BookSimProfile(
     profile_id=_GEC_HYBRID_PROFILE_ID,
     semantics_version=_GEC_HYBRID_SEMANTICS_VERSION,
-    audit=_gec_hybrid_audit())
+    audit=_multi_class_audit(_gec_hybrid_audit()))
 
 GEC_MECS_PROFILE = BookSimProfile(
     profile_id=_GEC_MECS_PROFILE_ID,
     semantics_version=_GEC_MECS_SEMANTICS_VERSION,
-    audit=_gec_mecs_audit())
+    audit=_multi_class_audit(_gec_mecs_audit()))
 
 SROTA_ROW_FIRST_PROFILE = BookSimProfile(
     profile_id=_SROTA_ROW_FIRST_PROFILE_ID,
     semantics_version=_SROTA_ROW_FIRST_SEMANTICS_VERSION,
-    audit=_srota_audit())
+    audit=_multi_class_audit(_srota_audit()))
 
 _FLATFLY_MIN_PROFILE_ID = "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1"
-_FLATFLY_MIN_SEMANTICS_VERSION = "booksim2-fork+F1-flatflymin-dump+prepared-v1"
+_FLATFLY_MIN_SEMANTICS_VERSION = (
+    "booksim2-fork+F1-flatflymin-dump+prepared-v1+multi-class/v1")
 _FLATFLY_MIN_LOWERER_VERSION = "FLATFLYMIN/1"
 _FLATFLY_MIN_ROUTING_FUNCTION = "ran_min"
 
@@ -654,11 +792,12 @@ Rationale: docs/decisions/modules/backend.md
 FLATFLY_MIN_PROFILE = BookSimProfile(
     profile_id=_FLATFLY_MIN_PROFILE_ID,
     semantics_version=_FLATFLY_MIN_SEMANTICS_VERSION,
-    audit=_flatfly_audit())
+    audit=_multi_class_audit(_flatfly_audit()))
 
 def _assert_profile_closure() -> None:
     for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE,
-                    MESH_DOR_MC_PROFILE, TORUS_DOR_PROFILE,
+                    MESH_DOR_MC_PROFILE, MESH_DOR_CLASS_PRIORITY_PROFILE,
+                    TORUS_DOR_PROFILE,
                     FLATFLY_MIN_PROFILE, MIN_ADAPT_MESH_PROFILE):
         for row in profile.audit:
             if row.owner is ParameterOwner.BACKEND_PROFILE \
@@ -848,6 +987,87 @@ def mesh_class_vc_ranges(parents: BookSimProjectionParents) -> tuple[tuple[int, 
     if not ranges:
         raise SemanticLoss("UNSUPPORTED: mesh VC projection binds no traffic classes")
     return tuple(ranges)
+
+
+def class_priority_plan(parents: BookSimProjectionParents
+                        ) -> tuple[tuple[str, int], ...] | None:
+    """The declared per-class ranks, or ``None`` when no claim is available.
+
+    A canonical class gets a rank ONLY from an applicable ``RequirementV3``
+    whose ``traffic_class`` names that class. The mapping is the module's
+    :data:`QOS_PRIORITY_RANK` (latency_critical > bandwidth > best_effort),
+    which is a declared control, never a guess from the class name.
+
+    ``None`` means "do not select the priority profile": a class has no
+    scoped requirement, every class carries the same rank (a uniform vector
+    is a dead config field), or the class VC ranges are not one disjoint VC
+    per class. A class with two DIFFERENT declared QoS values is a real
+    contradiction and raises instead of silently picking one. ``None`` never
+    means "rank zero".
+    """
+    classes = trace_class_map(parents.physical_traffic)
+    if len(classes) < 2:
+        return None
+    request = getattr(getattr(parents, "source_bundle", None), "design", None)
+    requirements = getattr(request, "requirements", None)
+    if not requirements:
+        return None
+    declared: dict[str, set[str]] = {}
+    for requirement in requirements:
+        traffic_class = getattr(requirement, "traffic_class", None)
+        if traffic_class is None:
+            continue
+        applicability = getattr(requirement, "applicability", None)
+        if getattr(applicability, "value", applicability) not in (
+                None, "APPLICABLE"):
+            continue
+        qos = getattr(requirement, "qos_class", None)
+        value = getattr(qos, "value", qos)
+        if value not in QOS_PRIORITY_RANK:
+            raise SemanticLoss(
+                f"UNSUPPORTED: traffic class {traffic_class!r} declares "
+                f"unknown QoS {value!r}; the certified rank vocabulary is "
+                f"{sorted(QOS_PRIORITY_RANK)}")
+        declared.setdefault(traffic_class, set()).add(value)
+    plan: list[tuple[str, int]] = []
+    for cls in classes:
+        values = declared.get(cls)
+        if not values:
+            return None
+        if len(values) > 1:
+            raise SemanticLoss(
+                f"UNSUPPORTED: traffic class {cls!r} declares conflicting "
+                f"QoS classes {sorted(values)}; one class cannot have two "
+                f"priorities")
+        plan.append((cls, QOS_PRIORITY_RANK[next(iter(values))]))
+    if len({rank for _cls, rank in plan}) < 2:
+        return None
+    ranges = mesh_class_vc_ranges(parents)
+    if any(start != end for start, end in ranges) \
+            or len({start for start, _end in ranges}) != len(ranges):
+        return None
+    return tuple(plan)
+
+def class_priority_vector(plan: tuple[tuple[str, int], ...]) -> str:
+    """The ``class_priority`` brace vector in dense trace-class order."""
+    return "{" + ",".join(str(rank) for _cls, rank in plan) + "}"
+
+def qualify_native_mesh_dor_class_priority(
+        parents: BookSimProjectionParents) -> MeshDorQualification:
+    """Qualify class-VC mesh execution plus a DECLARED per-class rank."""
+    qual = qualify_native_mesh_dor(parents, multi_class=True, class_vcs=True)
+    plan = class_priority_plan(parents)
+    if plan is None:
+        raise SemanticLoss(
+            "UNSUPPORTED: the priority profile needs two or more canonical "
+            "traffic classes, an applicable scoped QoS requirement for every "
+            "one of them, two distinct ranks, and one disjoint VC per class; "
+            "this design does not declare that surface")
+    if tuple(cls for cls, _rank in plan) != qual.trace_classes:
+        raise SemanticLoss(
+            "UNSUPPORTED: class priority plan does not cover the exact "
+            "canonical trace classes")
+    return qual
 
 
 def qualify_native_mesh_dor_mc(
@@ -1115,8 +1335,18 @@ Rationale: docs/decisions/modules/backend.md
         node_to_router={node: router for _, node, router, _ in mapping.bindings})
 
 def qualify_native_cmesh_dor(
-        parents: BookSimProjectionParents) -> CMeshDorQualification:
+        parents: BookSimProjectionParents, *, multi_class: bool = False,
+        sparse: bool = False) -> CMeshDorQualification:
     """Prove every prerequisite of the cmesh envelope, or refuse.
+
+    The default entry point stays single-class and fully packed so a direct
+    caller cannot silently turn a concentrated mesh into a multi-class or
+    over-provisioned claim. The selector passes ``multi_class=True`` only
+    after the workload declares two or more canonical classes; the catalog
+    selector additionally allows ``sparse=True`` when the square native grid
+    has more seats than attached endpoints. In that mode the unbound native
+    terminals are idle, while the executed route table still covers the full
+    native terminal universe.
 
 Rationale: docs/decisions/modules/backend.md
     """
@@ -1149,7 +1379,9 @@ Rationale: docs/decisions/modules/backend.md
 
     endpoints = parents.attachment.endpoints
     try:
-        cmesh_terminal_map(parents.attachment, k=k, concentration=concentration)
+        cmesh_terminal_map(
+            parents.attachment, k=k, concentration=concentration,
+            sparse=sparse)
     except CMeshTerminalMapError as exc:
         raise SemanticLoss(f"UNSUPPORTED: cmesh terminal binding: {exc}") from exc
 
@@ -1188,12 +1420,19 @@ Rationale: docs/decisions/modules/backend.md
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native cmesh representation")
 
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    trace_classes = trace_class_map(parents.physical_traffic)
+    if multi_class:
+        if len(trace_classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class cmesh profile requires two or "
+                "more canonical traffic classes; this workload declares "
+                f"{sorted(trace_classes)}")
+    elif len(trace_classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the single-class cmesh profile executes ONE "
             "traffic class (config pins classes = 1); this workload "
             "declares "
-            f"{sorted(trace_class_map(parents.physical_traffic))} — the "
+            f"{sorted(trace_classes)} — the "
             "multi-class profile owns this traffic")
 
     exact, reason = vc_exactness(parents.vc_resource)
@@ -1228,8 +1467,14 @@ Rationale: docs/decisions/modules/backend.md
     tie_flows: tuple[tuple[int, int], ...] = ()
 
 def qualify_native_torus_dor(
-        parents: BookSimProjectionParents) -> TorusDorQualification:
+        parents: BookSimProjectionParents, *, multi_class: bool = False
+        ) -> TorusDorQualification:
     """Prove every prerequisite of the torus envelope, or refuse.
+
+    The single-class default is retained for direct callers. A torus
+    multi-class workload keeps the exact 2-VC dateline halves; the compiler
+    binds every class to the full half envelope, so class identity adds no
+    different routing claim.
 
 Rationale: docs/decisions/modules/backend.md
     """
@@ -1302,11 +1547,18 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native torus representation")
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    trace_classes = trace_class_map(parents.physical_traffic)
+    if multi_class:
+        if len(trace_classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class torus-DOR profile requires "
+                "two or more canonical traffic classes; this workload "
+                f"declares {sorted(trace_classes)}")
+    elif len(trace_classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the torus-DOR v1 profile executes ONE "
             f"traffic class; this workload declares "
-            f"{sorted(trace_class_map(parents.physical_traffic))}")
+            f"{sorted(trace_classes)}")
     if parents.vc_resource.vc_count != 2:
         raise SemanticLoss(
             f"UNSUPPORTED: the torus-DOR dateline partition requires "
@@ -1400,14 +1652,19 @@ def _flatfly_shape(topo: Any) -> tuple[int, int]:
 
 
 def qualify_native_flatfly_min(
-        parents: BookSimProjectionParents) -> FlatflyMinQualification:
+        parents: BookSimProjectionParents, *, multi_class: bool = False
+        ) -> FlatflyMinQualification:
     """Prove every prerequisite of the flatfly envelope, or refuse.
 
     v1 domain: family FLATFLY, k-ary n-fly (k and n SOLVED from the
     artifact and proven by adjacency equality), concentration 1
     (identity node -> router), DOR-free minimal class FLATFLY_MIN,
-    single traffic class over the full VC set, identity transitions,
-    unit latency/weight, no parallel channels.
+    one or more traffic classes over the full VC set, identity
+    transitions, unit latency/weight, no parallel channels.
+
+    ``multi_class=False`` is the original single-class entry point. The
+    selector opts in only when the workload declares at least two canonical
+    classes; the routing function and the VC envelope are unchanged.
     """
     topo = parents.topology
     if topo.family is not MaterializedFamily.FLATFLY:
@@ -1466,11 +1723,18 @@ def qualify_native_flatfly_min(
         raise SemanticLoss(
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native flatfly representation")
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    trace_classes = trace_class_map(parents.physical_traffic)
+    if multi_class:
+        if len(trace_classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class flatfly-min profile requires "
+                "two or more canonical traffic classes; this workload "
+                f"declares {sorted(trace_classes)}")
+    elif len(trace_classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the flatfly-min v1 profile executes ONE "
             f"traffic class; this workload declares "
-            f"{sorted(trace_class_map(parents.physical_traffic))}")
+            f"{sorted(trace_classes)}")
     exact, reason = vc_exactness(parents.vc_resource)
     if not exact:
         raise SemanticLoss(f"UNSUPPORTED: {reason}")
@@ -1753,6 +2017,8 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
     """
     optional = {row.name for row in profile.audit if row.optional}
     del_optional = not include_optional
+    _pt = getattr(parents, "physical_traffic", None)
+    _is_mc = bool(_pt is not None and len(trace_class_map(_pt)) >= 2)
     if profile.profile_id == _MESH_DOR_PROFILE_ID:
         qual = qualify_native_mesh_dor(parents)
         values = dict(profile.pinned_values())
@@ -1781,6 +2047,17 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             routing_function=_MESH_DOR_ROUTING_FUNCTION,
             routing_dump_file=ROUTE_DUMP_FILE, num_vcs=parents.vc_resource.vc_count,
             classes=len(qual.trace_classes))
+    elif profile.profile_id == _CLASS_PRIORITY_PROFILE_ID:
+        qual = qualify_native_mesh_dor_class_priority(parents)
+        plan = class_priority_plan(parents)
+        assert plan is not None
+        values = dict(profile.pinned_values())
+        values.update(topology="mesh", k=qual.k, n=2, use_noc_latency=1,
+            routing_function=_MESH_DOR_ROUTING_FUNCTION,
+            routing_dump_file=ROUTE_DUMP_FILE,
+            num_vcs=parents.vc_resource.vc_count,
+            classes=len(qual.trace_classes),
+            class_priority=class_priority_vector(plan))
     elif profile.profile_id == _MIN_ADAPT_PROFILE_ID:
         values = dict(profile.pinned_values())
         values.update({
@@ -1792,7 +2069,8 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
                 parents.physical_traffic)),
         })
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
-        qual = qualify_native_cmesh_dor(parents)
+        qual = qualify_native_cmesh_dor(
+            parents, multi_class=_is_mc, sparse=True)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "cmesh", "k": qual.k, "n": 2,
@@ -1806,7 +2084,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "num_vcs": parents.vc_resource.vc_count,
         })
     elif profile.profile_id == _TORUS_DOR_PROFILE_ID:
-        qual = qualify_native_torus_dor(parents)
+        qual = qualify_native_torus_dor(parents, multi_class=_is_mc)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "torus", "k": qual.k, "n": 2,
@@ -1815,8 +2093,51 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
+    elif profile.profile_id == _RING_DATELINE_PROFILE_ID:
+        from .ring_projection import OBSERVATION_FILE, qualify
+        n = qualify(parents, multi_class=_is_mc)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "torus", "k": n, "n": 1, "use_noc_latency": 0,
+            "routing_function": _TORUS_DOR_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "routing_dump_choice_probes": 8,
+            "native_route_observation_file": OBSERVATION_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _TREE4_NCA_PROFILE_ID:
+        from .tree4_projection import CHOICE_PROBES, OBSERVATION_FILE, qualify
+        qualify(parents, multi_class=_is_mc)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "tree4", "k": 4, "n": 3,
+            "routing_function": "nca",
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "routing_dump_choice_probes": CHOICE_PROBES,
+            "native_route_observation_file": OBSERVATION_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _FLY_DEST_TAG_PROFILE_ID:
+        from .fly_projection import OBSERVATION_FILE, qualify
+        qualify(parents, multi_class=_is_mc)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "fly", "k": 4, "n": 3,
+            "routing_function": "dest_tag",
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "native_route_observation_file": OBSERVATION_FILE,
+            "use_noc_latency": 0,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == "CERTIFIED_BOOKSIM_QTREE_NCA_V1":
+        from .qtree_projection import qualify
+        qualify(parents, multi_class=_is_mc)
+        values = dict(profile.pinned_values())
+        values.update({"topology": "qtree", "k": 4, "n": 3,
+                       "routing_function": "nca", "routing_dump_file": ROUTE_DUMP_FILE,
+                       "num_vcs": parents.vc_resource.vc_count})
     elif profile.profile_id == _FLATFLY_MIN_PROFILE_ID:
-        qual = qualify_native_flatfly_min(parents)
+        qual = qualify_native_flatfly_min(parents, multi_class=_is_mc)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "flatfly", "k": qual.k, "n": qual.n,
@@ -1828,7 +2149,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "num_vcs": parents.vc_resource.vc_count,
         })
     elif profile.profile_id == _GEC_HYBRID_PROFILE_ID:
-        params = qualify_native_gec_hybrid(parents)
+        params = qualify_native_gec_hybrid(parents, multi_class=_is_mc)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "gec", "routing_function": "hybrid_gec",
@@ -1838,7 +2159,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "num_vcs": params.num_vcs, "use_noc_latency": 0,
         })
     elif profile.profile_id == _GEC_MECS_PROFILE_ID:
-        qual = qualify_native_gec_mecs(parents)
+        qual = qualify_native_gec_mecs(parents, multi_class=_is_mc)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "gec",
@@ -1849,7 +2170,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "use_noc_latency": 0,
         })
     elif profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID:
-        qual = qualify_native_srota_row_first(parents)
+        qual = qualify_native_srota_row_first(parents, multi_class=_is_mc)
         values = dict(profile.pinned_values())
         values.update({
             "topology": "srota", "k": qual.k, "c": qual.c,
@@ -1890,7 +2211,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "srota_cdg_radix": qual.k,
             "use_noc_latency": 0,
         })
-    elif profile.profile_id == _ANYNET_PROFILE_ID:
+    elif profile.profile_id in (_ANYNET_PROFILE_ID, _ANYNET_MC_PROFILE_ID):
         values = dict(profile.pinned_values())
         values.update({
             "topology": "anynet", "network_file": TOPOLOGY_FILE,
@@ -1902,7 +2223,18 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         raise BookSimProjectionError(
             f"unknown certified profile {profile.profile_id!r}")
 
-    if profile.profile_id == _CLASS_VC_PROFILE_ID:
+    _classes_row = next(
+        (row for row in profile.audit if row.name == "classes"), None)
+    if (_classes_row is not None
+            and _classes_row.owner is not _A.BACKEND_PROFILE):
+        # A canonical/DERIVED class count is a live read, never a pin. This
+        # is the single place that turns the workload's canonical class map
+        # into the config's ``classes`` field, so a profile cannot declare
+        # multi-class support while rendering the old literal 1.
+        values["classes"] = len(trace_class_map(_pt))
+
+    if profile.profile_id in (_CLASS_VC_PROFILE_ID,
+                              _CLASS_PRIORITY_PROFILE_ID):
         ranges = mesh_class_vc_ranges(parents)
         values["mesh_class_vc_begin"] = "{" + ",".join(str(start) for start, _end in ranges) + "}"
         values["mesh_class_vc_end"] = "{" + ",".join(str(end) for _start, end in ranges) + "}"
@@ -1962,26 +2294,57 @@ Rationale: docs/decisions/modules/backend.md
             "sample_period": sample_period,
             "max_samples": max_samples}
 
-def qualify_anynet_min_hops(parents: BookSimProjectionParents) -> None:
-    """Narrow, fail-closed domain for ANYNET_MIN_HOPS on this fork.
+def qualify_anynet_min_hops(parents: BookSimProjectionParents, *,
+                            multi_class: bool = False) -> None:
+    """The AnyNet min-hop authority over the shared point-to-point contract."""
+    _qualify_point_to_point(
+        parents, routing_class=ANYNET_MIN_HOPS, multi_class=multi_class)
+
+
+def _qualify_point_to_point(parents: BookSimProjectionParents, *,
+                            routing_class: str,
+                            multi_class: bool = False) -> None:
+    """Point-to-point transport invariants shared by native profiles.
+
+    The routing and VC claims do not depend on the number of traffic
+    classes. The default remains single-class; a profile that has passed its
+    own native gate opts in with ``multi_class=True`` and the selector still
+    requires two or more classes before choosing it.
 
 Rationale: docs/decisions/modules/backend.md
     """
+    if not hasattr(parents.route, "routing_classes"):
+        # ShapePolicyRoute / RankPolicyRoute / GecHybridRoute are the v3
+        # shared-wire realizations. They deliberately carry one routing_class
+        # and decisions, not a v2 channel-id table, so a point-to-point/AnyNet
+        # renderer has nothing to read. Duck-type the contract rather than
+        # enumerate every v3 subclass here.
+        raise SemanticLoss(
+            "UNSUPPORTED: a shared-wire v3 route cannot be rendered by a "
+            "point-to-point/AnyNet profile; the route has no channel-id "
+            "entries for that renderer. Use the family's native shared-wire "
+            "profile or a point-to-point topology.")
     classes = [d.id for d in parents.route.routing_classes]
-    if ANYNET_MIN_HOPS not in classes:
+    if routing_class not in classes:
         raise SemanticLoss(
-            f"UNSUPPORTED: the certified AnyNet profile represents "
-            f"ANYNET_MIN_HOPS only, got route classes {classes}")
-    if len(classes) != 1 and set(classes) != {ANYNET_MIN_HOPS}:
+            f"UNSUPPORTED: the selected point-to-point profile represents "
+            f"{routing_class} only, got route classes {classes}")
+    if len(classes) != 1 and set(classes) != {routing_class}:
         raise SemanticLoss(
-            "UNSUPPORTED: the certified AnyNet profile executes one "
-            f"min-hop routing function, got classes {classes}")
+            "UNSUPPORTED: the certified profile executes one "
+            f"routing function, got classes {classes}")
     traffic = getattr(parents, "physical_traffic", None)
     if traffic is not None:
         trace_classes = trace_class_map(traffic)
-        if len(trace_classes) != 1:
+        if multi_class:
+            if len(trace_classes) < 2:
+                raise SemanticLoss(
+                    "UNSUPPORTED: the multi-class point-to-point profile "
+                    "requires two or more canonical traffic classes; this "
+                    f"workload declares {sorted(trace_classes)}")
+        elif len(trace_classes) != 1:
             raise SemanticLoss(
-                "UNSUPPORTED: the single-class AnyNet profile executes ONE "
+                "UNSUPPORTED: the single-class point-to-point profile executes ONE "
                 "traffic class (config pins classes = 1); this workload "
                 "declares "
                 f"{sorted(trace_classes)} — the multi-class profile owns "
@@ -1994,7 +2357,7 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             "UNSUPPORTED: the certified profile executes identity VC "
             "transitions only")
-    _refuse_unbound_escape(parents, "anynet-min-hops")
+    _refuse_unbound_escape(parents, routing_class.lower().replace("_", "-"))
 
     latencies = {c.latency_cycles for c in parents.topology.channels}
     if min(latencies, default=0) < 1:
@@ -2004,7 +2367,7 @@ Rationale: docs/decisions/modules/backend.md
     weights = {c.route_weight for c in parents.topology.channels}
     if weights != {1}:
         raise SemanticLoss(
-            f"UNSUPPORTED: ANYNET_MIN_HOPS requires unit route weights, "
+            f"UNSUPPORTED: {routing_class} requires unit route weights, "
             f"got {sorted(weights)}")
 
     pairs: dict[tuple[int, int], int] = {}
@@ -2073,12 +2436,16 @@ Rationale: docs/decisions/modules/backend.md
     expected_flits: int = 0
     trace_class_map: tuple[str, ...] = ()
     expected_flits_by_class: tuple[tuple[str, int], ...] = ()
+    #: Canonical class -> BookSim ``f->pri`` rank, in trace-class order.
+    #: Empty for every profile that makes no per-class priority claim.
+    priority_class_map: tuple[tuple[str, int], ...] = ()
     expected_route_rows: tuple[tuple[int, int, int], ...] = ()
     seed: int = 0
     # (src, destination terminal, mode, port, tap, VC start, VC end, phase, mesh H)
     expected_hybrid_candidates: tuple[tuple[Any, ...], ...] = ()
     cmesh_terminal_mapping: tuple[tuple[int, int, int, int], ...] = ()
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
+    expected_route_ports: tuple[tuple[int, int, int], ...] = ()
 
     def identity_dict(self) -> dict[str, Any]:
         return {
@@ -2108,7 +2475,12 @@ Rationale: docs/decisions/modules/backend.md
                 "expected_flits_by_class": [list(p) for p in
                                             self.expected_flits_by_class]}
                if self.trace_class_map else {}),
+            **({"priority_class_map": [list(p) for p in
+                                       self.priority_class_map]}
+               if self.priority_class_map else {}),
             "expected_route_rows": [list(r) for r in self.expected_route_rows],
+            **({"expected_route_ports": [list(r) for r in self.expected_route_ports]}
+               if self.expected_route_ports else {}),
             **({"expected_hybrid_candidates": [list(r) for r in self.expected_hybrid_candidates]}
                if self.expected_hybrid_candidates else {}),
             **({"cmesh_terminal_mapping": [list(row) for row in self.cmesh_terminal_mapping]}
@@ -2167,7 +2539,8 @@ class SrotaRowFirstQualification:
     control_plane: Any = None
 
 def qualify_native_srota_row_first(
-        parents: BookSimProjectionParents) -> SrotaRowFirstQualification:
+        parents: BookSimProjectionParents, *, multi_class: bool = False
+        ) -> SrotaRowFirstQualification:
     """Prove the SROTA direct-shape envelope, or refuse.
 
     Two configurations qualify, and the VC count SELECTS between them:
@@ -2179,6 +2552,12 @@ def qualify_native_srota_row_first(
     unless the design actually carries the two-set partition. Conversely a
     single-shape design is refused if it claims two sets, because that would
     render a different config than the one proved.
+
+    ``multi_class=False`` keeps the original one-class gate. The selector
+    passes True for a workload with two or more canonical classes; on a
+    single packet plane every class rides subnet 0 and the class column is
+    the only identity the fork needs. A Plane C fabric continues to require
+    two classes, one per plane, regardless of this flag.
     """
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
@@ -2258,10 +2637,10 @@ def qualify_native_srota_row_first(
             f"UNSUPPORTED: certified SROTA needs a uniform concentration, "
             f"got seat capacities {sorted(seats)}")
     c = next(iter(seats))
-    if c < 2:
+    if c < 1:
         raise SemanticLoss(
-            f"UNSUPPORTED: Plane D is a CONCENTRATED mesh, so concentration "
-            f"must be at least 2, got {c}")
+            f"UNSUPPORTED: SROTA requires at least one endpoint seat per "
+            f"router, got {c}")
     if topo.channels:
         raise SemanticLoss(
             f"UNSUPPORTED: certified SROTA covers the fully-expressed Plane "
@@ -2289,6 +2668,20 @@ def qualify_native_srota_row_first(
                 f"planes; this workload declares {sorted(classes)} "
                 "class(es). Declare a second traffic class so Plane C "
                 "carries traffic rather than idling.")
+        if len(classes) > 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: SROTA Plane C has ONE secondary subnet and "
+                "executes one canonical class per plane; this workload "
+                f"declares {len(classes)} classes {sorted(classes)}, so at "
+                "least one plane would carry multiple classes over one flat "
+                "VC envelope. Use the single-plane SROTA domain for a "
+                "many-class workload, or split the workload by plane.")
+    elif multi_class:
+        if len(classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class SROTA profile requires two or "
+                f"more canonical traffic classes; this workload declares "
+                f"{sorted(classes)}")
     elif len(classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the certified SROTA profile executes ONE traffic "
@@ -2382,8 +2775,15 @@ class GecMecsQualification:
     vc_count: int
 
 def qualify_native_gec_mecs(
-        parents: BookSimProjectionParents) -> GecMecsQualification:
-    """Prove every prerequisite of the GEC MECS envelope, or refuse."""
+        parents: BookSimProjectionParents, *, multi_class: bool = False
+        ) -> GecMecsQualification:
+    """Prove every prerequisite of the GEC MECS envelope, or refuse.
+
+    ``multi_class=False`` keeps the original one-class gate. The selector
+    opts in for two or more canonical classes; each class is bound to the
+    full tap/VC envelope, so the per-tap partition proof is unchanged and
+    the fork's class column is the only extra identity.
+    """
     from veritx_dse.model.route_artifact_v3 import RouteArtifactV3
     from veritx_dse.model.topology_artifact import MaterializedFamily
     topo = parents.topology
@@ -2454,11 +2854,18 @@ def qualify_native_gec_mecs(
         raise SemanticLoss(
             f"UNSUPPORTED: GEC hardcodes 1-cycle channel latency; the "
             f"shared wires carry {sorted(latencies)}")
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    trace_classes = trace_class_map(parents.physical_traffic)
+    if multi_class:
+        if len(trace_classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class GEC-MECS profile requires two "
+                "or more canonical traffic classes; this workload declares "
+                f"{sorted(trace_classes)}")
+    elif len(trace_classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the certified GEC-MECS profile executes ONE "
             "traffic class; this workload declares "
-            f"{sorted(trace_class_map(parents.physical_traffic))}")
+            f"{sorted(trace_classes)}")
     route.validate_against(topo)
     if dict(route.partition_to_vcs) != {t: (t,) for t in range(d)}:
         raise SemanticLoss(
@@ -2480,8 +2887,14 @@ def qualify_native_gec_mecs(
         vc_count=parents.vc_resource.vc_count)
 
 
-def qualify_native_gec_hybrid(parents: BookSimProjectionParents):
-    """Exact phase/tap candidate-union envelope; no escape role is claimed."""
+def qualify_native_gec_hybrid(parents: BookSimProjectionParents, *,
+                              multi_class: bool = False):
+    """Exact phase/tap candidate-union envelope; no escape role is claimed.
+
+    ``multi_class=False`` keeps the original one-class gate. The hybrid
+    compiler already binds every class to the complete phase/tap envelope,
+    so the selector opts in without changing the candidate-union proof.
+    """
     from veritx_dse.model.gec_hybrid_route import GecHybridRoute
     from veritx_dse.verification.gec_hybrid_instance import prove_gec_hybrid_instance
     route, topo = parents.route, parents.topology
@@ -2499,7 +2912,14 @@ def qualify_native_gec_hybrid(parents: BookSimProjectionParents):
     if any(vcs != tuple(range(params.num_vcs))
            for _cls, vcs in parents.vc_assignment.traffic_class_to_vcs):
         raise SemanticLoss("UNSUPPORTED: hybrid injection must offer the complete VC envelope")
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    trace_classes = trace_class_map(parents.physical_traffic)
+    if multi_class:
+        if len(trace_classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: the multi-class hybrid profile requires two "
+                "or more canonical traffic classes; this workload declares "
+                f"{sorted(trace_classes)}")
+    elif len(trace_classes) != 1:
         raise SemanticLoss("UNSUPPORTED: hybrid profile executes one traffic class")
     if {ch.latency_cycles for ch in topo.channels} | {w.latency_cycles for w in topo.shared_links} != {1}:
         raise SemanticLoss("UNSUPPORTED: hybrid channels and wires must have unit latency")
@@ -2516,8 +2936,213 @@ def qualify_native_gec_hybrid(parents: BookSimProjectionParents):
     return params
 
 
+def _parents_are_multi_class(parents: BookSimProjectionParents) -> bool:
+    traffic = getattr(parents, "physical_traffic", None)
+    return bool(traffic is not None and len(trace_class_map(traffic)) >= 2)
+
+
+# Product qualification authorities. The direct qualifiers keep their
+# single-class default as the hard gate; these wrappers read the ACTUAL
+# parents and call the same proof with the class/sparse mode the selector
+# used. evaluate_qualification invokes them with the parents only, so this is
+# where the product path admits multi-class without weakening a direct call.
+def qualify_native_cmesh_dor_product(parents: BookSimProjectionParents):
+    return qualify_native_cmesh_dor(
+        parents, multi_class=_parents_are_multi_class(parents), sparse=True)
+
+
+def qualify_native_torus_dor_product(parents: BookSimProjectionParents):
+    return qualify_native_torus_dor(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_flatfly_min_product(parents: BookSimProjectionParents):
+    return qualify_native_flatfly_min(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_anynet_min_hops_product(parents: BookSimProjectionParents):
+    return qualify_anynet_min_hops(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_srota_row_first_product(
+        parents: BookSimProjectionParents):
+    return qualify_native_srota_row_first(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_gec_mecs_product(parents: BookSimProjectionParents):
+    return qualify_native_gec_mecs(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_gec_hybrid_product(parents: BookSimProjectionParents):
+    return qualify_native_gec_hybrid(
+        parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_qtree_nca_product(parents: BookSimProjectionParents):
+    from .qtree_projection import qualify
+    return qualify(parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_tree4_nca_product(parents: BookSimProjectionParents):
+    from .tree4_projection import qualify
+    return qualify(parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_ring_dateline_product(parents: BookSimProjectionParents):
+    from .ring_projection import qualify
+    return qualify(parents, multi_class=_parents_are_multi_class(parents))
+
+
+def qualify_native_fly_dest_tag_product(parents: BookSimProjectionParents):
+    from .fly_projection import qualify
+    return qualify(parents, multi_class=_parents_are_multi_class(parents))
+
+
+def _select_multi_class_profile(
+        parents: BookSimProjectionParents) -> BookSimProfile:
+    """Choose the native multi-class profile for THIS family, or refuse.
+
+    Every catalog family has one canonical routing realization. Multi-class
+    traffic does not change that realization: it changes the number of trace
+    classes the traffic manager must replay. So the family's own qualifier is
+    called with ``multi_class=True`` and the same profile is returned. AnyNet
+    remains the fallback ONLY for a family whose canonical route already is
+    ANYNET_MIN_HOPS; for a native route the AnyNet qualifier refuses, and the
+    family refusal is the honest one. A single refusal names every attempted
+    gate, so the catalog row never collapses to "unsupported" without a
+    reason.
+    """
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    family = parents.topology.family
+    attempts: list[tuple[str, str]] = []
+
+    def _try(label: str, gate, profile: BookSimProfile):
+        try:
+            gate()
+        except SemanticLoss as exc:
+            attempts.append((label, str(exc)))
+            return None
+        return profile
+
+    if family is MaterializedFamily.MESH:
+        profile = _try(
+            "mesh-DOR multi-class",
+            lambda: qualify_native_mesh_dor_mc(parents),
+            MESH_DOR_MC_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.CONCENTRATED_MESH:
+        profile = _try(
+            "concentrated-mesh DOR multi-class",
+            lambda: qualify_native_cmesh_dor(
+                parents, multi_class=True, sparse=True),
+            CMESH_DOR_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.TORUS:
+        profile = _try(
+            "torus DOR multi-class",
+            lambda: qualify_native_torus_dor(parents, multi_class=True),
+            TORUS_DOR_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.FLATFLY:
+        profile = _try(
+            "flatfly-min multi-class",
+            lambda: qualify_native_flatfly_min(parents, multi_class=True),
+            FLATFLY_MIN_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.SROTA:
+        profile = _try(
+            "SROTA direct-shape multi-class",
+            lambda: qualify_native_srota_row_first(
+                parents, multi_class=True),
+            SROTA_ROW_FIRST_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.GEC_MECS:
+        profile = _try(
+            "GEC MECS multi-class",
+            lambda: qualify_native_gec_mecs(parents, multi_class=True),
+            GEC_MECS_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.GEC_HYBRID:
+        profile = _try(
+            "GEC hybrid multi-class",
+            lambda: qualify_native_gec_hybrid(parents, multi_class=True),
+            GEC_HYBRID_PROFILE)
+        if profile is not None:
+            return profile
+    elif family is MaterializedFamily.QTREE:
+        from .qtree_projection import PROFILE as profile
+        from .qtree_projection import qualify as _qualify
+        selected = _try(
+            "QTree NCA multi-class",
+            lambda: _qualify(parents, multi_class=True), profile)
+        if selected is not None:
+            return selected
+    elif family is MaterializedFamily.TREE4_NATIVE:
+        from .tree4_projection import PROFILE as profile
+        from .tree4_projection import qualify as _qualify
+        selected = _try(
+            "Tree4 NCA multi-class",
+            lambda: _qualify(parents, multi_class=True), profile)
+        if selected is not None:
+            return selected
+    elif family is MaterializedFamily.RING_NATIVE:
+        from .ring_projection import PROFILE as profile
+        from .ring_projection import qualify as _qualify
+        selected = _try(
+            "ring dateline multi-class",
+            lambda: _qualify(parents, multi_class=True), profile)
+        if selected is not None:
+            return selected
+    elif family is MaterializedFamily.FLY_NATIVE:
+        from .fly_projection import PROFILE as profile
+        from .fly_projection import qualify as _qualify
+        selected = _try(
+            "fly destination-tag multi-class",
+            lambda: _qualify(parents, multi_class=True), profile)
+        if selected is not None:
+            return selected
+
+    profile = _try(
+        "AnyNet min-hop multi-class",
+        lambda: qualify_anynet_min_hops(parents, multi_class=True),
+        ANYNET_MC_PROFILE)
+    if profile is not None:
+        return profile
+
+    detail = "; ".join(f"{label} refuses: {reason}"
+                       for label, reason in attempts)
+    raise SemanticLoss(
+        "UNSUPPORTED: no certified multi-class profile accepts this "
+        f"design; {detail}")
+
+
+def _select_mesh_class_profile(parents: BookSimProjectionParents
+                               ) -> BookSimProfile:
+    """Class-VC mesh, promoted to the priority profile when QoS is declared.
+
+    The sealed class-VC profile keeps its ``priority = none`` bytes. The
+    priority profile is a DISTINCT profile and is selected only when every
+    canonical class declared an applicable QoS and owns one disjoint VC.
+    """
+    if class_priority_plan(parents) is not None:
+        qualify_native_mesh_dor_class_priority(parents)
+        return MESH_DOR_CLASS_PRIORITY_PROFILE
+    qualify_native_mesh_dor_class_vcs(parents)
+    return MESH_DOR_CLASS_VC_PROFILE
+
+
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
-    """Multi-class mesh DOR, single-class mesh DOR, concentrated, AnyNet.
+    """Multi-class native profile for the family, or the single-class chain.
 
 Rationale: docs/decisions/modules/backend.md
     """
@@ -2530,6 +3155,39 @@ Rationale: docs/decisions/modules/backend.md
         "noc_controls", None)
     if has_router_controls(controls):
         return controlled_profile(qualify_router_controls(parents))
+    # The per-class-VC mesh profile is a first-class multi-class mode, not a
+    # fallback: it is the ONLY mesh profile that executes disjoint class VC
+    # subsets, and it also owns the single-class subset design. Check it
+    # before the generic multi-class chain, which proves the full-envelope
+    # mesh MC profile and would otherwise reject a class-VC design.
+    if (parents.topology.family is MaterializedFamily.MESH
+            and not vc_exactness(parents.vc_resource)[0]):
+        return _select_mesh_class_profile(parents)
+    _sel_traffic = getattr(parents, "physical_traffic", None)
+    _sel_classes = (len(trace_class_map(_sel_traffic))
+                    if _sel_traffic is not None else 0)
+    if _sel_classes >= 2:
+        # One authority for every family: the native routing/VC proof is
+        # unchanged by class count, while the trace manager must replay each
+        # class. Keeping this before the family branches prevents a native
+        # single-class profile from being selected for a multi-class trace.
+        return _select_multi_class_profile(parents)
+    if parents.topology.family is MaterializedFamily.QTREE:
+        from .qtree_projection import PROFILE, qualify
+        qualify(parents)
+        return PROFILE
+    if parents.topology.family is MaterializedFamily.TREE4_NATIVE:
+        from .tree4_projection import PROFILE, qualify
+        qualify(parents)
+        return PROFILE
+    if parents.topology.family is MaterializedFamily.RING_NATIVE:
+        from .ring_projection import PROFILE, qualify
+        qualify(parents)
+        return PROFILE
+    if parents.topology.family is MaterializedFamily.FLY_NATIVE:
+        from .fly_projection import PROFILE, qualify
+        qualify(parents)
+        return PROFILE
     # A shared-wire fabric is rendered by its own profile, which is the only
     # one whose audit describes wires rather than channels. Checked FIRST,
     # because the v3 refusal below is about profiles that cannot read a v3
@@ -2559,26 +3217,16 @@ Rationale: docs/decisions/modules/backend.md
             "renderer for this family")
     if (parents.topology.family is MaterializedFamily.MESH
             and not vc_exactness(parents.vc_resource)[0]):
-        qualify_native_mesh_dor_class_vcs(parents)
-        return MESH_DOR_CLASS_VC_PROFILE
-    _sel_traffic = getattr(parents, "physical_traffic", None)
-    _sel_classes = len(trace_class_map(_sel_traffic)) \
-        if _sel_traffic is not None else 0
-    if _sel_classes >= 2:
-        try:
-            qualify_native_mesh_dor_mc(parents)
-        except SemanticLoss as mc_exc:
-            raise SemanticLoss(
-                "UNSUPPORTED: no certified multi-class profile accepts "
-                "this design; the multi-class mesh profile refuses: "
-                f"{mc_exc}; the concentrated-mesh and AnyNet profiles "
-                "execute ONE traffic class only") from mc_exc
-        return MESH_DOR_MC_PROFILE
+        return _select_mesh_class_profile(parents)
     try:
         qualify_native_mesh_dor(parents)
     except SemanticLoss as native_exc:
         try:
-            qualify_native_cmesh_dor(parents)
+            # A square cmesh grid can over-provision the attached endpoints;
+            # the direct single-class default remains fully packed, while the
+            # product selector binds the sparse subset and proves the full
+            # native route universe.
+            qualify_native_cmesh_dor(parents, sparse=True)
         except SemanticLoss:
             pass
         else:
@@ -2628,6 +3276,26 @@ def _require_representable_links(parents: BookSimProjectionParents,
         # point-to-point refinement below is about profiles that would drop
         # them silently, which this one does not.
         return
+    if profile.profile_id == _FLY_DEST_TAG_PROFILE_ID:
+        # The native fly renderer does not draw links at all: BookSim's KNFly
+        # builds the n-1 inter-stage wiring itself from k and n, and EVERY
+        # channel of that construction runs from stage s to stage s+1. A
+        # one-way channel graph is therefore the fabric, not a loss, so the
+        # symmetric-fabric rule would refuse the very topology it protects.
+        # Anything that is not that stage law is still refused.
+        from .fly_projection import qualify
+        from veritx_dse.model.fly_net import router_stage
+        qualify(parents, multi_class=_parents_are_multi_class(parents))
+        for channel in parents.topology.channels:
+            if router_stage(channel.src_router) + 1 != \
+                    router_stage(channel.dst_router):
+                raise BookSimProjectionError(
+                    "UNSUPPORTED: the fly profile builds a strictly stage-"
+                    f"advancing fabric, but channel {channel.channel_id} runs "
+                    f"from router {channel.src_router} to "
+                    f"{channel.dst_router}; refusing rather than flattening "
+                    "direction")
+        return
     shared = getattr(parents.topology, "shared_links", ())
     if shared:
         raise BookSimProjectionError(
@@ -2635,7 +3303,8 @@ def _require_representable_links(parents: BookSimProjectionParents,
             "wire(s) (a bus); the BookSim profiles build point-to-point "
             "links only, so the bus would be silently dropped. Refusing.")
     pairs = {(c.src_router, c.dst_router) for c in parents.topology.channels}
-    if profile.profile_id != _ANYNET_PROFILE_ID and \
+    if profile.profile_id not in (_ANYNET_PROFILE_ID,
+                                  _ANYNET_MC_PROFILE_ID) and \
             any((b, a) not in pairs for (a, b) in pairs):
         raise BookSimProjectionError(
             f"UNSUPPORTED: profile {profile.profile_id} assumes a symmetric "
@@ -2674,13 +3343,28 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
                        config_text=config_text)
     profile = select_booksim_profile(parents)
     _require_representable_links(parents, profile)
+    _pt = parents.physical_traffic
+    _pt_classes = trace_class_map(_pt)
+    _is_mc = bool(len(_pt_classes) >= 2)
     terminal_map = None
     if profile.profile_id == _CMESH_DOR_PROFILE_ID:
-        qual = qualify_native_cmesh_dor(parents)
-        terminal_map = cmesh_terminal_map(parents.attachment, k=qual.k, concentration=qual.concentration)
+        qual = qualify_native_cmesh_dor(
+            parents, multi_class=_is_mc, sparse=True)
+        terminal_map = cmesh_terminal_map(
+            parents.attachment, k=qual.k,
+            concentration=qual.concentration, sparse=True)
     conservation = verify_trace_conservation(parents.physical_traffic, terminal_map)
     config = render_config(parents, profile, include_optional=True, seed=seed)
     rendered = parse_config_values(config.decode())
+    # The single-class class-VC subset still needs a bound one-entry class
+    # map: its whole point is to execute that class on its certified VC
+    # range. Multi-plane SROTA likewise binds one class when subnets=2.
+    _bind_class_map = (
+        _is_mc
+        or profile.profile_id in (_CLASS_VC_PROFILE_ID,
+                                  _CLASS_PRIORITY_PROFILE_ID)
+        or (profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID
+            and str(rendered.get("subnets")) == "2"))
     missing = profile.rendered_names() - set(rendered)
     if missing:
         raise BookSimProjectionError(
@@ -2697,12 +3381,31 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
             raise BookSimProjectionError(
                 f"rendered {name}={rendered.get(name)!r} does not equal the "
                 f"profile pin {pin!r}")
+    _priority_plan: tuple[tuple[str, int], ...] = ()
+    if profile.profile_id == _CLASS_PRIORITY_PROFILE_ID:
+        _priority_plan = class_priority_plan(parents) or ()
+        if not _priority_plan:
+            raise BookSimProjectionError(
+                "the priority profile rendered without a declared per-class "
+                "QoS plan; refusing a dead priority surface")
+        if rendered.get("class_priority") != class_priority_vector(
+                _priority_plan):
+            raise BookSimProjectionError(
+                "rendered class_priority does not equal the declared "
+                "RequirementV3.qos_class plan")
+        if len({rank for _cls, rank in _priority_plan}) < 2:
+            raise BookSimProjectionError(
+                "class_priority is uniform: priority cannot change "
+                "arbitration, so it must not be claimed")
     topology_text = (render_anynet_topology(parents).decode()
-                     if profile.profile_id == _ANYNET_PROFILE_ID else None)
+                     if profile.profile_id in (
+                         _ANYNET_PROFILE_ID, _ANYNET_MC_PROFILE_ID) else None)
     pt = parents.physical_traffic
     schedule = trace_schedule(pt)
     from veritx_dse.backend.route_observation import expected_route_rows
-    if profile.profile_id in (_MESH_DOR_PROFILE_ID, _ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID):
+    if profile.profile_id in (_MESH_DOR_PROFILE_ID, _ML_DOR_PROFILE_ID,
+                              _CLASS_VC_PROFILE_ID,
+                              _CLASS_PRIORITY_PROFILE_ID):
         routing_class = DOR_XY
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
@@ -2727,16 +3430,63 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         # check the design against a class it did not declare.
         routing_class = parents.route.routing_class
         node_to_router = dict(parents.route.terminal_to_router)
+    elif profile.profile_id == "CERTIFIED_BOOKSIM_QTREE_NCA_V1":
+        from veritx_dse.core.route_artifact import QTREE_NCA
+        routing_class = QTREE_NCA
+        node_to_router = {e.endpoint_id: e.router_id for e in parents.attachment.endpoints}
+    elif profile.profile_id == _TREE4_NCA_PROFILE_ID:
+        from veritx_dse.core.route_artifact import TREE4_NCA
+        routing_class = TREE4_NCA
+        node_to_router = {e.endpoint_id: e.router_id
+                          for e in parents.attachment.endpoints}
+    elif profile.profile_id == _RING_DATELINE_PROFILE_ID:
+        from veritx_dse.core.route_artifact import RING_DATELINE
+        routing_class = RING_DATELINE
+        node_to_router = {e.endpoint_id: e.router_id
+                          for e in parents.attachment.endpoints}
+    elif profile.profile_id == _FLY_DEST_TAG_PROFILE_ID:
+        from veritx_dse.core.route_artifact import FLY_DEST_TAG
+        routing_class = FLY_DEST_TAG
+        # A fly flit is addressed to a TERMINAL whose ejection point is a
+        # stage-2 router, so the routing destination is the EGRESS router,
+        # never the ingress one the same terminal injects through.
+        node_to_router = {e.endpoint_id: e.egress_location()[0]
+                          for e in parents.attachment.endpoints}
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         routing_class = DOR_XY
-        node_to_router = {node: router for _, node, router, _ in terminal_map.bindings}
+        # Cover every native terminal, including idle seats in a sparse
+        # multi-class fabric. The executed route dump is total over that
+        # universe, so shrinking the expected table to bound endpoints would
+        # report a false coverage failure.
+        node_to_router = terminal_map.native_node_to_router()
     else:
         routing_class = ANYNET_MIN_HOPS
         node_to_router = {e.endpoint_id: e.router_id
                           for e in parents.attachment.endpoints}
-    route_rows = expected_route_rows(
-        routing_class=routing_class, topology=parents.topology,
-        route=parents.route, node_to_router=node_to_router)
+    if profile.profile_id == _FLY_DEST_TAG_PROFILE_ID:
+        # The fly's table is keyed by (router, DESTINATION NODE) and covers
+        # every pair the producer dumps, including the ones no flow can
+        # occupy; the profile owns that table and its literal law.
+        from .fly_projection import expected_rows as _fly_expected_rows
+        route_rows, route_ports = _fly_expected_rows(parents.topology)
+    else:
+        route_rows = expected_route_rows(
+            routing_class=routing_class, topology=parents.topology,
+            route=parents.route, node_to_router=node_to_router)
+        route_ports = ()
+    if profile.profile_id == "CERTIFIED_BOOKSIM_QTREE_NCA_V1":
+        from .qtree_projection import observed_rows
+        route_rows, route_ports = observed_rows(parents.topology)
+    if profile.profile_id == _TREE4_NCA_PROFILE_ID:
+        # Tree4's table is a legal-choice union too (four roots, two group
+        # middles, two parents), so the single-row differential cannot state
+        # it: the profile's own union verifier owns the comparison.
+        route_rows, route_ports = (), ()
+    if profile.profile_id == _RING_DATELINE_PROFILE_ID:
+        # The ring's table is a legal-choice UNION (the midpoint tie is a
+        # coin), so it is parsed and compared by the ring's own verifier
+        # rather than by the single-row differential.
+        route_rows, route_ports = (), ()
     hybrid_candidates = ()
     if profile.profile_id == _GEC_HYBRID_PROFILE_ID:
         from veritx_dse.model.gec_hybrid_route import bound_gec_hybrid_candidates
@@ -2749,10 +3499,12 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     return PreparedBookSimInput(
         profile_id=profile.profile_id,
         semantics_version=profile.semantics_version,
-        lowerer_version=(_GEC_HYBRID_LOWERER_VERSION
+        lowerer_version=(_FLY_DEST_TAG_LOWERER_VERSION if profile.profile_id == _FLY_DEST_TAG_PROFILE_ID else _TREE4_NCA_LOWERER_VERSION if profile.profile_id == _TREE4_NCA_PROFILE_ID else _RING_DATELINE_LOWERER_VERSION if profile.profile_id == _RING_DATELINE_PROFILE_ID else "QTREENCA/1" if profile.profile_id == "CERTIFIED_BOOKSIM_QTREE_NCA_V1" else _GEC_HYBRID_LOWERER_VERSION
                          if profile.profile_id == _GEC_HYBRID_PROFILE_ID
                          else _ML_DOR_LOWERER_VERSION
-                         if profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
+                         if profile.profile_id in (
+                             _ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID,
+                             _CLASS_PRIORITY_PROFILE_ID)
                          else (_MESH_DOR_LOWERER_VERSION
                                if profile.profile_id == _MESH_DOR_PROFILE_ID
                                else (_CMESH_DOR_LOWERER_VERSION
@@ -2787,18 +3539,13 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         max_samples=int(rendered["max_samples"]),
         expected_packets=schedule["expected_packets"],
         expected_flits=conservation["flits_total"],
-        trace_class_map=(trace_class_map(pt)
-                         if (profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
-                             or (profile.profile_id
-                                 == _SROTA_ROW_FIRST_PROFILE_ID
-                                 and str(rendered.get("subnets")) == "2"))
-                         else ()),
+        trace_class_map=(_pt_classes if _bind_class_map else ()),
         expected_flits_by_class=(tuple(
             sorted(conservation["flits_by_class"].items()))
-            if (profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
-                or (profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID
-                    and str(rendered.get("subnets")) == "2")) else ()),
+            if _bind_class_map else ()),
+        priority_class_map=_priority_plan,
         expected_route_rows=route_rows,
+        expected_route_ports=route_ports,
         expected_hybrid_candidates=hybrid_candidates,
         seed=seed)
 
@@ -2960,6 +3707,7 @@ __all__ = [
     "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead",
     "FLATFLY_MIN_PROFILE", "FlatflyMinQualification",
     "MESH_DOR_PROFILE", "MIN_ADAPT_MESH_PROFILE",
+    "MESH_DOR_CLASS_PRIORITY_PROFILE", "QOS_PRIORITY_RANK",
     "MeshDorQualification", "ParameterOwner", "PreparedBookSimInput",
     "ROUTE_DUMP_FILE", "SemanticLoss", "TOPOLOGY_FILE", "TRACE_FILE",
     "TORUS_DOR_PROFILE", "TRACE_SCHEDULE_VERSION",
@@ -2971,6 +3719,8 @@ __all__ = [
     "qualify_anynet_min_hops", "qualify_min_adapt_mesh",
     "qualify_native_cmesh_dor", "qualify_native_flatfly_min",
     "qualify_native_mesh_dor", "qualify_native_torus_dor",
+    "qualify_native_mesh_dor_class_priority",
+    "class_priority_plan", "class_priority_vector",
     "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
     "trace_class_map",

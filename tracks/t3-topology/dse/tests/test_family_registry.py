@@ -179,7 +179,17 @@ def test_the_renames_are_now_recorded():
     # many-to-one: the registry names these apart, BookSim does not
     assert families_for_backend("gec") == ("gec", "gec_mecs", "gec_express",
                                            "gec_hybrid")
-    assert families_for_backend("torus") == ("torus", "ring")
+    # `ring_native` is not a rename: it is a distinct certified
+    # construction (fixed +1/-1 port law, per-flow dateline halves) that
+    # the same BookSim topology renders. The older `ring` fixture keeps its
+    # own (different, uncertified) wiring.
+    assert families_for_backend("torus") == ("torus", "ring", "ring_native")
+    # Same backend, different construction: the balanced `tree4` preset keeps
+    # its graph and stays the primary mapping; the native four-root tree is a
+    # separate canonical family rendered by the same BookSim network.
+    assert families_for_backend("tree4") == ("tree4", "tree4_native")
+    assert (TOPOLOGY_FAMILIES["tree4"]["edges"]({"k": 4, "n": 3})
+            != TOPOLOGY_FAMILIES["tree4_native"]["edges"]({"k": 4, "n": 3}))
 
 
 def test_ir_kinds_resolve_to_their_family():

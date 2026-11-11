@@ -978,7 +978,10 @@ def test_multi_hbm_bare_local_refuses_as_ambiguous(tmp_path):
     assessment = adapter.assess(context, DRAM)
     assert assessment.support is SupportLevel.UNSUPPORTED
     assert assessment.readiness is BackendReadiness.BLOCKED
-    assert "ambiguous" in (assessment.reason or "").lower()
+    assert assessment.reason == (
+        "RamulatorSemanticRefusal: no resolvable memory demand: "
+        "UnsupportedSemantic: bare LOCAL is ambiguous with multiple HBM "
+        "controllers; use LOCAL:<declared-device-id>")
 
 
 def test_undeclared_hardware_never_readies(tmp_path):

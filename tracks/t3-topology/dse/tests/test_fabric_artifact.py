@@ -760,6 +760,8 @@ def test_module_imports_only_allowed_layers():
         "veritx_dse.core.errors",
         "veritx_dse.core.route_artifact",
         "veritx_dse.model.address_decode",
+        # M3 CdcCell coverage (multi-clock gate, lazy import).
+        "veritx_dse.model.clock_power_cdc",
         "veritx_dse.model.attachment",
         "veritx_dse.model.packet_format",
         "veritx_dse.model.resolved_route",

@@ -32,6 +32,7 @@ from . import commands_compile
 from . import commands_optimize
 from .commands_optimize import cmd_optimize
 from .commands_data_movement import cmd_data_movement
+from .commands_trace import cmd_trace_profile
 
 from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
 
@@ -372,6 +373,63 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
     out_path.write_text(json.dumps(result, indent=2))
     ok(ctx, f"Saved: {out_path}")
     output(ctx, result)
+
+def cmd_evaluate_trace(ctx: Ctx, args):
+    """Replay an imported BookSim trace on a compiled v4 fabric."""
+    from ..backend.trace_evaluation import (
+        TraceEvaluationError, evaluate_trace,
+    )
+    request_path = Path(args.request).resolve()
+    trace_path = Path(args.trace).resolve()
+    out = Path(args.out)
+    run_dir = Path(args.run_dir) if args.run_dir else out.with_suffix("")
+    try:
+        result = evaluate_trace(
+            json.loads(request_path.read_text()),
+            trace_path.read_bytes(),
+            repo_root=REPO,
+            run_dir=run_dir,
+            booksim_bin=(Path(args.booksim).resolve() if args.booksim else None),
+            seed=args.seed,
+            timeout=args.timeout,
+        )
+    except (OSError, ValueError, json.JSONDecodeError,
+            TraceEvaluationError) as exc:
+        fail(ctx, f"trace evaluation refused: {exc}")
+        return
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result.to_dict(), indent=2))
+    ok(ctx, f"Trace evaluation written: {out}")
+    output(ctx, result.to_dict())
+
+
+def cmd_evaluate_mesh_trace(ctx: Ctx, args):
+    """Run a raw trace on a typed mesh through the diagnostic DOR bridge."""
+    from ..backend.mesh_trace_evaluation import (
+        MeshTraceEvaluationError, evaluate_mesh_dor_trace,
+    )
+    request_path = Path(args.request).resolve()
+    trace_path = Path(args.trace).resolve()
+    out = Path(args.out)
+    run_dir = Path(args.run_dir) if args.run_dir else out.with_suffix("")
+    try:
+        result = evaluate_mesh_dor_trace(
+            json.loads(request_path.read_text()),
+            trace_path.read_bytes(),
+            repo_root=REPO,
+            run_dir=run_dir,
+            seed=args.seed,
+            timeout=args.timeout,
+        )
+    except (OSError, ValueError, json.JSONDecodeError,
+            MeshTraceEvaluationError) as exc:
+        fail(ctx, f"mesh-DOR trace evaluation refused: {exc}")
+        return
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result.to_dict(), indent=2))
+    ok(ctx, f"Mesh-DOR diagnostic evidence written: {out}")
+    output(ctx, result.to_dict())
+
 
 def cmd_evaluate_astra(ctx: Ctx, args):
     if not ASTRA_BS_BIN.exists():
@@ -1364,6 +1422,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_trace = sub.add_parser("trace", help="Ingest traffic data")
     ts = p_trace.add_subparsers(dest="trace_cmd")
 
+    p_profile = ts.add_parser(
+        "profile", help="Generate a BookSim trace from per-initiator traffic profiles")
+    p_profile.add_argument("--spec", required=True,
+                           help="TrafficProfileSpec JSON")
+    p_profile.add_argument("--out", required=True,
+                           help="Output BookSim trace (cyc src cl dst sz)")
+
     p_chakra = ts.add_parser("chakra", help="Chakra .et files")
     p_chakra.add_argument("et_dir")
     p_chakra.add_argument("--npu-map", dest="npu_map")
@@ -1449,6 +1514,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_anynet.add_argument("--vc-buf", type=int, default=8)
     p_anynet.add_argument("--sample-period", type=int, default=1000)
     p_anynet.add_argument("--timeout", type=int, default=120)
+
+    p_eval_trace = es.add_parser(
+        "trace", help="Replay an imported BookSim trace on a compiled v4 fabric")
+    p_eval_trace.add_argument("--request", required=True,
+                              help="CompileRequestV4 JSON (the fabric to evaluate)")
+    p_eval_trace.add_argument("--trace", required=True,
+                              help="BookSim trace: cyc src cl dst sz")
+    p_eval_trace.add_argument("--out", required=True,
+                              help="Evidence JSON output path")
+    p_eval_trace.add_argument("--run-dir", default=None,
+                              help="Backend run directory (default: --out without suffix)")
+    p_eval_trace.add_argument("--booksim", default=None,
+                              help="BookSim binary (default: vendored build)")
+    p_eval_trace.add_argument("--timeout", type=int, default=600)
+    p_eval_trace.add_argument("--seed", type=int, default=0)
+
+    p_mesh_trace = es.add_parser(
+        "mesh-trace",
+        help="Run a raw trace on a typed mesh through the diagnostic DOR bridge")
+    p_mesh_trace.add_argument("--request", required=True,
+                              help="CompileRequestV4 JSON (typed mesh)")
+    p_mesh_trace.add_argument("--trace", required=True,
+                              help="BookSim trace: cyc src cl dst sz")
+    p_mesh_trace.add_argument("--out", required=True,
+                              help="Evidence JSON output path")
+    p_mesh_trace.add_argument("--run-dir", default=None,
+                              help="Fresh attempt directory (default: --out without suffix)")
+    p_mesh_trace.add_argument("--timeout", type=int, default=600)
+    p_mesh_trace.add_argument("--seed", type=int, default=0)
 
     p_as = es.add_parser("astra", help="ASTRA-sim backend")
     p_as.add_argument("--ets", required=True)
@@ -1627,6 +1721,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 TRACE_CMDS = {
+    "profile": cmd_trace_profile,
     "chakra": cmd_trace_chakra,
     "model": cmd_trace_model,
     "hpc": cmd_trace_hpc,
@@ -1647,6 +1742,8 @@ DISPATCH = {
         "data-movement": cmd_data_movement,
         "booksim": cmd_evaluate_booksim,
         "anynet": cmd_evaluate_anynet,
+        "trace": cmd_evaluate_trace,
+        "mesh-trace": cmd_evaluate_mesh_trace,
         "astra": cmd_evaluate_astra,
     },
     "certify": {

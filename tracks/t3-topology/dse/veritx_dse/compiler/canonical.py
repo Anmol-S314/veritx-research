@@ -382,6 +382,14 @@ def _derive_common_hardware(
                                                attachment=attachment)
     return packet_format, router_behavior, address_decode
 
+def _cdc_cells_for_design(design: Any) -> tuple[str, ...]:
+    """CdcCell coverage for a design's agent clock-domain crossings."""
+    from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+        cdc_cells_for_agents,
+    )
+    return cdc_cells_for_agents(tuple(getattr(design, "agents", ()) or ()))
+
+
 def compose_deterministic_candidate(
         *, design: CompileRequest, inventory: NodeInventory,
         mapping: MappingArtifact, topology: TopologyArtifact,
@@ -412,7 +420,8 @@ Rationale: docs/decisions/modules/compiler.md
             routing_realization=routing_realization,
             packet_format=packet_format, router_behavior=router_behavior,
             address_decode=address_decode, route=route,
-            resolved_route=resolved_route, vc_assignment=vc_assignment)
+            resolved_route=resolved_route, vc_assignment=vc_assignment,
+            cdc_cells=_cdc_cells_for_design(design))
     with _stage(CompileStage.RESOLVED_FABRIC):
         resolved_fabric = make_resolved_deterministic_fabric(
             design=design, inventory=inventory, mapping=mapping,

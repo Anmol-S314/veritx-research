@@ -17,6 +17,9 @@ from veritx_dse.performance.network import NetworkWindowBinding
 from veritx_dse.performance.scheduler import (
     Schedule, ScheduledEvent, schedule_workload,
 )
+from veritx_dse.performance.traffic_class import (
+    TrafficClassMetricsError, validate_traffic_class_metrics,
+)
 from veritx_dse.core.time import QTime
 from veritx_dse.core.artifact import (
     ImmutableError, content_id, freeze, thaw,
@@ -40,8 +43,14 @@ RESULT_FIELDS = frozenset({
     "schedule", "makespan", "dependency_critical_path",
     "dependency_critical_path_duration", "utilization",
     "request_latencies", "latency_summary", "sensitivity",
-    "metrics_warning",
+    "metrics_warning", "traffic_class_metrics",
 })
+
+#: Fields a legacy/aggregate result may omit without becoming malformed.
+#: New optional evidence rides here so an aggregate result's field set and
+#: resource identity stay exactly what they always were.
+OPTIONAL_RESULT_FIELDS = frozenset({"traffic_class_metrics"})
+
 
 SCHEDULE_ROW_FIELDS = frozenset({
     "event_id", "start", "end", "resource", "bandwidth_allocated_bps",
@@ -180,7 +189,7 @@ Rationale: docs/decisions/modules/performance.md
             f"unknown performance-result fields {sorted(unknown)}; "
             f"results are schema close (§75)")
     allowed = RESULT_FIELDS | {"resource_id"}
-    missing = allowed - set(result_doc)
+    missing = allowed - set(result_doc) - OPTIONAL_RESULT_FIELDS
     if missing:
         raise ResultError(
             f"performance result missing fields {sorted(missing)}")
@@ -208,6 +217,31 @@ Rationale: docs/decisions/modules/performance.md
     chain_doc = result_doc["wave_d_chain"]
     if chain_doc is not None and not isinstance(chain_doc, dict):
         raise ResultError("wave_d_chain must be an object or null")
+    class_block = result_doc.get("traffic_class_metrics")
+    if class_block is not None:
+        if binding is None:
+            raise ResultError(
+                "traffic_class_metrics is present without a network_binding; "
+                "per-class readings cannot be bound to an evidence window")
+        try:
+            validate_traffic_class_metrics(class_block)
+        except TrafficClassMetricsError as exc:
+            raise ResultError(
+                f"traffic_class_metrics is malformed: {exc}") from exc
+        def _bare(value: Any) -> Any:
+            return value[7:] if isinstance(value, str) \
+                and value.startswith("sha256:") else value
+        if _bare(class_block["evidence_sha256"]) != \
+                _bare(binding.evidence_sha256):
+            raise ResultError(
+                "traffic_class_metrics.evidence_sha256 is not the network "
+                "binding's evidence digest — refusing unbound per-class "
+                "readings")
+        if _bare(class_block["stats_sha256"]) != _bare(binding.stats_sha256):
+            raise ResultError(
+                "traffic_class_metrics.stats_sha256 is not the network "
+                "binding's stats digest — refusing unbound per-class "
+                "readings")
     graph = PerformanceEventGraph(workload=workload, network_binding=binding,
                             wave_d_chain=chain_doc)
     if result_doc["event_graph_id"] != graph.event_graph_id():

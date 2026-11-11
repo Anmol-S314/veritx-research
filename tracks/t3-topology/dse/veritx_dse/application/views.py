@@ -141,6 +141,9 @@ Rationale: docs/decisions/modules/application.md
         "routers": [r.to_dict() for r in topology.routers],
         "channels": [c.to_dict() for c in topology.channels],
         "physical_links": [p.to_dict() for p in topology.physical_links],
+        "shared_links": [s.to_dict() for s in topology.shared_links],
+        "planes": list(topology.planes),
+        "island_columns": list(topology.island_columns),
         "endpoints": [
             {
                 "endpoint_id": e.endpoint_id,
@@ -155,6 +158,7 @@ Rationale: docs/decisions/modules/application.md
         "counts": {
             "routers": topology.router_count,
             "channels": topology.channel_count,
+            "shared_links": len(topology.shared_links),
             "seats": topology.seat_capacity,
             "endpoints": attachment.endpoint_count,
         },
@@ -200,10 +204,14 @@ Rationale: docs/decisions/modules/application.md
         "routers": [r.to_dict() for r in topology.routers],
         "channels": [c.to_dict() for c in topology.channels],
         "physical_links": [p.to_dict() for p in topology.physical_links],
+        "shared_links": [s.to_dict() for s in topology.shared_links],
+        "planes": list(topology.planes),
+        "island_columns": list(topology.island_columns),
         "endpoints": endpoints,
         "counts": {
             "routers": topology.router_count,
             "channels": topology.channel_count,
+            "shared_links": len(topology.shared_links),
             "seats": topology.seat_capacity,
             "endpoints": (attachment.endpoint_count
                           if attachment is not None else 0),

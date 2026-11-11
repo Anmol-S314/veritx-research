@@ -180,6 +180,12 @@ Rationale: docs/decisions/modules/compiler.md
         produced.append(stage)
     return done[CS.RESOLVED_FABRIC.value], None, None
 
+def _cdc_cells_for_design(design: Any) -> tuple[str, ...]:
+    """CdcCell coverage for a design's agent clock-domain crossings."""
+    from veritx_dse.compiler.canonical import _cdc_cells_for_design
+    return _cdc_cells_for_design(design)
+
+
 def build_resolved_bundle_v3(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a v3 request.
 
@@ -373,7 +379,8 @@ Rationale: docs/decisions/modules/compiler.md
             topology=topology, attachment=attachment, vc_resource=esc,
             routing_realization=realization, packet_format=packet_format,
             router_behavior=router_behavior, address_decode=address_decode,
-            policy=policy, relation=relation, binding=binding)
+            policy=policy, relation=relation, binding=binding,
+            cdc_cells=_cdc_cells_for_design(request))
         resolved = make_resolved_adaptive_fabric(
             design=request, inventory=bundle.inventory,
             mapping=bundle.mapping, topology=topology,

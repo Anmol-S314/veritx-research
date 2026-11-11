@@ -23,6 +23,9 @@ from veritx_dse.model.compile_model import (
 )
 from veritx_dse.performance.result import ResultError, reverify_result
 from veritx_dse.performance.scheduler import SchedulerError
+from veritx_dse.performance.traffic_class import (
+    ClassMeasurement, TrafficClassMetricsError, parse_traffic_class_metrics,
+)
 from veritx_dse.performance.workload import TemporalWorkload
 from veritx_dse.workload.graph import WorkloadGraph
 from veritx_dse.workload.intent_lowering import lower_compile_workload
@@ -131,6 +134,10 @@ def _design_clock_hz(request: CompileRequestV3) -> Fraction:
     """The design's own clock (exact Hz) — the only legal converter for
     the makespan fallback (never a caller-supplied network clock)."""
     mhz = request.physical.default_clock_freq_mhz
+    if mhz is None:
+        raise InvalidInput(
+            "physical.clock_freq_mhz is not declared; a global default "
+            "cannot stand in for a declared design clock")
     return Fraction(str(mhz)) * 10 ** 6
 
 def _binding_clock_hz(raw: Any) -> Fraction | None:
@@ -248,6 +255,63 @@ def _measured_bandwidth_bps(performance: dict[str, Any]
     return (total_bytes / window_s,
             "performance_result.utilization BANDWIDTH bytes_moved/window")
 
+def _bare_digest(value: Any) -> Any:
+    return value[7:] if isinstance(value, str) \
+        and value.startswith("sha256:") else value
+
+
+def _class_measurements(performance: dict[str, Any]
+                        ) -> dict[str, ClassMeasurement]:
+    """The verified result's per-class readings, bound to its evidence.
+
+    Absence is absence: a class the block does not carry is not returned,
+    and no class is invented.  A present block whose digests disagree with
+    the network binding is tampered evidence and refuses.
+    """
+    block = performance.get("traffic_class_metrics")
+    if block is None:
+        return {}
+    binding = performance.get("network_binding")
+    if not isinstance(binding, dict):
+        raise EvidenceInvalid(
+            "performance result carries traffic_class_metrics without a "
+            "network_binding; per-class readings are not bound to an "
+            "evidence window")
+    try:
+        measurements = parse_traffic_class_metrics(block)
+    except TrafficClassMetricsError as exc:
+        raise EvidenceInvalid(
+            f"performance result traffic_class_metrics is malformed: {exc}"
+        ) from exc
+    if _bare_digest(block["evidence_sha256"]) != \
+            _bare_digest(binding.get("evidence_sha256")):
+        raise EvidenceInvalid(
+            "performance result traffic_class_metrics.evidence_sha256 is "
+            "not the network binding's evidence digest")
+    if _bare_digest(block["stats_sha256"]) != \
+            _bare_digest(binding.get("stats_sha256")):
+        raise EvidenceInvalid(
+            "performance result traffic_class_metrics.stats_sha256 is not "
+            "the network binding's stats digest")
+    return {m.traffic_class: m for m in measurements}
+
+
+def _class_window_seconds(performance: dict[str, Any]
+                          ) -> tuple[Fraction | None, str]:
+    """The window per-class byte movement is measured over."""
+    binding = performance.get("network_binding")
+    if isinstance(binding, dict) and binding.get("duration") is not None:
+        return (_qtime_fraction(binding["duration"],
+                                "network_binding.duration"),
+                "performance_result.network_binding.duration "
+                "(authenticated completion window)")
+    makespan = performance.get("makespan")
+    if makespan is None:
+        return None, "performance result carries no measurable window"
+    return (_qtime_fraction(makespan, "makespan"),
+            "performance_result.makespan (conservative: compute+network)")
+
+
 def _evaluate_latency(*, requirement: RequirementV3,
                       measured_cycles: Fraction,
                       measured_authority: str,
@@ -323,6 +387,79 @@ def _evaluate_bandwidth(*, requirement: RequirementV3,
             measured_authority,
             f"measured {float(measured_gbps)} Gbps < floor {floor} Gbps "
             f"via {measured_authority}")
+
+def _evaluate_class_latency(
+        *, requirement: RequirementV3, measurement: ClassMeasurement,
+        ) -> tuple[str, float, float | None, str, str]:
+    """Class latency from the class's own measured packet latency."""
+    ceiling = requirement.latency_ceiling_cycles
+    assert ceiling is not None
+    field = "packet_latency_avg"
+    authority = (
+        f"performance_result.traffic_class_metrics.classes"
+        f"[{requirement.traffic_class!r}].latency.{field} "
+        f"(per-class measured cycles)")
+    raw = measurement.latency_value(field)
+    if raw is None:
+        available = [name for name, _value in measurement.latency]
+        return (VERDICT_UNMEASURABLE, float(ceiling), None, authority,
+                f"traffic class {requirement.traffic_class!r} carries no "
+                f"per-class {field} reading (available latency fields: "
+                f"{available or 'none'}) — UNMEASURABLE, never inferred from "
+                f"another class or the aggregate")
+    measured = Fraction(str(raw))
+    if measured <= Fraction(str(ceiling)):
+        return (VERDICT_SATISFIED, float(ceiling), float(measured), authority,
+                f"class {requirement.traffic_class!r} measured "
+                f"{measured} cycles <= ceiling {ceiling} cycles via "
+                f"{authority}")
+    return (VERDICT_VIOLATED, float(ceiling), float(measured), authority,
+            f"class {requirement.traffic_class!r} measured {measured} "
+            f"cycles > ceiling {ceiling} cycles via {authority}")
+
+
+def _evaluate_class_bandwidth(
+        *, requirement: RequirementV3, measurement: ClassMeasurement,
+        window_s: Fraction | None, window_authority: str,
+        ) -> tuple[str, float, float | None, str, str]:
+    """Class bandwidth from the class's own byte movement over the window."""
+    floor = requirement.bandwidth_floor_gbps
+    assert floor is not None
+    if measurement.bytes_accepted is not None:
+        moved = measurement.bytes_accepted
+        movement = "bytes_accepted"
+    elif measurement.bytes_injected is not None:
+        moved = measurement.bytes_injected
+        movement = "bytes_injected (accepted movement absent; offered rate)"
+    else:
+        return (VERDICT_UNMEASURABLE, float(floor), None,
+                "performance_result.traffic_class_metrics "
+                "(no per-class byte movement)",
+                f"traffic class {requirement.traffic_class!r} carries "
+                f"per-class flits but no byte movement (missing flit "
+                f"count, flit width, or both) — UNMEASURABLE, never "
+                f"zero-filled")
+    authority = (
+        f"performance_result.traffic_class_metrics.classes"
+        f"[{requirement.traffic_class!r}].{movement.split(' ')[0]} / "
+        f"{window_authority}")
+    if window_s is None or window_s <= 0:
+        return (VERDICT_UNMEASURABLE, float(floor), None, authority,
+                "no positive authenticated window to measure per-class "
+                "byte movement over — UNMEASURABLE")
+    measured_bps = moved / window_s
+    measured_gbps = measured_bps / Fraction(10 ** 9)
+    if measured_gbps >= Fraction(str(floor)):
+        return (VERDICT_SATISFIED, float(floor), float(measured_gbps),
+                authority,
+                f"class {requirement.traffic_class!r} measured "
+                f"{float(measured_gbps)} Gbps >= floor {floor} Gbps via "
+                f"{authority}")
+    return (VERDICT_VIOLATED, float(floor), float(measured_gbps), authority,
+            f"class {requirement.traffic_class!r} measured "
+            f"{float(measured_gbps)} Gbps < floor {floor} Gbps via "
+            f"{authority}")
+
 
 def validate_requirement_scopes(
         request: CompileRequestV3) -> tuple[str, ...]:
@@ -437,6 +574,9 @@ Rationale: docs/decisions/modules/application.md
 
         intent_classes = validate_requirement_scopes(request)
         single_class = len(intent_classes) <= 1
+        class_measurements = _class_measurements(performance)
+        class_window_s, class_window_authority = _class_window_seconds(
+            performance)
         clock_hz = _design_clock_hz(request)
         design_hash = "sha256:" + request.design_hash()
 
@@ -447,34 +587,51 @@ Rationale: docs/decisions/modules/application.md
                     f"requirements[{i}] must be a RequirementV3")
             scoped_conservative = (req.traffic_class is not None
                                    and not single_class)
+            scoped_measurement = (
+                None if req.traffic_class is None or single_class
+                else class_measurements.get(req.traffic_class))
             parts: list[tuple[str, Any, Any, str, str]] = []
             if req.latency_ceiling_cycles is not None:
-                measured_cycles, cycles_authority = \
-                    authenticated_network_cycles(performance)
-                if measured_cycles is None:
-                    measured_s, authority = _makespan_latency_seconds(
-                        performance)
-                    measured_cycles = measured_s * clock_hz
-                    parts.append(_evaluate_latency(
-                        requirement=req, measured_cycles=measured_cycles,
-                        measured_authority=authority,
-                        rescaled_fallback=True,
-                        scoped_conservative=scoped_conservative,
-                        intent_classes=intent_classes))
+                class_latency = (None if scoped_measurement is None
+                                 else scoped_measurement.latency_value(
+                                     "packet_latency_avg"))
+                if class_latency is not None:
+                    parts.append(_evaluate_class_latency(
+                        requirement=req,
+                        measurement=scoped_measurement))
                 else:
-                    parts.append(_evaluate_latency(
-                        requirement=req, measured_cycles=measured_cycles,
-                        measured_authority=cycles_authority,
-                        rescaled_fallback=False,
-                        scoped_conservative=scoped_conservative,
-                        intent_classes=intent_classes))
+                    measured_cycles, cycles_authority = \
+                        authenticated_network_cycles(performance)
+                    if measured_cycles is None:
+                        measured_s, authority = _makespan_latency_seconds(
+                            performance)
+                        measured_cycles = measured_s * clock_hz
+                        parts.append(_evaluate_latency(
+                            requirement=req, measured_cycles=measured_cycles,
+                            measured_authority=authority,
+                            rescaled_fallback=True,
+                            scoped_conservative=scoped_conservative,
+                            intent_classes=intent_classes))
+                    else:
+                        parts.append(_evaluate_latency(
+                            requirement=req, measured_cycles=measured_cycles,
+                            measured_authority=cycles_authority,
+                            rescaled_fallback=False,
+                            scoped_conservative=scoped_conservative,
+                            intent_classes=intent_classes))
             if req.bandwidth_floor_gbps is not None:
-                measured_bps, bw_authority = _measured_bandwidth_bps(
-                    performance)
-                parts.append(_evaluate_bandwidth(
-                    requirement=req, measured_bps=measured_bps,
-                    measured_authority=bw_authority,
-                    attributable=not scoped_conservative))
+                if scoped_measurement is not None:
+                    parts.append(_evaluate_class_bandwidth(
+                        requirement=req, measurement=scoped_measurement,
+                        window_s=class_window_s,
+                        window_authority=class_window_authority))
+                else:
+                    measured_bps, bw_authority = _measured_bandwidth_bps(
+                        performance)
+                    parts.append(_evaluate_bandwidth(
+                        requirement=req, measured_bps=measured_bps,
+                        measured_authority=bw_authority,
+                        attributable=not scoped_conservative))
             if not parts:
                 entries.append({
                     "requirement_index": i,

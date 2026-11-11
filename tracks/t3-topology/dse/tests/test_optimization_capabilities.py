@@ -295,9 +295,12 @@ def test_topology_family_execution_truth_is_derived(caps):
     assert "concentration" not in caps["qualified_parameters"]
     conc = _by_name(caps)["concentration"]
     assert conc["backend_executable"] is False
-    assert conc["effective"] is True, (
-        "concentration must be refused for EXECUTION, not effectiveness — "
-        "the reason must name the certified profile, not a fake identity")
+    # Concentration is a FAMILY choice, not a mesh knob. A mesh with >1 seat
+    # is now refused at materialization with a hint to use concentrated_mesh;
+    # the value cannot be called "effective" on a mesh.
+    assert conc["effective"] is False, (
+        "concentration on a mesh is a family choice; the capability truth "
+        "must not advertise it as an effective mesh knob")
     assert conc["value_constraint"], "the seat constraint must be stated"
     assert conc["reason"], "the refusal reason must name the profile gate"
 
@@ -315,8 +318,16 @@ def test_backend_executable_requires_the_certified_chain(caps):
         assert p["qualified_for_certified_optimization"] == p["executable"]
     compiled, executable, note = _backend_executable(
         _base_request(concentration=4))
-    assert compiled and not executable
-    assert "profile" in note.lower() or "refused" in note.lower()
+    assert not compiled
+    assert "mesh" in note.lower() and "concentration" in note.lower()
+    # The supported family choice for the same seat count compiles and
+    # executes: concentration is not globally unsupported, only its misuse
+    # as a mesh knob is.
+    cmesh_compiled, cmesh_executable, cmesh_note = _backend_executable(
+        _base_request(topology_family="concentrated_mesh",
+                      concentration=4, radix=4))
+    assert cmesh_compiled and cmesh_executable, cmesh_note
+    assert "cmesh" in cmesh_note.lower()
 
 def test_an_unenumerated_domain_is_not_all_values(caps):
     """`accepted_values=None` must NOT be readable as 'everything works'."""

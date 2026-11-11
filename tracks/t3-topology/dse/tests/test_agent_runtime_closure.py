@@ -81,3 +81,26 @@ def test_acp_timeout_kills_a_nonresponsive_process(tmp_path, monkeypatch):
     monkeypatch.setenv('VERITX_ACP_COMMAND', json.dumps([sys.executable, '-u', str(script)]))
     with pytest.raises(acp_client.ACPError, match='timed out'):
         acp_client.complete('test', timeout=0.2)
+
+
+def test_chat_forwards_selected_context_and_bounds_it(client, monkeypatch):
+    pid = project(client)
+    calls = []
+    monkeypatch.setattr(agent_runtime, 'complete_text', lambda messages, **kw: calls.append(messages) or 'Context received.')
+    endpoint = f'/api/v1/projects/{pid}/agent/chat'
+    selected = {'schema': 'srota-studio/assistant-context/v1',
+                'scope': {'run': 'run-1'},
+                'selections': [{'kind': 'router', 'id': '0'}]}
+    response = client.post(endpoint, json={'message': 'what traffic leaves R0?',
+                                           'allow_model': True, 'context': selected})
+    assert response.status_code == 200, response.text
+    assert response.json()['context_included'] is True
+    assert len(calls) == 1
+    forwarded = [message for message in calls[0]
+                 if message['role'] == 'user' and 'selected context' in message['content']]
+    assert len(forwarded) == 1
+    assert '"router"' in forwarded[0]['content']
+    too_big = client.post(endpoint, json={'message': 'x', 'allow_model': True,
+                                          'context': {'blob': 'x' * (65 * 1024)}})
+    assert too_big.status_code != 200
+    assert len(calls) == 1

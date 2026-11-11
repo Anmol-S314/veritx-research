@@ -1,0 +1,4 @@
+{"input_toks": 10, "output_toks": 60, "arrival_time_ns": 0}
+{"input_toks": 14, "output_toks": 78, "arrival_time_ns": 1234567}
+{"input_toks": 8, "output_toks": 50, "arrival_time_ns": 2500000}
+{"input_toks": 20, "output_toks": 100, "arrival_time_ns": 5000000}

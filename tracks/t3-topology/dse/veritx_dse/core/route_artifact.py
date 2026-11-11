@@ -28,6 +28,10 @@ ANYNET_MIN_HOPS = "ANYNET_MIN_HOPS"
 DOR_XY = "DOR_XY"
 DOR_TORUS_XY = "DOR_TORUS_XY"
 FLATFLY_MIN = "FLATFLY_MIN"
+QTREE_NCA = "QTREE_NCA"
+TREE4_NCA = "TREE4_NCA"
+RING_DATELINE = "RING_DATELINE"
+FLY_DEST_TAG = "FLY_DEST_TAG"
 
 _PARALLEL_REALIZATION = "min_channel_id"
 
@@ -275,7 +279,64 @@ FLATFLY_MIN_DEFINITION = RoutingClassDefinition(
     ),
 )
 
+QTREE_NCA_DEFINITION = RoutingClassDefinition(
+    id=QTREE_NCA, algorithm="nearest_common_ancestor", algorithm_version=1,
+    parameters=(("radix", 4), ("router_levels", 3), ("terminal_scope", "leaf_only")),
+)
+
+TREE4_NCA_DEFINITION = RoutingClassDefinition(
+    id=TREE4_NCA, algorithm="nearest_common_ancestor_upward_choice",
+    algorithm_version=1,
+    parameters=(
+        ("radix", 4), ("router_levels", 3), ("root_count", 4),
+        ("terminal_scope", "leaf_only"),
+        # The upward parent is a real coin, so the class declares its legal
+        # UNION instead of pretending one parent is the answer. Consumers
+        # that need a single hop take the smallest legal port (the canonical
+        # witness encoded in `entries`); the executed law is the union.
+        ("upward_parent", "choice_union_over_all_four_roots"),
+        ("first_hop", "choice_union_of_destination_group_middles"),
+        ("canonical_witness", "smallest_legal_port"),
+    ),
+)
+
+RING_DATELINE_DEFINITION = RoutingClassDefinition(
+    id=RING_DATELINE,
+    algorithm="dimension_order_wraparound",
+    algorithm_version=1,
+    parameters=(
+        ("dimension_order", ("x",)),
+        ("wraparound", True),
+        ("per_dimension", "minimal_shortest_wrap"),
+        ("tie_break", "positive_direction"),
+        ("midpoint_tie", "either_direction_legal"),
+        ("dateline", "k-1/0-fixed"),
+        ("vc_partition", "dateline_halves"),
+    ),
+)
+
+FLY_DEST_TAG_DEFINITION = RoutingClassDefinition(
+    id=FLY_DEST_TAG,
+    algorithm="destination_tag",
+    algorithm_version=1,
+    parameters=(
+        ("radix", 4), ("stages", 3),
+        # dest_tag_fly divides the destination by k until the flit is one
+        # stage from the end and takes dest % k: exactly ONE port per
+        # (router, destination). The class is deterministic, which is why
+        # this fabric needs no legal-choice union.
+        ("port_rule", "dest_digit_at_stage"),
+        ("stage_mode", "strictly_increasing"),
+        ("terminal_scope", "ingress_stage0_egress_stage2"),
+        ("relay_rule", "only_flows_whose_destination_digit_matches"),
+    ),
+)
+
 _KNOWN_CLASSES = {
+    FLY_DEST_TAG: FLY_DEST_TAG_DEFINITION,
+    QTREE_NCA: QTREE_NCA_DEFINITION,
+    TREE4_NCA: TREE4_NCA_DEFINITION,
+    RING_DATELINE: RING_DATELINE_DEFINITION,
     ANYNET_MIN_HOPS: ANYNET_MIN_HOPS_DEFINITION,
     DOR_XY: DOR_XY_DEFINITION,
     DOR_TORUS_XY: DOR_TORUS_XY_DEFINITION,
@@ -304,6 +365,148 @@ def _channels_by_hop(topology) -> dict[tuple[int, int], list[int]]:
     for key in hops:
         hops[key].sort()
     return hops
+
+def _qtree_channel_entries(topology) -> dict[tuple[int, int], int]:
+    from veritx_dse.model.indirect_tree import materialize_qtree, qtree_router_next
+    from veritx_dse.model.topology_intent import QTreeIntent
+    widths = {c.width_bits for c in topology.channels}
+    if len(widths) != 1 or topology.canonical_dict() != materialize_qtree(
+            QTreeIntent(4, 3), width_bits=next(iter(widths))).canonical_dict():
+        raise RouteArtifactError("QTREE_NCA requires the exact indirect QTree geometry and port law")
+    channels = {(c.src_router, c.dst_router): c.channel_id for c in topology.channels}
+    return {(src, dest): channels[src, qtree_router_next(topology, src, dest)]
+            for src in range(topology.router_count)
+            for dest in range(topology.router_count) if src != dest}
+
+
+def _tree4_channel_entries(topology) -> dict[tuple[int, int], int]:
+    """The canonical witness hop for every router pair on the native Tree4.
+
+    One channel per pair, because a RouteArtifact names one realized channel
+    per (src, dest). Tree4's executed law is choice-valued (four roots, two
+    destination-group middles, two parents per leaf), and the class
+    definition says so; the witness is the smallest legal port, which the
+    legal-choice union dump independently confirms is a legal hop. Nothing
+    downstream may read this table as "the only possible hop": the CDG and
+    the producer differential both expand the union.
+    """
+    from veritx_dse.model.tree4_net import (
+        materialize_tree4, tree4_router_next,
+    )
+    from veritx_dse.model.topology_intent import Tree4Intent
+    widths = {c.width_bits for c in topology.channels}
+    if len(widths) != 1 or topology.canonical_dict() != materialize_tree4(
+            Tree4Intent(4, 3), width_bits=next(iter(widths))).canonical_dict():
+        raise RouteArtifactError(
+            "TREE4_NCA requires the exact native Tree4 geometry and port "
+            "law (four roots, 8 middles, 16 leaves)")
+    channels = {(c.src_router, c.dst_router): c.channel_id
+                for c in topology.channels}
+    out: dict[tuple[int, int], int] = {}
+    for src in range(topology.router_count):
+        for dest in range(topology.router_count):
+            if src == dest:
+                continue
+            following = tree4_router_next(topology, src, dest)
+            if following is None:
+                continue
+            channel = channels.get((src, following))
+            if channel is None:
+                raise RouteArtifactError(
+                    f"TREE4_NCA witness for ({src},{dest}) names router "
+                    f"{following}, but no directed channel exists")
+            out[(src, dest)] = channel
+    return out
+
+
+def routing_pair_domain(definition: RoutingClassDefinition,
+                        topology) -> set[tuple[int, int]] | None:
+    """The (source, destination) pairs a class's table MUST cover.
+
+    ``None`` means "every ordered router pair", which is the norm. A fly is
+    the exception, and says so in its own construction rather than in this
+    function: a flit is addressed to a TERMINAL, so the routable destinations
+    are the stage-2 ejection routers, and a middle-stage router can only serve
+    the destinations reachable through the digit class it was entered with.
+    The domain is enumerated from that law, so a table that drops a required
+    pair is still refused as incomplete.
+    """
+    if definition.id != FLY_DEST_TAG:
+        return None
+    from veritx_dse.model.fly_net import EGRESS_ROUTERS, egress_port
+    out: set[tuple[int, int]] = set()
+    for src in range(len(topology.routers)):
+        for dest in EGRESS_ROUTERS:
+            if src == dest:
+                continue
+            if egress_port(src, dest) is not None:
+                out.add((src, dest))
+    return out
+
+
+def _fly_channel_entries(topology) -> dict[tuple[int, int], int]:
+    """The witness hop from every router toward each STAGE-2 (eject) router.
+
+    A fly flit is never addressed to a router; it is addressed to a terminal
+    whose ejection point is a stage-2 router. So the routable destinations
+    are exactly the egress routers, and the table is deliberately partial:
+    (stage-2 router, any other egress router) has no hop because a flit at
+    the last stage can only eject. Consumers must read the class definition
+    and the destination-indexed CDG, not treat this as a total relation.
+    """
+    from veritx_dse.model.fly_net import (
+        EGRESS_ROUTERS, egress_port, materialize_fly, next_router,
+    )
+    widths = {c.width_bits for c in topology.channels}
+    if len(widths) != 1 or topology.canonical_dict() != materialize_fly(
+            width_bits=next(iter(widths))).canonical_dict():
+        raise RouteArtifactError(
+            "FLY_DEST_TAG requires the exact native fly geometry and port "
+            "law (3 stages of 16 routers, terminal inject stage 0 / eject "
+            "stage 2)")
+    channels = {(c.src_router, c.dst_router): c.channel_id
+                for c in topology.channels}
+    out: dict[tuple[int, int], int] = {}
+    for src in range(len(topology.routers)):
+        for dest in EGRESS_ROUTERS:
+            if src == dest:
+                continue
+            port = egress_port(src, dest)
+            if port is None:
+                continue
+            following = next_router(src, port)
+            if following is None or (src, following) not in channels:
+                raise RouteArtifactError(
+                    f"FLY_DEST_TAG witness for ({src},{dest}) names router "
+                    f"{following}, but no directed channel exists")
+            out[(src, dest)] = channels[(src, following)]
+    return out
+
+
+def _ring_channel_entries(topology) -> dict[tuple[int, int], int]:
+    from veritx_dse.model.ring_net import (
+        materialize_ring, ring_next_router,
+    )
+    from veritx_dse.model.topology_intent import RingIntent
+    widths = {c.width_bits for c in topology.channels}
+    if len(widths) != 1 or topology.canonical_dict() != materialize_ring(
+            RingIntent(len(topology.routers)),
+            width_bits=next(iter(widths))).canonical_dict():
+        raise RouteArtifactError(
+            "RING_DATELINE requires the exact native ring geometry and "
+            "port law (+1 then -1 on every router)")
+    n = len(topology.routers)
+    channels = {(c.src_router, c.dst_router): c.channel_id
+                for c in topology.channels}
+    out: dict[tuple[int, int], int] = {}
+    for src in range(n):
+        for dest in range(n):
+            if src == dest:
+                continue
+            following, _ = ring_next_router(src, dest, n)
+            out[(src, dest)] = channels[(src, following)]
+    return out
+
 
 def _anynet_channel_entries(topology) -> dict[tuple[int, int], int]:
     """ANYNET_MIN_HOPS realized against this topology.
@@ -680,7 +883,15 @@ class RouteArtifact:
         if entries is None:
             materialized: dict[tuple[str, int, int], int] = {}
             for definition in definitions:
-                if definition.id == ANYNET_MIN_HOPS:
+                if definition.id == QTREE_NCA:
+                    table = _qtree_channel_entries(topology)
+                elif definition.id == TREE4_NCA:
+                    table = _tree4_channel_entries(topology)
+                elif definition.id == RING_DATELINE:
+                    table = _ring_channel_entries(topology)
+                elif definition.id == FLY_DEST_TAG:
+                    table = _fly_channel_entries(topology)
+                elif definition.id == ANYNET_MIN_HOPS:
                     table = _anynet_channel_entries(topology)
                 elif definition.id == DOR_XY:
                     table = _dor_xy_channel_entries(topology)
@@ -764,11 +975,14 @@ Rationale: docs/decisions/modules/core.md
         return artifact
 
     def _validate_channels(self, channel_by_id: dict[int, Any],
-                           router_count: int) -> None:
+                           router_count: int,
+                           domain: set[tuple[int, int]] | None = None
+                           ) -> None:
         declared = [d.id for d in self.routing_classes]
-        expected = {(cid, s, t) for cid in declared
-                    for s in range(router_count)
-                    for t in range(router_count) if s != t}
+        pairs = ([(s, t) for s in range(router_count)
+                  for t in range(router_count) if s != t]
+                 if domain is None else sorted(domain))
+        expected = {(cid, s, t) for cid in declared for (s, t) in pairs}
         got = set(self.entries)
         missing = expected - got
         if missing:
@@ -781,10 +995,14 @@ Rationale: docs/decisions/modules/core.md
                 f"entries contain pairs outside the topology: "
                 f"e.g. {sorted(extra)[:3]}")
         for cid in declared:
-            for dst in range(router_count):
+            by_dst: dict[int, list[int]] = {}
+            for (s, t) in pairs:
+                by_dst.setdefault(t, []).append(s)
+            for dst in sorted(by_dst):
+                sources = by_dst[dst]
                 color = [0] * router_count
                 color[dst] = 2
-                for src in range(router_count):
+                for src in sources:
                     if src == dst or color[src] == 2:
                         continue
                     path: list[int] = []
@@ -816,7 +1034,8 @@ Rationale: docs/decisions/modules/core.md
                     for node in path:
                         color[node] = 2
 
-    def validate_against(self, topology) -> None:
+    def validate_against(self, topology, *,
+                         domain: set[tuple[int, int]] | None = None) -> None:
         """Parent legality against the materialized TopologyArtifact.
 
         Deliberately separate from from_dict (self-integrity): a child can
@@ -827,9 +1046,11 @@ Rationale: docs/decisions/modules/core.md
             raise RouteArtifactError(
                 "topology_hash does not match the materialized topology "
                 "(standalone routing-graph digests are not fabric identities)")
+        if domain is None and len(self.routing_classes) == 1:
+            domain = routing_pair_domain(self.routing_classes[0], topology)
         self._validate_channels(
             {c.channel_id: c for c in topology.channels},
-            topology.router_count)
+            topology.router_count, domain=domain)
 
     def serialize(self) -> dict[str, Any]:
         return {

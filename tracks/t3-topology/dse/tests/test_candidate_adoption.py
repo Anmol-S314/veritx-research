@@ -64,12 +64,14 @@ def _study_record(pid, revision, patch):
                        "seed": None},
         "study": {
             "contract_version": 2,
+            "base_design_hash": revision["design_hash"],
             "candidates": [{
                 "candidate_id": candidate.candidate_id,
                 "guided_patch": dict(candidate.guided_patch),
-                "design_hash": candidate.request.design_hash(),
+                "evaluation_ids": {"design_hash": candidate.request.design_hash()},
                 "compilation_status": "COMPILED",
                 "evaluation_status": "EVALUATED",
+                "pareto_eligible": True,
             }],
             "selected_candidate_id": candidate.candidate_id,
         },
@@ -177,10 +179,68 @@ def test_a_drifted_study_hash_is_refused(svc, project):
     pid, proj = project
     revision = svc.store.load_revision(pid, _base_revision(proj))
     record, candidate = _study_record(pid, revision, {"link_width": 128})
-    record["study"]["candidates"][0]["design_hash"] = "sha256:deadbeef"
+    record["study"]["candidates"][0]["evaluation_ids"]["design_hash"] = "sha256:deadbeef"
     svc.store.create_optimization(pid, record)
     with pytest.raises(Exception, match="would be different designs"):
         svc.use_candidate("opt-test-1", candidate.candidate_id)
+
+def test_failed_or_ineligible_evaluation_cannot_be_adopted(svc, project):
+    pid, proj = project
+    revision = svc.store.load_revision(pid, _base_revision(proj))
+    for field, value, expected in (
+            ("evaluation_status", "FAILED", "no successful evaluation"),
+            ("pareto_eligible", False, "not eligible for adoption")):
+        record, candidate = _study_record(pid, revision, {"link_width": 128})
+        record["study"]["candidates"][0][field] = value
+        record["optimization_id"] = "opt-" + field
+        svc.store.create_optimization(pid, record)
+        before = svc.draft_view(pid)["design_hash"]
+        with pytest.raises(Exception, match=expected):
+            svc.use_candidate(record["optimization_id"], candidate.candidate_id)
+        assert svc.draft_view(pid)["design_hash"] == before
+
+
+def test_candidate_without_recorded_evaluation_hash_cannot_be_adopted(svc, project):
+    pid, proj = project
+    revision = svc.store.load_revision(pid, _base_revision(proj))
+    record, candidate = _study_record(pid, revision, {"link_width": 128})
+    del record["study"]["candidates"][0]["evaluation_ids"]
+    svc.store.create_optimization(pid, record)
+    before = svc.draft_view(pid)["design_hash"]
+    with pytest.raises(Exception, match="no evaluated design hash"):
+        svc.use_candidate(record["optimization_id"], candidate.candidate_id)
+    assert svc.draft_view(pid)["design_hash"] == before
+
+
+def test_candidate_from_stale_base_revision_cannot_be_adopted(svc, project):
+    pid, proj = project
+    base = svc.store.load_revision(pid, _base_revision(proj))
+    record, candidate = _study_record(pid, base, {"link_width": 128})
+    svc.store.create_optimization(pid, record)
+    svc.compile_draft(pid)
+    with pytest.raises(Exception, match="base revision .* is stale"):
+        svc.use_candidate(record["optimization_id"], candidate.candidate_id)
+
+
+def test_dirty_draft_requires_explicit_current_hash_before_adoption(svc, project):
+    from dataclasses import replace
+    from veritx_dse.product.service import canonical_request_doc
+
+    pid, proj = project
+    revision = svc.store.load_revision(pid, _base_revision(proj))
+    record, candidate = _study_record(pid, revision, {"link_width": 128})
+    svc.store.create_optimization(pid, record)
+    changed = replace(parse_request_doc(svc.store.load_draft(pid)["request"]),
+                      physical=replace(parse_request_doc(
+                          svc.store.load_draft(pid)["request"]).physical,
+                          default_clock_freq_mhz=900))
+    draft = svc.store.load_draft(pid)
+    draft["request"] = canonical_request_doc(changed)
+    draft["design_hash"] = changed.design_hash()
+    svc.store.put_draft(pid, draft)
+    with pytest.raises(Exception, match="draft changed after this optimization"):
+        svc.use_candidate(record["optimization_id"], candidate.candidate_id)
+
 
 def test_an_empty_patch_is_refused_rather_than_silently_adopted(svc, project):
     pid, proj = project

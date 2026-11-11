@@ -23,8 +23,9 @@ Cross-field laws come from the sources, not from taste:
   route to an island column would otherwise traverse arbitrary routers;
 - Plane D is mandatory: a Srota fabric without its data plane is not a
   fabric;
-- concentration >= 2: Plane D is a *concentrated* mesh by definition; a
-  c=1 design is a plain mesh and must declare ``mesh`` instead;
+- concentration >= 1: c=1 is still SROTA when a MECS express dimension is
+  present. Without either express dimension it is a plain mesh and must
+  declare ``mesh`` instead;
 - side-buffer enable and watermark are jointly required: neither can be
   defaulted without silently inventing a different router.
 
@@ -133,11 +134,13 @@ class SrotaIntent(TopologyIntent):
 
     def __post_init__(self):
         _as_int("side_length", self.side_length, minimum=2)
-        _as_int("concentration", self.concentration, minimum=2)
+        _as_int("concentration", self.concentration, minimum=1)
         object.__setattr__(self, "mecs_row",
                            _as_bool("mecs_row", self.mecs_row))
         object.__setattr__(self, "mecs_col",
                            _as_bool("mecs_col", self.mecs_col))
+        if self.concentration == 1 and not (self.mecs_row or self.mecs_col):
+            raise SrotaIntentError("concentration=1 without MECS is a plain mesh; declare mesh intent")
         if self.drop_latency not in (1, 2):
             raise SrotaIntentError(
                 "drop_latency must be 1 or 2 "

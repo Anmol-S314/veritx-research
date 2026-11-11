@@ -93,11 +93,14 @@ def test_striped_decode_drives_endpoint_selection_and_executed_bytes(case):
         AccessRule("right", "group:0", "group:2", 8192, 32,
                    AccessPermission.RW),
     ), unmatched_policy=UnmatchedAccessPolicy.DENY)
+    from veritx_dse.model.topology_intent import ConcentratedMeshIntent
     request = replace(compilation.request,
-                      base_v4=replace(base, agents=tuple(agents),
-                                      topology=replace(base.topology,
-                                                       concentration=2),
-                                      address_map=address_map),
+                      base_v4=replace(
+                          base, agents=tuple(agents),
+                          topology=ConcentratedMeshIntent(
+                              side_length=base.topology.side_length,
+                              concentration=2),
+                          address_map=address_map),
                       access_policy=access_policy)
     request = CompileRequestV5.from_dict(request.to_dict())
     compiled, rebound_workload = rebind(compilation, workload, request)

@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 GRACE_S = 5.0
+_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 _LINE_CAP = 300
 _HEAD_LINES = 100
@@ -71,6 +73,12 @@ def _signal_group(proc: subprocess.Popen, sig: int) -> None:
     ProcessLookupError means the group is already gone (all members
     reaped) — a clean no-op, never an error.
     """
+    if os.name == "nt":
+        # Commands run under a self-owned job wrapper; killing it closes the
+        # job and terminates descendants, without an attach-after-spawn race.
+        if proc.poll() is None:
+            proc.kill()
+        return
     try:
         os.killpg(proc.pid, sig)
     except (ProcessLookupError, PermissionError):
@@ -111,15 +119,17 @@ def supervised_run(
 Rationale: docs/decisions/modules/core.md
     """
     t0 = time.monotonic()
+    launch_cmd = ([sys.executable, str(Path(__file__).with_name("windows_runner.py")), *cmd]
+                  if os.name == "nt" else cmd)
     proc = subprocess.Popen(
-        cmd,
+        launch_cmd,
         cwd=str(cwd) if cwd is not None else None,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
         text=True,
-        start_new_session=True,
+        start_new_session=os.name != "nt",
     )
     out_head: list[str] = []
     err_head: list[str] = []
@@ -148,14 +158,14 @@ Rationale: docs/decisions/modules/core.md
                     if not _await_exit(
                             proc, time.monotonic() + grace_s) \
                             and proc.poll() is None:
-                        _signal_group(proc, signal.SIGKILL)
+                        _signal_group(proc, _KILL_SIGNAL)
                     try:
                         proc.wait(timeout=10)
                     except subprocess.TimeoutExpired:
                         pass
         proc.wait()
     except KeyboardInterrupt:
-        _signal_group(proc, signal.SIGKILL)
+        _signal_group(proc, _KILL_SIGNAL)
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:

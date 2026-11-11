@@ -17,7 +17,13 @@ from veritx_dse.workload.memory_lowering import MemoryLoweringManifest
 from veritx_dse.core.paths import REPO
 
 VENDOR_DIR = REPO / "third_party" / "ramulator2"
-VENDOR_PIN = "72427a1bba3771564c4fb0e494ba02242fd1eaa7"
+# Local revision that ships this vendored source (including the Windows
+# portability and live-trace bindings). The upstream revision named in
+# VERITX_VENDOR.md (72427a1...) was not retained as a git object in this
+# shallow vendor tree, so it cannot identify a build here; the verified
+# build manifest must name exactly this revision.
+VENDOR_PIN = "332bc9d90b8ced2fad4212d79c9f650b37b1f050"
+RAMULATOR_RECIPE_VERSION = "ramulator2/v1"
 RAMULATOR_VERSION = "2.1.0"
 
 FIDELITY = "MEMORY_CYCLE_SIMULATION"
@@ -76,10 +82,44 @@ class RamulatorBackend:
     ext_path: Path
     version: str = RAMULATOR_VERSION
     commit: str = VENDOR_PIN
+    manifest: Any = None
 
     @property
     def ready(self) -> bool:
         return self.ext_path.is_file()
+
+    def verified_manifest(self) -> Any:
+        """Load the adjacent build manifest and prove the pin.
+
+        Discovery calls this; the binary bytes must match the manifest's
+        digest and size, the source subtree must be clean, and the recorded
+        revision must be VENDOR_PIN. Any mismatch refuses the backend
+        instead of attributing a run to an unverified revision.
+        """
+        from veritx_dse.core.build_manifest import (
+            BuildManifestError, load_and_verify_manifest)
+        try:
+            manifest = load_and_verify_manifest(
+                self.ext_path, recipe_version=RAMULATOR_RECIPE_VERSION)
+        except BuildManifestError as exc:
+            raise RamulatorError(
+                f"ramulator build manifest refused for {self.ext_path}: "
+                f"{exc}") from exc
+        if manifest is None:
+            raise RamulatorError(
+                f"backend has no build manifest beside {self.ext_path} — "
+                "refusing an unverified binary (regenerate it with "
+                "scripts/write_ramulator_manifest.py)")
+        if manifest.source_dirty:
+            raise RamulatorError(
+                "ramulator build manifest records a dirty source tree — "
+                "refusing to attribute a run to an unverified revision")
+        if manifest.source_revision != VENDOR_PIN:
+            raise RamulatorError(
+                f"ramulator build manifest source_revision "
+                f"{manifest.source_revision!r} is not VENDOR_PIN "
+                f"{VENDOR_PIN!r} — rebuild from the pinned vendor source")
+        return manifest
 
     def binary_hash(self) -> str:
         if not self.ready:
@@ -88,6 +128,17 @@ class RamulatorBackend:
                 f"(expected extension at {self.ext_path}; build: "
                 "cd third_party/ramulator2 && ./build.sh with the target "
                 "interpreter)")
+        if self.manifest is not None:
+            from veritx_dse.core.build_manifest import (
+                BuildManifestError, verify_build_manifest)
+            try:
+                verify_build_manifest(
+                    self.ext_path, self.manifest,
+                    recipe_version=RAMULATOR_RECIPE_VERSION)
+            except BuildManifestError as exc:
+                raise RamulatorError(
+                    f"ramulator binary no longer matches its manifest: "
+                    f"{exc}") from exc
         return "sha256:" + hashlib.sha256(
             self.ext_path.read_bytes()).hexdigest()
 
@@ -97,12 +148,18 @@ class RamulatorBackend:
                 "binary_sha256": self.binary_hash()}
 
 def discover(python_exe: str | None = None,
-             vendor_dir: Path | None = None) -> RamulatorBackend:
+             vendor_dir: Path | None = None,
+             *, verify: bool = True) -> RamulatorBackend:
     """Locate the backend: interpreter + vendored package + built ext.
 
     Readiness is explicit (backend.ready) — never implied. The extension
     is interpreter-tagged (cpython-3XX), so the discovering interpreter
     must be the one the bindings were built with.
+
+    By default the adjacent build manifest is verified and the backend is
+    bound to its ``source_revision``; a missing/stale manifest or a
+    revision other than VENDOR_PIN raises RamulatorError. The manifest
+    writer passes ``verify=False`` because it is regenerating that manifest.
     """
     exe = python_exe or sys.executable
     vdir = vendor_dir or VENDOR_DIR
@@ -120,7 +177,23 @@ def discover(python_exe: str | None = None,
         raise RamulatorError(
             f"interpreter {exe!r} reports no extension suffix")
     ext = pkg / "ramulator" / f"_ramulator{suffix}"
-    return RamulatorBackend(python_exe=exe, package_dir=pkg, ext_path=ext)
+    backend = RamulatorBackend(python_exe=exe, package_dir=pkg,
+                               ext_path=ext)
+    if not verify:
+        return backend
+    alternate = vendor_dir is not None and (
+        vdir.resolve() != VENDOR_DIR.resolve())
+    if alternate:
+        # Explicit alternate vendor roots are the offline test seam (fake
+        # extension bytes with no manifest). Verify them only when they
+        # actually carry a manifest; the canonical tree is always strict.
+        from veritx_dse.core.build_manifest import manifest_path_for
+        if not manifest_path_for(ext).is_file():
+            return backend
+    manifest = backend.verified_manifest()
+    return RamulatorBackend(python_exe=exe, package_dir=pkg, ext_path=ext,
+                            commit=manifest.source_revision,
+                            manifest=manifest)
 
 @dataclass(frozen=True)
 class MemoryEvidence:

@@ -78,7 +78,10 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
 
     ConfigRead("priority", A.BACKEND_PROFILE, "vc.cpp:57; "
                "trafficmanager.cpp:89", "none",
-               note="no priority scheme; class_priority is dead"),
+               note="no priority scheme in this sealed profile; "
+                    "class_priority is dead here. The multi-class priority "
+                    "surface is the distinct "
+                    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_PRIORITY_V1 profile"),
     ConfigRead("vc_priority_donation", A.BACKEND_PROFILE, "vc.cpp:70", 0),
 
     ConfigRead("num_vcs", A.FABRIC_DERIVED,
@@ -220,9 +223,15 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
                "trafficmanager.cpp:222", 0),
     ConfigRead("traffic", A.WORKLOAD_DERIVED, "trafficmanager.cpp:227",
                note="standalone: trace(<workload>); serving pins uniform"),
+    ConfigRead("trace_packet_log", A.BACKEND_PROFILE,
+               "tracetrafficmanager.cpp:30", "packets_out.csv",
+               note="per-packet rows (latency, queue/network split, hops) for "
+                    "the analysis distributions; written next to the run"),
     ConfigRead("class_priority", A.BACKEND_PROFILE,
                "trafficmanager.cpp:232,234", 0,
-               note="dead with priority=none"),
+               note="dead with priority=none in this sealed profile; the "
+                    "distinct class-VC priority profile derives it from the "
+                    "request's RequirementV3.qos_class"),
     ConfigRead("injection_process", A.BACKEND_PROFILE,
                "trafficmanager.cpp:238", "bernoulli",
                note="only used by non-trace patterns; pinned anyway"),

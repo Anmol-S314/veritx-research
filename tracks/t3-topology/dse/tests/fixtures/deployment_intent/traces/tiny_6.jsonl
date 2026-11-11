@@ -1,0 +1,6 @@
+{"input_toks": 10, "output_toks": 100, "arrival_time_ns": 0}
+{"input_toks": 20, "output_toks": 200, "arrival_time_ns": 1}
+{"input_toks": 30, "output_toks": 300, "arrival_time_ns": 2}
+{"input_toks": 40, "output_toks": 400, "arrival_time_ns": 3}
+{"input_toks": 50, "output_toks": 500, "arrival_time_ns": 4}
+{"input_toks": 60, "output_toks": 600, "arrival_time_ns": 5}

@@ -152,10 +152,59 @@ def test_bound_valid_experiment_assesses_ready_or_unavailable():
     else:
         assert row.reason
 
+def test_bound_valid_experiment_with_present_runtime_is_ready(monkeypatch):
+    import veritx_dse.backend.serving_adapter as _mod
+    monkeypatch.setattr(_mod, "_runtime_probe", lambda _binary: (True, ""))
+    adapter = ServingAdapter(experiment=_experiment())
+    row = adapter.assess(_context(), EvaluationQuestion.SERVING_TTFT)
+    assert row.readiness is BackendReadiness.READY
+    assert row.reason is None
+    assert row.qualification_profile is not None
+
+def test_bound_valid_experiment_with_absent_runtime_is_unavailable(
+        monkeypatch):
+    import veritx_dse.backend.serving_adapter as _mod
+    monkeypatch.setattr(
+        _mod, "_runtime_probe",
+        lambda _binary: (False, "serving runtime absent"))
+    adapter = ServingAdapter(experiment=_experiment())
+    row = adapter.assess(_context(), EvaluationQuestion.SERVING_TTFT)
+    assert row.readiness is BackendReadiness.UNAVAILABLE
+    assert row.reason == "serving runtime absent"
+
+def test_assess_resolves_repo_relative_cluster_from_any_cwd(
+        monkeypatch, tmp_path):
+    """A repo-relative experiment is cwd-independent: validation and the
+    cluster geometry read the same resolved config."""
+    import veritx_dse.backend.serving_adapter as _mod
+    monkeypatch.setattr(_mod, "_runtime_probe", lambda _binary: (True, ""))
+    monkeypatch.chdir(tmp_path)
+    adapter = ServingAdapter(experiment=_experiment())
+    row = adapter.assess(_context(), EvaluationQuestion.SERVING_TTFT)
+    assert row.readiness is BackendReadiness.READY
+
+def test_bound_experiment_on_incompatible_context_is_blocked():
+    context = _context()
+    context.workload = types.SimpleNamespace(participant_count=1)
+    adapter = ServingAdapter(experiment=_experiment())
+    row = adapter.assess(context, EvaluationQuestion.SERVING_TTFT)
+    assert row.readiness is BackendReadiness.BLOCKED
+    assert "INCOMPATIBLE" in row.reason
+
 def test_prepare_refuses_without_experiment():
     adapter = ServingAdapter()
     with pytest.raises(ServingSemanticRefusal):
         adapter.prepare(_context(), EvaluationQuestion.SERVING_TTFT)
+
+def test_prepare_refuses_context_without_compile_request():
+    """A context that carries no evaluated design can never be prepared,
+    even when the experiment itself is valid."""
+    adapter = ServingAdapter(experiment=_experiment())
+    with pytest.raises(
+            ServingSemanticRefusal,
+            match="no serializable compile request"):
+        adapter.prepare(
+            types.SimpleNamespace(), EvaluationQuestion.SERVING_TTFT)
 
 def test_prepare_binds_this_design(monkeypatch):
     """Preparation carries the context's own compile-request document —

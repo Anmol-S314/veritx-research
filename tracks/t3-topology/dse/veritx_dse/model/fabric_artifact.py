@@ -192,7 +192,8 @@ class FabricArtifact:
             routing_realization: RoutingRealizationArtifact,
             packet_format: PacketFormatArtifact,
             router_behavior: RouterBehaviorArtifact,
-            address_decode: AddressDecodeArtifact) -> None:
+            address_decode: AddressDecodeArtifact,
+            cdc_cells: tuple[str, ...] = ()) -> None:
         """Prove the shared child DAG for both routing branches."""
         _require_instance("topology", topology, TopologyArtifact)
         _require_instance("attachment", attachment, AgentAttachmentArtifact)
@@ -257,12 +258,24 @@ class FabricArtifact:
             endpoint.interface.clock_domain or _DEFAULT_DOMAIN
             for endpoint in attachment.endpoints}
         if len(clock_domains) > 1:
-            raise FabricArtifactError(
-                "UNSUPPORTED: fabric endpoints span multiple clock domains "
-                f"{sorted(clock_domains)}; FabricArtifact v1 has no "
-                "clock-crossing artifact (synchronizers, asynchronous FIFOs, "
-                "mesochronous behaviour or conversion latency) and refuses "
-                "to model multi-clock hardware as ordinary links")
+            # M3 CdcCell: multi-clock is legal exactly when every domain
+            # pair is covered by a named CdcCell insertion point; a
+            # missing cell is a typed refusal, never an ordinary link.
+            from veritx_dse.model.clock_power_cdc import (
+                cdc_crossing_covered,
+            )
+            domains = sorted(clock_domains)
+            uncovered = [
+                f"{a}->{b}" for i, a in enumerate(domains)
+                for b in domains[i + 1:]
+                if not cdc_crossing_covered(cdc_cells, a, b)]
+            if uncovered:
+                raise FabricArtifactError(
+                    "UNSUPPORTED: CDC_CELL_MISSING: fabric endpoints span "
+                    f"multiple clock domains {domains} but crossing(s) "
+                    f"{uncovered} have no CdcCell; FabricArtifact refuses "
+                    "to model a multi-clock crossing without a synchronizer / "
+                    "asynchronous-FIFO cell as an ordinary link")
 
         power_domains = {
             endpoint.interface.power_domain or _DEFAULT_DOMAIN
@@ -327,13 +340,14 @@ class FabricArtifact:
             address_decode: AddressDecodeArtifact,
             route: Any,
             resolved_route: ResolvedRouteArtifact,
-            vc_assignment: VCAssignmentArtifact) -> None:
+            vc_assignment: VCAssignmentArtifact,
+            cdc_cells: tuple[str, ...] = ()) -> None:
         """Prove the common DAG and the deterministic routing sources."""
         self._validate_common(
             topology=topology, attachment=attachment, vc_resource=vc_resource,
             routing_realization=routing_realization,
             packet_format=packet_format, router_behavior=router_behavior,
-            address_decode=address_decode)
+            address_decode=address_decode, cdc_cells=cdc_cells)
         if routing_realization.kind is not RoutingRealizationKind.DETERMINISTIC:
             raise FabricArtifactError(
                 "validate_against_deterministic requires a DETERMINISTIC "
@@ -369,13 +383,14 @@ class FabricArtifact:
             address_decode: AddressDecodeArtifact,
             policy: RoutingPolicyDefinition,
             relation: RoutingRelationArtifact,
-            binding: RoutingResourceBindingArtifact) -> None:
+            binding: RoutingResourceBindingArtifact,
+            cdc_cells: tuple[str, ...] = ()) -> None:
         """Prove the common DAG and the adaptive routing sources."""
         self._validate_common(
             topology=topology, attachment=attachment, vc_resource=vc_resource,
             routing_realization=routing_realization,
             packet_format=packet_format, router_behavior=router_behavior,
-            address_decode=address_decode)
+            address_decode=address_decode, cdc_cells=cdc_cells)
         if routing_realization.kind is not RoutingRealizationKind.ADAPTIVE:
             raise FabricArtifactError(
                 "validate_against_adaptive requires an ADAPTIVE routing "
@@ -434,7 +449,8 @@ def make_deterministic_fabric(
         address_decode: AddressDecodeArtifact,
         route: RouteArtifact,
         resolved_route: ResolvedRouteArtifact,
-        vc_assignment: VCAssignmentArtifact) -> FabricArtifact:
+        vc_assignment: VCAssignmentArtifact,
+        cdc_cells: tuple[str, ...] = ()) -> FabricArtifact:
     """Compose and validate a deterministic-routing hardware fabric."""
     fabric = _compose(
         topology=topology, attachment=attachment, vc_resource=vc_resource,
@@ -445,7 +461,7 @@ def make_deterministic_fabric(
         routing_realization=routing_realization, packet_format=packet_format,
         router_behavior=router_behavior, address_decode=address_decode,
         route=route, resolved_route=resolved_route,
-        vc_assignment=vc_assignment)
+        vc_assignment=vc_assignment, cdc_cells=cdc_cells)
     return fabric
 
 def make_adaptive_fabric(
@@ -458,7 +474,8 @@ def make_adaptive_fabric(
         address_decode: AddressDecodeArtifact,
         policy: RoutingPolicyDefinition,
         relation: RoutingRelationArtifact,
-        binding: RoutingResourceBindingArtifact) -> FabricArtifact:
+        binding: RoutingResourceBindingArtifact,
+        cdc_cells: tuple[str, ...] = ()) -> FabricArtifact:
     """Compose and validate an adaptive-routing hardware fabric."""
     fabric = _compose(
         topology=topology, attachment=attachment, vc_resource=vc_resource,
@@ -468,5 +485,6 @@ def make_adaptive_fabric(
         topology=topology, attachment=attachment, vc_resource=vc_resource,
         routing_realization=routing_realization, packet_format=packet_format,
         router_behavior=router_behavior, address_decode=address_decode,
-        policy=policy, relation=relation, binding=binding)
+        policy=policy, relation=relation, binding=binding,
+        cdc_cells=cdc_cells)
     return fabric

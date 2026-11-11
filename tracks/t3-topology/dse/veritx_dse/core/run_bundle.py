@@ -7,9 +7,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
+
+from veritx_dse.core.atomic import atomic_replace
 
 from .errors import SemanticError
 
@@ -32,7 +35,8 @@ def _sha256_file(path: Path) -> str:
 def _iter_bundle_files(run_dir: Path) -> Iterator[tuple[str, Path]]:
     root = Path(run_dir)
     for path in sorted(root.rglob("*")):
-        if path.is_symlink():
+        if path.is_symlink() or (os.name == "nt" and
+                                 path.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
             raise RunBundleError(
                 f"run bundle must not contain a symlink: "
                 f"{path.relative_to(root).as_posix()} — refusing a "
@@ -57,6 +61,10 @@ def bundle_id(files: dict[str, str]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 def _fsync_dir(path: Path) -> None:
+    # Windows cannot fsync a directory via os.open. File bytes are flushed
+    # before atomic publication on both platforms; no power-loss claim here.
+    if os.name == "nt":
+        return
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
@@ -103,7 +111,7 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
                 fh.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp_name, target)
+            atomic_replace(tmp_name, target)
         except FileNotFoundError:
             attempts += 1
             if attempts > 1:
@@ -193,7 +201,9 @@ def verify_run_bundle(run_dir: str | Path) -> dict[str, Any]:
                 f"a manifest that does not describe this bundle")
     return {"file_count": doc["file_count"], "bundle_id": computed_id}
 
-def read_verified_file(bundle_dir: str | Path, relpath: str) -> bytes:
+def read_verified_file(bundle_dir: str | Path, relpath: str,
+                       max_bytes: int | None = None,
+                       expected_digest: str | None = None) -> bytes:
     """Read one bundle file pinned to its verified digest.
 
     Verifies the bundle, then re-hashes exactly the file being read and
@@ -207,14 +217,41 @@ def read_verified_file(bundle_dir: str | Path, relpath: str) -> bytes:
     if relpath not in recorded:
         raise RunBundleError(
             f"{relpath} is not sealed by this bundle's {CHECKSUMS_NAME}")
-    path = root / relpath
-    if path.is_symlink() or not path.is_file():
-        raise RunBundleError(
-            f"{relpath} is not a regular file in this bundle")
-    digest = _sha256_file(path)
-    if digest != recorded[relpath]:
-        raise RunBundleError(
-            f"{relpath} changed after verification "
-            f"({digest} != {recorded[relpath]}) — refusing bytes that "
-            f"are no longer the verified ones")
-    return path.read_bytes()
+    parts = PurePosixPath(relpath).parts
+    if (not parts or PurePosixPath(relpath).is_absolute()
+            or any(p in (".", "..") for p in parts)
+            or str(PurePosixPath(relpath)) != relpath or "\\" in relpath):
+        raise RunBundleError("invalid bundle-relative file path")
+    parent = None
+    try:
+        if os.name == "nt":
+            from veritx_dse.core.windows_files import open_regular_beneath
+            fd = open_regular_beneath(root, parts)
+        else:
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            for component in parts[:-1]:
+                child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                dir_fd=parent)
+                os.close(parent)
+                parent = child
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                         dir_fd=parent)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise RunBundleError(f"{relpath} is not a regular bundle file")
+            if max_bytes is not None and info.st_size > max_bytes:
+                raise RunBundleError(f"{relpath} exceeds the {max_bytes}-byte read cap")
+            data = handle.read(-1 if max_bytes is None else max_bytes + 1)
+            if max_bytes is not None and len(data) > max_bytes:
+                raise RunBundleError(f"{relpath} exceeds the {max_bytes}-byte read cap")
+    except (OSError, ValueError) as exc:
+        detail = getattr(exc, "strerror", None) or str(exc)
+        raise RunBundleError(f"cannot safely read bundle file {relpath}: {detail}") from exc
+    finally:
+        if parent is not None:
+            os.close(parent)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != recorded[relpath] or (expected_digest is not None and digest != expected_digest):
+        raise RunBundleError(f"{relpath} changed after verification; refusing unverified bytes")
+    return data

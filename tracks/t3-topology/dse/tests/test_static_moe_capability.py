@@ -61,7 +61,7 @@ def test_moe_model_shape_does_not_invent_dispatch_or_combine():
     request = dataclasses.replace(request, workload=dataclasses.replace(
         request.workload, collectives=()), compute=dataclasses.replace(
             request.compute, stages=()))
-    with pytest.raises(InvalidInput, match="no collectives and no compute"):
+    with pytest.raises(InvalidInput, match="no collectives, no coherence and no compute"):
         lower_compile_workload(request)
     row = registry.capability_consequence("WORK-009")
     assert row["wiring"] == "NOT_AVAILABLE"

@@ -11,7 +11,7 @@ from typing import Any
 from veritx_dse.core.artifact import content_id
 from veritx_dse.core.spec import canonical_json
 
-from .definition import GUIDED_PARAMS, _normalize_param_name
+from .definition import GUIDED_PARAMS, PARALLELISM_DIMS, _normalize_param_name
 from veritx_dse.model.generation import is_any_compile_request  # noqa: E402
 
 CANDIDATE_DOMAIN = "veritx/optimization-candidate/v1"
@@ -29,10 +29,10 @@ def normalize_patch(patch: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in patch.items():
         short = _normalize_param_name(key)
-        if short not in GUIDED_PARAMS:
+        if short not in GUIDED_PARAMS and short not in PARALLELISM_DIMS:
             raise CandidateError(
                 f"patch key {key!r} is not a GUIDED knob "
-                f"(supported: {sorted(GUIDED_PARAMS)}); LOCKED properties "
+                f"(supported: {sorted(set(GUIDED_PARAMS) | set(PARALLELISM_DIMS))}); LOCKED properties "
                 "cannot be patched — they recompile via FabricCompiler")
         if short in out and out[short] != value:
             raise CandidateError(
@@ -118,6 +118,19 @@ def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
     norm = normalize_patch(patch)
     if not norm:
         raise CandidateError("patch must set at least one GUIDED knob")
+    workload_updates = {k: v for k, v in norm.items() if k in PARALLELISM_DIMS}
+    if workload_updates:
+        if any(type(v) is not int or v < 1 for v in workload_updates.values()):
+            raise CandidateError("parallelism sizes must be positive integers")
+        changed = any(getattr(base.workload, k) != v for k, v in workload_updates.items())
+        if changed and getattr(base.workload, "source_ref", None) is not None:
+            raise CandidateError(
+                "cannot repartition an imported workload source; author canonical collectives instead")
+        base = dataclasses.replace(
+            base, workload=dataclasses.replace(base.workload, **workload_updates))
+    norm = {k: v for k, v in norm.items() if k not in PARALLELISM_DIMS}
+    if not norm:
+        return base
     if is_v4_request(base):
         return _apply_v4_patch(base, norm)
     noc_updates: dict[str, Any] = {}
@@ -255,26 +268,19 @@ Rationale: docs/decisions/modules/optimization.md
                     raise CandidateError(
                         f"unknown topology_family {value!r}") from None
             noc_updates[key] = value
+    # Both study paths share typed workload patching and imported-source refusal.
+    from veritx_dse.model.generation import is_v4_request
     if noc_updates:
-        try:
-            new_noc = dataclasses.replace(base.noc_config, **noc_updates)
-        except TypeError as exc:
-            raise CandidateError(
-                f"cannot apply fabric patch: {exc}") from exc
-        request = dataclasses.replace(request, noc_config=new_noc)
+        if is_v4_request(request):
+            request = _apply_v4_patch(request, noc_updates)
+        else:
+            try:
+                request = dataclasses.replace(
+                    request, noc_config=dataclasses.replace(request.noc_config, **noc_updates))
+            except (TypeError, ValueError) as exc:
+                raise CandidateError(f"cannot apply fabric patch: {exc}") from exc
     wl_updates = {k: v for k, v in norm.items() if k in PARALLELISM_DIMS}
-    if wl_updates:
-        if not all(hasattr(request.workload, k) for k in wl_updates):
-            raise CandidateError(
-                "base workload has no parallelism fields; cannot patch "
-                f"{sorted(wl_updates)}")
-        try:
-            new_wl = dataclasses.replace(request.workload, **wl_updates)
-        except TypeError as exc:
-            raise CandidateError(
-                f"cannot apply parallelism patch: {exc}") from exc
-        request = dataclasses.replace(request, workload=new_wl)
-    return request
+    return apply_patch(request, wl_updates) if wl_updates else request
 
 
 def study_placement_policy(patch: dict[str, Any]) -> str | None:

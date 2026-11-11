@@ -248,6 +248,80 @@ def _evidence_producer(evidence_doc: Mapping[str, Any]) -> str:
             f"evidence names no producer identity, got {producer!r}")
     return producer
 
+
+def _bare_digest(value: Any) -> Any:
+    return value[7:] if isinstance(value, str) \
+        and value.startswith("sha256:") else value
+
+
+def _check_traffic_class_metrics_binding(
+        block: Any, *, evidence_sha256: str, stats_sha256: str) -> None:
+    """A per-class block must name exactly the evidence it was read from."""
+    from veritx_dse.performance.traffic_class import (
+        TrafficClassMetricsError, validate_traffic_class_metrics,
+    )
+    try:
+        validate_traffic_class_metrics(block)
+    except TrafficClassMetricsError as exc:
+        raise _refuse(
+            "verified_result.traffic_class_metrics",
+            f"malformed per-class evidence: {exc}") from exc
+    if _bare_digest(block["evidence_sha256"]) != \
+            _bare_digest(evidence_sha256):
+        raise _refuse(
+            "verified_result.traffic_class_metrics.evidence_sha256",
+            f"{block['evidence_sha256']!r} is not the authenticated "
+            f"evidence digest {evidence_sha256!r}")
+    if _bare_digest(block["stats_sha256"]) != _bare_digest(stats_sha256):
+        raise _refuse(
+            "verified_result.traffic_class_metrics.stats_sha256",
+            f"{block['stats_sha256']!r} is not the authenticated stats "
+            f"digest {stats_sha256!r}")
+
+
+def _ensure_traffic_class_metrics(
+        *, compilation: Any, verified_result: VerifiedPerformanceResult,
+        evidence_doc: Mapping[str, Any], evidence_sha256: str,
+        stats_sha256: str) -> None:
+    """Attach per-class readings derived from the authenticated evidence.
+
+    Optional enrichment: when the canonical traffic or packet format
+    cannot be rebuilt, the block stays absent and class-scoped
+    requirements stay honestly UNMEASURABLE.  An already-present block is
+    validated and digest-bound, never overwritten.
+    """
+    existing = verified_result.get("traffic_class_metrics")
+    if existing is not None:
+        _check_traffic_class_metrics_binding(
+            existing, evidence_sha256=evidence_sha256,
+            stats_sha256=stats_sha256)
+        return
+    try:
+        from veritx_dse.application.evaluation_context import (
+            build_evaluation_context,
+        )
+        from veritx_dse.backend.booksim_adapter import BookSimAdapter
+        from veritx_dse.backend.booksim_projection import trace_class_map
+        from veritx_dse.performance.traffic_class import (
+            build_traffic_class_metrics,
+        )
+        context = build_evaluation_context(compilation)
+        _logical, physical = BookSimAdapter()._canonical_traffic(
+            context, traffic_class=context.unified_traffic_class)
+        classes = tuple(trace_class_map(physical))
+        if len(classes) <= 1:
+            return
+        block = build_traffic_class_metrics(
+            stats=evidence_doc["stats"],
+            class_names=classes,
+            flit_width_bits=physical.packet_format.flit_width_bits,
+            evidence_sha256=evidence_sha256, stats_sha256=stats_sha256)
+    except Exception:  # optional enrichment: never fail authentication
+        return
+    if block is not None:
+        verified_result["traffic_class_metrics"] = block
+
+
 def _derive_report(request: CompileRequestV3, workload: WorkloadGraph,
                    verified_result: VerifiedPerformanceResult
                    ) -> dict[str, Any]:
@@ -327,6 +401,11 @@ Rationale: docs/decisions/modules/application.md
             "wave_d_chain.resolved_fabric_hash",
             f"{chain_resolved!r} does not match the evidence's "
             f"resolved_fabric_hash {evidence_resolved!r}")
+
+    _ensure_traffic_class_metrics(
+        compilation=compilation, verified_result=verified_result,
+        evidence_doc=evidence_doc, evidence_sha256=ref.sha256,
+        stats_sha256=artifact.stats_sha256)
 
     evidence_producer = _evidence_producer(evidence_doc)
     if producer_identity is not None:
@@ -440,6 +519,50 @@ Rationale: docs/decisions/modules/application.md
             "wave_d_chain.resolved_fabric_hash",
             f"{chain_resolved!r} does not match the evidence's "
             f"resolved_fabric_hash {evidence_resolved!r}")
+
+    class_block = verified_result.get("traffic_class_metrics")
+    if class_block is not None:
+        _check_traffic_class_metrics_binding(
+            class_block, evidence_sha256=reopened_ref.sha256,
+            stats_sha256=artifact.stats_sha256)
+        from veritx_dse.model.compile_model import (
+            derive_v3_traffic_classes,
+        )
+        from veritx_dse.performance.traffic_class import (
+            TrafficClassMetricsError, build_traffic_class_metrics,
+        )
+        declared = set(derive_v3_traffic_classes(candidate_request))
+        names = tuple(class_block["class_names"])
+        if list(names) != sorted(names) or not set(names) <= declared:
+            raise _refuse(
+                "verified_result.traffic_class_metrics.class_names",
+                f"{list(names)} is not a sorted subset of the request's "
+                f"declared traffic classes {sorted(declared)}")
+        declared_width = getattr(
+            getattr(candidate_request, "noc_config", None), "link_width", None)
+        if declared_width is not None and class_block["flit_width_bits"] \
+                != declared_width:
+            raise _refuse(
+                "verified_result.traffic_class_metrics.flit_width_bits",
+                f"{class_block['flit_width_bits']!r} is not the request's "
+                f"declared link width {declared_width!r}")
+        try:
+            recomputed = build_traffic_class_metrics(
+                stats=evidence_doc["stats"], class_names=names,
+                flit_width_bits=class_block["flit_width_bits"],
+                evidence_sha256=class_block["evidence_sha256"],
+                stats_sha256=class_block["stats_sha256"])
+        except TrafficClassMetricsError as exc:
+            raise _refuse(
+                "verified_result.traffic_class_metrics",
+                f"cannot re-derive per-class readings from the "
+                f"authenticated stats: {exc}") from exc
+        if recomputed != class_block:
+            raise _refuse(
+                "verified_result.traffic_class_metrics",
+                "per-class readings do not re-derive from the "
+                "authenticated evidence stats — refusing transcribed or "
+                "tampered class values")
 
     evidence_producer = _evidence_producer(evidence_doc)
     if proof.producer_identity != evidence_producer:

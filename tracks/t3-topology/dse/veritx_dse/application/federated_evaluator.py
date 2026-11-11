@@ -364,9 +364,28 @@ def _pre_execution_parents(context, traffic_class, options):
                 _bp.CMESH_DOR_PROFILE.semantics_version,
             _bp.ANYNET_PROFILE.profile_id:
                 _bp.ANYNET_PROFILE.semantics_version,
+            _bp.ANYNET_MC_PROFILE.profile_id:
+                _bp.ANYNET_MC_PROFILE.semantics_version,
             _bp.MESH_DOR_MC_PROFILE.profile_id:
                 _bp.MESH_DOR_MC_PROFILE.semantics_version,
+            _bp.TORUS_DOR_PROFILE.profile_id:
+                _bp.TORUS_DOR_PROFILE.semantics_version,
+            _bp.FLATFLY_MIN_PROFILE.profile_id:
+                _bp.FLATFLY_MIN_PROFILE.semantics_version,
+            _bp.SROTA_ROW_FIRST_PROFILE.profile_id:
+                _bp.SROTA_ROW_FIRST_PROFILE.semantics_version,
+            _bp.GEC_MECS_PROFILE.profile_id:
+                _bp.GEC_MECS_PROFILE.semantics_version,
+            _bp.GEC_HYBRID_PROFILE.profile_id:
+                _bp.GEC_HYBRID_PROFILE.semantics_version,
         }
+        from veritx_dse.backend.qtree_projection import PROFILE as _qtree
+        from veritx_dse.backend.tree4_projection import PROFILE as _tree4
+        from veritx_dse.backend.ring_projection import PROFILE as _ring
+        from veritx_dse.backend.fly_projection import PROFILE as _fly
+        for _profile in (_qtree, _tree4, _ring, _fly):
+            semantics_by_profile[_profile.profile_id] = \
+                _profile.semantics_version
         projection_semantics = semantics_by_profile[native.profile_id]
         identity = prepared.identity_dict()
         trace_sha256 = identity["trace_sha256"]
@@ -446,6 +465,11 @@ def _pre_execution_parents(context, traffic_class, options):
         "series_link_width_bits": link_width,
         "series_flit_width_bits": flit_width,
         "series_link_capacity_flits_per_cycle": link_capacity,
+        # Presentation-only (never part of the reuse key): the canonical
+        # class map this run rendered, so normalization need not rebuild
+        # the same traffic to name per-class counters.
+        "trace_class_map": tuple(
+            getattr(prepared, "trace_class_map", ()) or ()),
     }
 
 def _tier1_key(pre_parents):
@@ -577,7 +601,16 @@ Rationale: docs/decisions/modules/application.md
             status=status, model_fidelity=None, qualification=None,
             normalized_evidence=None, native_evidence_id=None,
             reason=outcome.reason)
-    envelope = normalize_booksim_outcome(context, outcome)
+    # The canonical class map this run actually prepared. When preparation
+    # was skipped (an unusable context), the adapter derives the same map
+    # from the canonical traffic instead — never a guessed class name.
+    class_map = () if pre_parents is None \
+        else pre_parents.get("trace_class_map", ())
+    if class_map:
+        envelope = normalize_booksim_outcome(
+            context, outcome, trace_class_map=class_map)
+    else:
+        envelope = normalize_booksim_outcome(context, outcome)
     analysis = AnalysisOutcome(
         question=row.question, backend_id=row.backend_id,
         status=ANALYSIS_EVALUATED,

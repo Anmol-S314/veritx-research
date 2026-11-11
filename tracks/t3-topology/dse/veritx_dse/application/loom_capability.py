@@ -523,7 +523,7 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "release order, with cycle/self-reference/unknown-dependency refusal. "
         "Not carried by a CompileRequest root yet.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/reset.py",),
     ),
     (
         "reset.async_assert_sync_deassert",
@@ -533,7 +533,7 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "system neither models nor claims it. Structural intent only — this is "
         "NOT a metastability proof and NOT signoff.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/reset.py",),
     ),
     (
         "cdc.crossing",
@@ -543,7 +543,7 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "answer when information is missing — never auto-promoted to a 2FF. "
         "Intent VALID only; no signoff verification exists.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/crossing.py",),
     ),
     (
         "cdc.sync_2ff",
@@ -551,7 +551,7 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "exactly 2; single-bit/pulse only). INTENT VALIDATION ONLY: no RTL "
         "differential, no MTBF claim, no signoff.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/crossing.py",),
     ),
     (
         "cdc.sync_3ff",
@@ -559,7 +559,7 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "be exactly 3; single-bit/pulse only). INTENT VALIDATION ONLY: no RTL "
         "differential, no MTBF claim, no signoff.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/crossing.py",),
     ),
     (
         "cdc.async_fifo",
@@ -571,7 +571,8 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "counter and models NO clock ratio, so clock-ratio behaviour is "
         "NOT_MODELED. Not differential-tested against PULP common_cells RTL.",
         "AUTHORABLE",
-        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent/crossing.py",
+         "tracks/t3-topology/dse/veritx_dse/model/domain_intent/fifo.py"),
     ),
 )
 

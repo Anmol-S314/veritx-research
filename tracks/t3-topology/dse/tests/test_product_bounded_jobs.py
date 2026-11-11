@@ -226,3 +226,64 @@ def test_provider_error_is_redacted_and_not_a_topology_verdict(tmp_path, provide
         assert "secret-token" not in json.dumps(done)
         assert len(provider[0]) == 1
         assert client.get(f"/api/v1/projects/{pid}/draft").json() == draft
+
+
+def test_in_process_job_keeps_the_run_and_names_why_it_failed(tmp_path):
+    """A written run is not "nothing written", and a crash is not a refusal."""
+    import time
+    from veritx_dse.product.jobs import JobManager
+    from veritx_dse.product.store import ProductStore
+    store = ProductStore(tmp_path / "store")
+    pid = store.create_project(name="in process", draft_doc={},
+                               workload_id="fixture", source="test")["project_id"]
+    manager = JobManager(store)
+
+    def settled(job_id):
+        for _ in range(400):
+            record = store.load_job(pid, job_id)
+            if record["state"] in ("COMPLETED", "FAILED", "REFUSED"):
+                return record
+            time.sleep(0.01)
+        raise AssertionError(f"job {job_id} never settled")
+
+    def crashed(progress):
+        progress("RUNNING")
+        return "FAILED", {"run_id": "run-1", "run_status": "FAILED",
+                          "reason": "backend execution failed: spawn ENOENT"}
+
+    job = settled(manager.submit(pid, kind="EVALUATION", revision_id="rev-1",
+                                 fn=crashed)["job_id"])
+    assert job["state"] == "FAILED"
+    assert job["result"] == {"run_id": "run-1", "run_status": "FAILED",
+                             "reason": "backend execution failed: spawn ENOENT"}
+    assert "spawn ENOENT" in job["error_message"]
+    assert job["error_code"] == "RUN_NOT_COMPLETED"
+
+    def refused(progress):
+        return "REFUSED", {"run_id": "run-2", "run_status": "UNSUPPORTED",
+                           "reason": "UNSUPPORTED: outside the certified envelope"}
+
+    job = settled(manager.submit(pid, kind="EVALUATION", revision_id="rev-2",
+                                 fn=refused)["job_id"])
+    assert job["state"] == "REFUSED"
+    assert "certified envelope" in job["error_message"]
+    assert job["result"]["run_id"] == "run-2"
+
+
+def test_completed_in_process_job_reports_no_error(tmp_path):
+    from veritx_dse.product.jobs import JobManager
+    from veritx_dse.product.store import ProductStore
+    import time
+    store = ProductStore(tmp_path / "store")
+    pid = store.create_project(name="ok", draft_doc={},
+                               workload_id="fixture", source="test")["project_id"]
+    manager = JobManager(store)
+    job = manager.submit(pid, kind="EVALUATION", revision_id="rev-1",
+                         fn=lambda progress: ("COMPLETED", {"run_id": "run-9"}))
+    for _ in range(400):
+        record = store.load_job(pid, job["job_id"])
+        if record["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+    assert record["error_code"] is None and record["error_message"] is None
+    assert record["result"] == {"run_id": "run-9"}

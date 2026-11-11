@@ -4,7 +4,7 @@ Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -87,6 +87,66 @@ Rationale: docs/decisions/modules/application.md
         return resolve_handler(self.qualifier)
 
 QUALIFICATION: dict[str, QualificationRecord] = {
+    "CERTIFIED_BOOKSIM_RING_DATELINE_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_RING_DATELINE_V1", state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+R1-ring-dateline+runtime-halves-v1+multi-class/v1",
+        lowerer_version="RINGDATELINE/1",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_ring_dateline_product",
+        evidence_paths=("tracks/t3-topology/dse/tests/test_native_ring.py",),
+        scope="MaterializedFamily.RING, one wraparound dimension at even k, "
+              "routing class RING_DATELINE, one or more canonical traffic classes over the exact 2 VCs whose half is fixed "
+              "per flow by the injection router, identity VC transitions, "
+              "128 directed ring channels at k=64, one terminal per router; "
+              "all k*(k-1) router/destination hops and native ports checked "
+              "against the static dump with the diametral tie admitting "
+              "either legal direction, and every executed hop's VC half, "
+              "port continuity and single direction checked against the "
+              "runtime route-compute dump",
+    ),
+    "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1", state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+fly-dest-tag+ingress0-egress2/v1+multi-class/v1",
+        lowerer_version="FLYDESTTAG/1",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_fly_dest_tag_product",
+        evidence_paths=("tracks/t3-topology/dse/tests/test_native_fly.py",),
+        scope="Exact 48-router, 128-channel, 64-terminal native 4-ary "
+              "3-stage fly; ASYMMETRIC attachment (a terminal injects at "
+              "its stage-0 router/port and ejects at its stage-2 "
+              "router/port, never one seat); routing class FLY_DEST_TAG "
+              "alone, deterministic (no legal-choice union); all 48*64 "
+              "router/destination hops and native ports checked against the "
+              "static dump, and every executed hop's stage advance, "
+              "injection router, destination-tag port, full VC range and "
+              "stage-2 ejection point checked against the runtime "
+              "route-compute dump",
+    ),
+    "CERTIFIED_BOOKSIM_TREE4_NCA_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_TREE4_NCA_V1", state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+tree4-nca-upward-choice/v1+multi-class/v1",
+        lowerer_version="TREE4NCA/1",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_tree4_nca_product",
+        evidence_paths=("tracks/t3-topology/dse/tests/test_native_tree4.py",),
+        scope="Exact 28-router native Tree4 (4 roots, 8 middles, 16 leaves "
+              "with 4 seats each, 128 directed channels); routing class "
+              "TREE4_NCA declared as a legal-choice UNION (two "
+              "destination-group middles at a root, four roots at a middle, "
+              "two parents at a leaf); every 28*64 router/terminal hop and "
+              "native port checked against the producer's legal-choice "
+              "union dump at 64 probes, with deterministic pairs required "
+              "exact and every legal face required to be realised; every "
+              "executed hop, injection seat, full VC range, climb-then-"
+              "descend discipline and destination ejection checked against "
+              "the runtime route-compute dump",
+    ),
+    "CERTIFIED_BOOKSIM_QTREE_NCA_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_QTREE_NCA_V1", state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+qtree-nca-terminal-law/v1+multi-class/v1",
+        lowerer_version="QTREENCA/1",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_qtree_nca_product",
+        evidence_paths=("tracks/t3-topology/dse/tests/test_native_qtree.py",),
+        scope="Exact 21-router, 64-leaf-terminal QTree; native NCA; one or more canonical traffic classes over the full VC set; "
+              "all 1344 router/terminal hops and output ports checked against native dump",
+    ),
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
         state="QUALIFIED",
@@ -105,19 +165,19 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         profile_id="CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+cmesh-terminal-bijection+prepared-v2",
+            "booksim2-fork+cmesh-terminal-bijection+prepared-v2+multi-class/v1",
         lowerer_version="DORXY/1",
         qualifier=(
             "veritx_dse.backend.booksim_projection:"
-            "qualify_native_cmesh_dor"),
+            "qualify_native_cmesh_dor_product"),
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_booksim_cmesh_projection.py",
             "docs/product/CMESH-REQUALIFICATION-2026-10.md",
             "docs/product/CAPABILITY-CLOSURE-2026-09.md",
         ),
-        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 2 or 4, exact canonical "
-              "endpoint/native terminal bijection, square k x k, routing class DOR_XY, "
-              "single class and VC, use_noc_latency 0",
+        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 2 or 4, full or sparse canonical "
+              "endpoint/native terminal binding, square k x k, routing class DOR_XY, "
+              "one or more canonical traffic classes over the full VC envelope, use_noc_latency 0; multi-class permits sparse native-terminal occupancy on an over-provisioned square grid (unbound native terminals idle) and covers the full native terminal universe in route evidence",
     ),
     "CERTIFIED_BOOKSIM_ANYNET_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_ANYNET_V1",
@@ -130,6 +190,20 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "docs/product/EVIDENCE-FIRST-CAPABILITY-ARCHAEOLOGY.md",
         ),
         scope="explicit graph, routing class ANYNET_MIN_HOPS",
+    ),
+    "CERTIFIED_BOOKSIM_ANYNET_MC_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_ANYNET_MC_V1",
+        state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+B3.7b-anynet-dump+prepared-v2+multi-class/v1",
+        lowerer_version="ANYNET/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_anynet_min_hops_product",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_booksim_multiclass_topologies.py",
+            "tracks/t3-topology/dse/docs/BAKE-OFF-REPRODUCIBILITY.md",
+        ),
+        scope="explicit graph, routing class ANYNET_MIN_HOPS, two or more "
+              "canonical traffic classes with per-class replay and conservation",
     ),
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1",
@@ -168,14 +242,36 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "membership observed at native route computation, identity "
               "VC transitions, use_noc_latency 1",
     ),
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_PRIORITY_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_PRIORITY_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+mesh-dor-class-vc+qos-priority/v1",
+        lowerer_version="DORXY-MC/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_mesh_dor_class_priority",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_booksim_class_priority.py",
+        ),
+        scope="MaterializedFamily.MESH, seat_capacity 1, square k x k, "
+              "routing class DOR_XY, two or more canonical traffic classes "
+              "with one disjoint VC per class and an applicable scoped "
+              "RequirementV3.qos_class for every class; BookSim "
+              "priority = class with the dense class_priority vector derived "
+              "from the declared QoS ranks (latency_critical 2 > bandwidth 1 "
+              "> best_effort 0) and the stock priority-honouring select "
+              "switch allocator (VC allocation remains iSLIP); identity VC "
+              "transitions, use_noc_latency 1. Network-service priority only: "
+              "no ASTRA scheduler or RTL priority claim",
+    ),
     "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+T1-torusdor-dump+prepared-v2",
+            "booksim2-fork+T1-torusdor-dump+prepared-v2+multi-class/v1",
         lowerer_version="DORTORUS/1",
         qualifier="veritx_dse.backend.booksim_projection:"
-                  "qualify_native_torus_dor",
+                  "qualify_native_torus_dor_product",
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_torus_route.py",
             "tracks/t3-topology/dse/tests/"
@@ -191,16 +287,16 @@ QUALIFICATION: dict[str, QualificationRecord] = {
     "CERTIFIED_BOOKSIM_GEC_HYBRID_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_GEC_HYBRID_V1",
         state="QUALIFIED",
-        projection_semantics_version="booksim2-fork+GH1-ranked-union+runtime-choices-v1",
+        projection_semantics_version="booksim2-fork+GH1-ranked-union+runtime-choices-v1+multi-class/v1",
         lowerer_version="HYBRIDGECPHASETAP/1",
-        qualifier="veritx_dse.backend.booksim_projection:qualify_native_gec_hybrid",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_gec_hybrid_product",
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_gec_hybrid_execution.py",
             "tracks/t3-topology/dse/tests/test_gec_hybrid_instance.py",
             "tracks/t3-topology/dse/tests/test_gec_hybrid_candidate_cdg.py",
         ),
         scope="GEC_HYBRID, d >= 2, o*d == k-1, exact 2*d phase/tap VCs, "
-              "unit-latency mesh channels plus MECS wires, one traffic class, "
+              "unit-latency mesh channels plus MECS wires, "
               "ranked candidate-union structural proof; mandatory runtime "
               "credit-cost/port/tap/VC-range membership evidence; no escape "
               "role, allocator fairness or buffer-availability claim",
@@ -209,10 +305,10 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         profile_id="CERTIFIED_BOOKSIM_GEC_MECS_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+G1-gecmecs-dump+prepared-v1",
+            "booksim2-fork+G1-gecmecs-dump+prepared-v1+multi-class/v1",
         lowerer_version="DORGECMECS/1",
         qualifier="veritx_dse.backend.booksim_projection:"
-                  "qualify_native_gec_mecs",
+                  "qualify_native_gec_mecs_product",
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_gec_mecs_differential.py",
             "tracks/t3-topology/dse/tests/test_gec_mecs_vc_partition.py",
@@ -220,17 +316,17 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "test_gec_mecs_backend_execution.py",
         ),
         scope="MaterializedFamily.GEC_MECS, multidrop express (d >= 2, "
-              "o*d == k-1), shared wires only, one VC per tap, "
+              "o*d == k-1), shared wires only, one VC per tap, one or more canonical traffic classes over the full tap VC envelope, "
               "routing_delay > 0, use_noc_latency 0",
     ),
     "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2",
+            "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2+multi-class/v1",
         lowerer_version="SROTAO1TURN1/1",
         qualifier="veritx_dse.backend.booksim_projection:"
-                  "qualify_native_srota_row_first",
+                  "qualify_native_srota_row_first_product",
         evidence_paths=(
             "tracks/t3-topology/dse/tests/"
             "test_srota_rowfirst_differential.py",
@@ -249,10 +345,10 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         profile_id="CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+F1-flatflymin-dump+prepared-v1",
+            "booksim2-fork+F1-flatflymin-dump+prepared-v1+multi-class/v1",
         lowerer_version="FLATFLYMIN/1",
         qualifier="veritx_dse.backend.booksim_projection:"
-                  "qualify_native_flatfly_min",
+                  "qualify_native_flatfly_min_product",
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_flatfly_min.py",
             "tracks/t3-topology/dse/tests/"
@@ -264,20 +360,94 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "from the artifact and proven by full adjacency equality, "
               "never assumed; native n <= 4), concentration 1, "
               "routing class FLATFLY_MIN, identity node->router, unit "
-              "latency/weight, no parallel channels, single class",
+              "latency/weight, no parallel channels, one or more canonical traffic "
+              "classes over the full VC set",
     ),
 }
 
+#: Real pinned-BookSim coverage for every promoted multi-class family.
+MULTI_CLASS_SCOPE = {
+    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1":
+        "multi-class: a square native grid that over-provisions the attached "
+        "endpoints binds a sparse native-terminal subset; unbound terminals "
+        "idle; route evidence still covers the full native terminal universe; "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1":
+        "multi-class: every canonical class rides the exact 2-VC dateline "
+        "envelope; per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
+        "multi-class: every canonical class uses the full VC envelope; "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_ANYNET_MC_V1":
+        "multi-class: the explicit AnyNet graph carries every canonical class "
+        "with per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1":
+        "multi-class: every canonical class rides the single Plane D subnet "
+        "(Plane C stays one class per subnet) over the full routing VC "
+        "envelope; per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_GEC_MECS_V1":
+        "multi-class: every canonical class uses the full tap VC envelope; "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_GEC_HYBRID_V1":
+        "multi-class: every canonical class uses the complete phase/tap VC "
+        "envelope; per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_QTREE_NCA_V1":
+        "multi-class: every canonical class uses the full VC set with "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_TREE4_NCA_V1":
+        "multi-class: every canonical class uses the full VC set with "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_RING_DATELINE_V1":
+        "multi-class: every canonical class uses both dateline halves with "
+        "per-class replay and conservation",
+    "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1":
+        "multi-class: every canonical class uses the full VC envelope with "
+        "per-class replay and conservation",
+}
+
+MULTI_CLASS_EVIDENCE = (
+    "tracks/t3-topology/dse/tests/test_booksim_multiclass_topologies.py",)
+for _multi_class_profile in (
+    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1",
+    "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
+    "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
+    "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
+    "CERTIFIED_BOOKSIM_GEC_MECS_V1",
+    "CERTIFIED_BOOKSIM_GEC_HYBRID_V1",
+    "CERTIFIED_BOOKSIM_QTREE_NCA_V1",
+    "CERTIFIED_BOOKSIM_TREE4_NCA_V1",
+    "CERTIFIED_BOOKSIM_RING_DATELINE_V1",
+    "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1",
+):
+    _record = QUALIFICATION[_multi_class_profile]
+    _suffix = MULTI_CLASS_SCOPE[_multi_class_profile]
+    QUALIFICATION[_multi_class_profile] = replace(
+        _record,
+        evidence_paths=_record.evidence_paths + MULTI_CLASS_EVIDENCE,
+        scope=_record.scope + "; " + _suffix)
+
 EXECUTION_HANDLERS: dict[str, str] = {
+    "CERTIFIED_BOOKSIM_RING_DATELINE_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_TREE4_NCA_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_FLY_DEST_TAG_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_QTREE_NCA_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     # Qualified under its own pinned-producer evidence: per-class VC
     # enforcement is observed at native route computation, with conservation.
     "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_PRIORITY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_ANYNET_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_ANYNET_MC_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -389,11 +559,16 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.ANYNET_PROFILE.profile_id: (
             bp.ANYNET_PROFILE.semantics_version,
             getattr(bp, "_ANYNET_LOWERER_VERSION", None)),
+        bp.ANYNET_MC_PROFILE.profile_id: (
+            bp.ANYNET_MC_PROFILE.semantics_version, "ANYNET/1"),
         bp.MESH_DOR_MC_PROFILE.profile_id: (
             bp.MESH_DOR_MC_PROFILE.semantics_version,
             getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
         bp.MESH_DOR_CLASS_VC_PROFILE.profile_id: (
             bp.MESH_DOR_CLASS_VC_PROFILE.semantics_version,
+            getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
+        bp.MESH_DOR_CLASS_PRIORITY_PROFILE.profile_id: (
+            bp.MESH_DOR_CLASS_PRIORITY_PROFILE.semantics_version,
             getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
         bp.TORUS_DOR_PROFILE.profile_id: (
             bp.TORUS_DOR_PROFILE.semantics_version,
@@ -411,6 +586,14 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
             bp.FLATFLY_MIN_PROFILE.semantics_version,
             getattr(bp, "_FLATFLY_MIN_LOWERER_VERSION", None)),
     }
+    from veritx_dse.backend.qtree_projection import PROFILE as qtree
+    result[qtree.profile_id] = (qtree.semantics_version, "QTREENCA/1")
+    from veritx_dse.backend.ring_projection import PROFILE as ring
+    result[ring.profile_id] = (ring.semantics_version, "RINGDATELINE/1")
+    from veritx_dse.backend.tree4_projection import PROFILE as tree4
+    result[tree4.profile_id] = (tree4.semantics_version, "TREE4NCA/1")
+    from veritx_dse.backend.fly_projection import PROFILE as fly
+    result[fly.profile_id] = (fly.semantics_version, "FLYDESTTAG/1")
     for controlled_id, base_id in CONTROLLED_BASE.items():
         sem, lower = result[base_id]
         result[controlled_id] = (sem + CONTROLLED_SEMANTICS_SUFFIX, lower)

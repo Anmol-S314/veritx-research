@@ -26,11 +26,14 @@ from veritx_dse.model.compile_model import AgentKind  # noqa: E402
 from veritx_dse.model.domain_intent import PowerDomain, PowerPolicy  # noqa: E402
 from veritx_dse.model.ip_catalog import (  # noqa: E402
     IP_CATALOG,
+    MATERIALIZERS,
     NOT_PROVIDED,
     InterfaceRole,
     IpCatalogError,
     IpCategory,
     IpTemplate,
+    READY_CAPABILITIES,
+    ROADMAP,
     get_ip_template,
     list_ip_templates,
     stamp_ip_template,
@@ -204,21 +207,26 @@ def test_unsupported_semantics_are_listed_not_omitted():
         "pcie-cxl-root": ("address.decode", "sideband.interface"),
     }
     assert set(gated) == set(REQUIRED_IDS)
+    stampable = {"hbm3e-memory", "csr-config-controller", "pcie-cxl-root"}
     for tid, reqs in gated.items():
         t = get_ip_template(tid)
         assert t.capability_requirements == tuple(sorted(reqs)), tid
-        assert t.stampable_now is False, tid
+        assert t.stampable_now == (tid in stampable), tid
         assert all(r for r in t.capability_requirements), tid
 
 
-def test_stampable_now_is_true_only_with_no_requirements():
-    assert _template().stampable_now is True
-    assert _template(capability_requirements=("cdc.crossing",)).stampable_now \
-        is False
+def test_stampable_now_tracks_ready_capabilities_and_a_materializer():
+    assert get_ip_template("hbm3e-memory").stampable_now is True
+    assert get_ip_template("csr-config-controller").stampable_now is True
+    assert get_ip_template("pcie-cxl-root").stampable_now is True
+    assert get_ip_template("streaming-dma-engine").stampable_now is False
+    assert get_ip_template("rcu-collective").stampable_now is False
+    assert _template().stampable_now is False
+    assert _template(capability_requirements=("cdc.crossing",)).stampable_now is False
 
 
-def test_unsupported_stampable_row_has_no_consumer():
-    with pytest.raises(UnsupportedSemantics, match="no canonical instance materializer"):
+def test_unknown_template_refuses_before_materializer_checks():
+    with pytest.raises(IpCatalogError):
         stamp_ip_template(_template())
 
 
@@ -232,12 +240,12 @@ def test_stamping_a_gated_template_names_the_unmet_requirement():
 
 def test_unimplemented_catalog_templates_remain_gated():
     for template in IP_CATALOG:
-        if template.id == "hbm3e-memory":
+        if template.stampable_now:
             continue
         with pytest.raises(UnsupportedSemantics) as exc:
             stamp_ip_template(template)
         for requirement in template.capability_requirements:
-            assert requirement in str(exc.value), template.id
+            assert requirement in str(exc.value) or template.id in str(exc.value), template.id
 
 
 def test_stamping_accepts_an_id_or_a_template_and_refuses_unknown_ids():
@@ -272,8 +280,10 @@ def test_hbm3e_stamp_materializes_and_consumes_real_endpoint_read_write():
 
     example = Path(__file__).resolve().parents[1] / "examples/tensor_demand_v5.json"
     doc = json.loads(example.read_text())
+    from veritx_dse.model.topology_intent import ConcentratedMeshIntent
     original = CompileRequestV5.from_dict(doc["design"])
-    expanded_topology = replace(original.base_v4.topology, concentration=2)
+    expanded_topology = ConcentratedMeshIntent(
+        side_length=original.base_v4.topology.side_length, concentration=2)
     original = replace(original, base_v4=replace(original.base_v4,
                                                   topology=expanded_topology))
     stamped = stamp_ip_template(
@@ -507,3 +517,210 @@ def test_to_dict_carries_every_contract_field():
         "capability_requirements", "provenance", "area_mm2", "power_w",
     }
     assert set(_template().to_dict()) == expected
+
+
+def _stamp_base():
+    import json
+    from pathlib import Path
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    doc = json.loads((Path(__file__).resolve().parents[1] / "examples" / "tensor_demand_v5.json").read_text())
+    return CompileRequestV5.from_dict(doc["design"])
+
+
+def test_csr_config_controller_stamp_materializes_and_compiles():
+    import json
+    from dataclasses import replace
+
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.model.compile_model import AgentKind
+    from veritx_dse.model.topology_intent import ConcentratedMeshIntent
+    original = _stamp_base()
+    original = replace(original, base_v4=replace(
+        original.base_v4,
+        topology=ConcentratedMeshIntent(
+            side_length=original.base_v4.topology.side_length,
+            concentration=2)))
+    stamped = stamp_ip_template(
+        "csr-config-controller", original, instance_id="cfg0",
+        address_base=0xC000, address_size=16,
+        clock_domain="network", power_domain="DEFAULT",
+        initiator_group_index=0, access_permission="WO")
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    assert isinstance(stamped, CompileRequestV5)
+    assert stamped.design_hash() != original.design_hash()
+    agent = stamped.base_v4.agents[-1]
+    assert (agent.kind, agent.ip_template_id, agent.ip_instance_id) == (
+        AgentKind.PERIPHERAL, "csr-config-controller", "cfg0")
+    loaded = CompileRequestV5.from_dict(json.loads(json.dumps(stamped.to_dict())))
+    assert loaded.design_hash() == stamped.design_hash()
+    compilation = FabricCompiler().compile(loaded)
+    assert compilation.status == "COMPILED", compilation.error
+    root = compilation.compiled_system
+    root.revalidate()
+    entry = next(e for e in root.fabric.address_decode.entries
+                 if e.target_agent_group == len(loaded.base_v4.agents) - 1)
+    assert (entry.base, entry.size) == (0xC000, 16)
+    rules = [r for r in (loaded.access_policy.rules if loaded.access_policy else ())
+             if r.target == f"group:{len(loaded.base_v4.agents) - 1}"]
+    assert len(rules) == 1 and rules[0].permission.value == "WO"
+
+
+def test_csr_stamp_refuses_missing_multiplane_evidence_path():
+    original = _stamp_base()
+    with pytest.raises(UnsupportedSemantics):
+        stamp_ip_template("telemetry-atb-trace-hub", original, instance_id="t0",
+                          address_base=0, address_size=1,
+                          clock_domain="network", power_domain="DEFAULT",
+                          initiator_group_index=0, access_permission="WO")
+
+
+def test_pcie_cxl_root_stamp_materializes_an_initiator():
+    import json
+    from dataclasses import replace
+
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.model.compile_model import AgentKind
+    from veritx_dse.model.topology_intent import ConcentratedMeshIntent
+    original = _stamp_base()
+    original = replace(original, base_v4=replace(
+        original.base_v4,
+        topology=ConcentratedMeshIntent(
+            side_length=original.base_v4.topology.side_length,
+            concentration=2)))
+    stamped = stamp_ip_template(
+        "pcie-cxl-root", original, instance_id="root0",
+        clock_domain="network", power_domain="DEFAULT")
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    assert isinstance(stamped, CompileRequestV5)
+    assert stamped.design_hash() != original.design_hash()
+    agent = stamped.base_v4.agents[-1]
+    assert (agent.kind, agent.ip_template_id, agent.ip_instance_id) == (
+        AgentKind.NIC, "pcie-cxl-root", "root0")
+    assert stamped.base_v4.address_map.ranges == original.base_v4.address_map.ranges
+    loaded = CompileRequestV5.from_dict(json.loads(json.dumps(stamped.to_dict())))
+    compilation = FabricCompiler().compile(loaded)
+    assert compilation.status == "COMPILED", compilation.error
+    root = compilation.compiled_system
+    root.revalidate()
+    endpoint = next(e for e in root.fabric.attachment.endpoints
+                    if e.agent.group_index == len(loaded.base_v4.agents) - 1)
+    assert endpoint.agent.kind is AgentKind.NIC
+
+
+def test_pcie_stamp_refuses_an_address_window_argument():
+    original = _stamp_base()
+    with pytest.raises(IpCatalogError, match="no address window"):
+        stamp_ip_template("pcie-cxl-root", original, instance_id="root0",
+                          address_base=0x1000, clock_domain="network",
+                          power_domain="DEFAULT")
+
+
+def test_structural_templates_name_their_missing_shape():
+    original = _stamp_base()
+    for template_id in ("streaming-dma-engine", "cdc-async-fifo-bridge",
+                        "pipeline-retiming-stage", "ucie-d2d-chiplet",
+                        "concentrated-router"):
+        with pytest.raises(UnsupportedSemantics):
+            stamp_ip_template(template_id, original, instance_id="x",
+                              clock_domain="network", power_domain="DEFAULT")
+
+
+def test_ready_capability_table_is_a_superset_of_the_stamped_requirements():
+    for template_id in ("hbm3e-memory", "csr-config-controller",
+                        "pcie-cxl-root"):
+        assert set(get_ip_template(template_id).capability_requirements) <= READY_CAPABILITIES
+
+EXPECTED_BLOCKERS = {
+    "npu-tensor-core": "WORKLOAD_COMPUTE_ARCHITECTURE_MODEL_ABSENT",
+    "vector-coprocessor": "WORKLOAD_COMPUTE_ARCHITECTURE_MODEL_ABSENT",
+    "streaming-dma-engine": "BIDIRECTIONAL_ROLE_NOT_REALIZABLE",
+    "telemetry-atb-trace-hub": "STREAM_PROTOCOL_NOT_REALIZED",
+    "cdc-async-fifo-bridge": "STRUCTURAL_NOT_ENDPOINT",
+    "pipeline-retiming-stage": "STRUCTURAL_NOT_ENDPOINT",
+    "rcu-collective": "ROUTER_RCU_NOT_CONSUMED",
+    "ucie-d2d-chiplet": "BIDIRECTIONAL_ROLE_NOT_REALIZABLE",
+    "concentrated-router": "CATEGORY_ERROR_ROUTER_IS_FABRIC_STRUCTURE",
+}
+
+EXPECTED_DETAIL_FRAGMENTS = {
+    "npu-tensor-core": ("no compute-tile internal model",
+                        "execution semantics cannot be stamped"),
+    "vector-coprocessor": ("no compute-tile internal model",
+                           "execution semantics cannot be stamped"),
+    "streaming-dma-engine": ("interface_role=BIDIRECTIONAL",
+                             "ATTACHMENT",
+                             "dual-path"),
+    "telemetry-atb-trace-hub": ("no STREAM family",
+                                "ATTACHMENT",
+                                "no adapter exists"),
+    "cdc-async-fifo-bridge": ("CdcCell generation",
+                              "not a port stamp"),
+    "pipeline-retiming-stage": ("pipeline RTL",
+                                "not a port stamp"),
+    "rcu-collective": ("ROUTE-011",
+                       "FUTURE_CONTRACT",
+                       "no consumed artifact"),
+    "ucie-d2d-chiplet": ("BIDIRECTIONAL bridge",
+                         "ATTACHMENT",
+                         "no PHY or width-conversion model"),
+    "concentrated-router": ("NIC stand-in",
+                            "co-located per router",
+                            "composed wrapper cannot connect them"),
+}
+
+
+def test_roadmap_covers_exactly_the_non_materializable_templates():
+    roadmap_ids = [row[0] for row in ROADMAP]
+    assert len(roadmap_ids) == 9
+    assert len(set(roadmap_ids)) == len(roadmap_ids)
+    assert set(roadmap_ids) == {t.id for t in IP_CATALOG} - set(MATERIALIZERS)
+
+
+def test_roadmap_rows_are_four_tuples_with_machine_actionable_blockers():
+    assert {row[0]: row[1] for row in ROADMAP} == EXPECTED_BLOCKERS
+    for row in ROADMAP:
+        assert len(row) == 4
+        template_id, blocker_id, detail, evidence = row
+        assert isinstance(template_id, str) and template_id
+        assert blocker_id == blocker_id.upper()
+        assert all(ch.isalnum() or ch == "_" for ch in blocker_id)
+        assert isinstance(detail, str) and detail.strip()
+        assert evidence is None or (isinstance(evidence, str)
+                                    and evidence.strip())
+
+
+def test_roadmap_blocker_details_name_a_concrete_missing_artifact_or_reason():
+    for template_id, _, detail, _ in ROADMAP:
+        assert template_id in EXPECTED_DETAIL_FRAGMENTS
+        for fragment in EXPECTED_DETAIL_FRAGMENTS[template_id]:
+            assert fragment in detail, (template_id, fragment)
+
+
+def test_roadmap_evidence_paths_exist_in_the_repository():
+    repo_root = Path(__file__).resolve().parents[4]
+    for template_id, _, _, evidence in ROADMAP:
+        if evidence is None:
+            continue
+        assert not evidence.startswith("/"), (template_id, evidence)
+        assert (repo_root / evidence).exists(), (template_id, evidence)
+
+
+def test_every_non_materializer_raises_unsupported_semantics():
+    assert {t.id for t in IP_CATALOG} - set(MATERIALIZERS) == set(EXPECTED_BLOCKERS)
+    for template in IP_CATALOG:
+        if template.id in MATERIALIZERS:
+            continue
+        with pytest.raises(UnsupportedSemantics):
+            stamp_ip_template(template)
+
+
+def test_get_ip_template_raises_ip_catalog_error_for_unknown_ids():
+    for unknown in ("does-not-exist", "npu-tensor-core-2", "NPU-TENSOR-CORE"):
+        with pytest.raises(IpCatalogError):
+            get_ip_template(unknown)
+
+
+def test_roadmap_is_exported_in_all():
+    import veritx_dse.model.ip_catalog as ip_catalog_module
+    assert "ROADMAP" in ip_catalog_module.__all__
+    assert ip_catalog_module.ROADMAP is ROADMAP

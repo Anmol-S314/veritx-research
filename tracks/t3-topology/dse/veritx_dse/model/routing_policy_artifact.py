@@ -270,7 +270,9 @@ def normalize_legacy_route(topology, route, allocation, graph=None):
     Refuse torus VC/dateline and rank-stateful routes rather than erase state
     or pretend a broad VC envelope is the qualified routing realization.
     """
-    from veritx_dse.core.route_artifact import RouteArtifact, DOR_TORUS_XY
+    from veritx_dse.core.route_artifact import (
+        DOR_TORUS_XY, FLY_DEST_TAG, RING_DATELINE, RouteArtifact,
+    )
     from veritx_dse.model.route_artifact_v3 import RouteArtifactV3, ShapePolicyRoute
     from veritx_dse.model.resource_graph import resource_graph_from_topology
     graph = graph if graph is not None else resource_graph_from_topology(topology)
@@ -331,6 +333,23 @@ def normalize_legacy_route(topology, route, allocation, graph=None):
         raise UnsupportedSemantics("stateful legacy routing adapter is pending Phase B; legacy proof/execution retained")
     if isinstance(route, RouteArtifact) and any(c.id == DOR_TORUS_XY for c in route.routing_classes):
         raise UnsupportedSemantics("torus dateline allocation adapter is pending Phase B; legacy proof/execution retained")
+    if isinstance(route, RouteArtifact) and any(c.id == FLY_DEST_TAG for c in route.routing_classes):
+        # A fly flit is addressed to a TERMINAL whose ejection point is a
+        # stage-2 router, so the routable destinations are a strict subset of
+        # the routers and a (src, dst) router relation would either be
+        # incomplete or invent hops to routers no flow can reach. The
+        # destination-indexed CDG over terminals is the proof; refusing here
+        # keeps a vacuous total relation from replacing it.
+        raise UnsupportedSemantics(
+            "fly destination-tag allocation adapter is pending Phase B; the "
+            "destination-indexed network certificate is the proof")
+    if isinstance(route, RouteArtifact) and any(c.id == RING_DATELINE for c in route.routing_classes):
+        # Same reason as the torus: the half a hop occupies is recomputed per
+        # hop from (position, destination), which the generic stateless
+        # normalizer erases. The network certificate's 1-D dateline CDG is
+        # the proof; refusing here keeps that proof from being replaced by a
+        # vacuous one.
+        raise UnsupportedSemantics("ring dateline allocation adapter is pending Phase B; legacy proof/execution retained")
     if isinstance(route, RouteArtifactV3) and set(route.allowed_transitions) != set(allocation.resources.allowed_transitions):
         raise UnsupportedSemantics(
             "legacy route transit transitions differ from the VC-assignment projection; "

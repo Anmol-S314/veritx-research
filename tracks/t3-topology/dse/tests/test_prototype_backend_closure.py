@@ -42,7 +42,7 @@ def test_pinned_put_is_atomic_and_legacy_put_remains_compatible(client):
     assert 'STALE_REVIEW' in next(r.text for r in responses if r.status_code != 200)
     assert client.put(f'/api/v1/projects/{pid}/draft', json={'request': draft['request']}).status_code == 200
 
-def test_candidate_adoption_checks_hash_and_preserves_recoverable_draft(client):
+def test_candidate_adoption_refuses_unverifiable_legacy_study(client):
     pid = project(client)
     compiled = client.post(f'/api/v1/projects/{pid}/compile').json()
     svc = client.app.state.product
@@ -51,13 +51,12 @@ def test_candidate_adoption_checks_hash_and_preserves_recoverable_draft(client):
     endpoint = '/api/v1/optimizations/opt-test/candidates/c1/use'
     refused = client.post(endpoint, json={'expected_draft_design_hash': 'sha256:stale'})
     assert refused.status_code != 200 and 'STALE_REVIEW' in refused.text
-    adopted = client.post(endpoint, json={'expected_draft_design_hash': draft['design_hash']})
-    assert adopted.status_code == 200, adopted.text
+    refused = client.post(endpoint, json={'expected_draft_design_hash': draft['design_hash']})
+    assert refused.status_code != 200
+    assert 'contract-v2 evaluation evidence' in refused.text
     history = client.get(f'/api/v1/projects/{pid}/draft-history').json()['snapshots']
-    assert len(history) == 1 and history[0]['design_hash'] == draft['design_hash']
-    restored = client.post(f'/api/v1/projects/{pid}/draft-history/{history[0]["snapshot_id"]}/restore', json={'expected_draft_design_hash': adopted.json()['design_hash']})
-    assert restored.status_code == 200, restored.text
-    assert restored.json()['design_hash'] == draft['design_hash']
+    assert history == []
+    assert client.get(f'/api/v1/projects/{pid}/draft').json()['design_hash'] == draft['design_hash']
     assert client.get(f'/api/v1/projects/{pid}').json()['active_revision_id'] == compiled['revision_id']
 
 def sealed_run(client, tmp_path):
@@ -89,10 +88,19 @@ def test_verified_reader_bounds_bytes_and_refuses_parent_symlinks(tmp_path):
     with pytest.raises(RunBundleError):
         read_verified_file(root, 'a/data')
 
-def test_job_events_are_real_state_records_and_close_at_terminal(client):
+def test_job_events_are_real_state_records_and_close_at_terminal(client, monkeypatch):
     pid = project(client)
-    client.app.state.product.store.create_job(pid, {'job_id': 'job-events', 'project_id': pid, 'kind': 'EVALUATION', 'state': 'COMPLETED', 'revision_id': None, 'submitted_at': '2026-01-01', 'updated_at': '2026-01-01'})
+    product = client.app.state.product
+    product.store.create_job(pid, {'job_id': 'job-events', 'project_id': pid, 'kind': 'EVALUATION', 'state': 'COMPLETED', 'revision_id': None, 'submitted_at': '2026-01-01', 'updated_at': '2026-01-01'})
+    original_get_job = product.get_job
+    reads = 0
+    def counted_get_job(job_id):
+        nonlocal reads
+        reads += 1
+        return original_get_job(job_id)
+    monkeypatch.setattr(product, 'get_job', counted_get_job)
     response = client.get('/api/v1/jobs/job-events/events')
+    assert reads == 1
     assert response.status_code == 200
     assert response.headers['content-type'].startswith('text/event-stream')
     line = next(line for line in response.text.splitlines() if line.startswith('data: '))

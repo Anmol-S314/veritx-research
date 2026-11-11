@@ -18,12 +18,14 @@ from veritx_dse.core.errors import Refusal
 from veritx_dse.model.topology_intent import (  # noqa: E402
     AUTHORABLE_INTENT_KINDS, StructuredTopologyIntent, ConcentratedMeshIntent, ExplicitTopologyIntent,
     FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
-    SrotaIntent, TorusIntent, capability_family_label,
+    FlyIntent, QTreeIntent, RingIntent, SrotaIntent, TorusIntent, Tree4Intent,
+    capability_family_label,
 )
 from veritx_dse.model.family_registry import spec_for
 from veritx_dse.model.topology_artifact import STRUCTURED_FAMILIES
 
 def _probe_intents() -> dict[str, Any]:
+    from veritx_dse.model.topology_intent import QTreeIntent
     from veritx_dse.model import topology_ir as tir
     k = 2
     links = []
@@ -47,6 +49,10 @@ def _probe_intents() -> dict[str, Any]:
                                  concentration=1),
         "fattree": FatTreeIntent(switch_radix=4, level_count=2),
         "explicit": ExplicitTopologyIntent(graph=graph),
+        "qtree_native": QTreeIntent(radix=4, levels=3),
+        "tree4_native": Tree4Intent(radix=4, levels=3),
+        "ring_native": RingIntent(router_count=64),
+        "fly_native": FlyIntent(radix=4, levels=3),
         "gec_mesh": GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
                                       concentration=1),
         "gec_express": GecTopologyIntent(
@@ -74,8 +80,10 @@ def _probe_intents() -> dict[str, Any]:
     }
     for family, spec in STRUCTURED_FAMILIES.items():
         fields = spec["fields"]
+        bool_fields = frozenset(spec.get("bool_fields", ()))
         out[family] = StructuredTopologyIntent(
-            family=family, params={f: 2 for f in fields})
+            family=family,
+            params={f: (True if f in bool_fields else 2) for f in fields})
     for label, intent in out.items():
         assert capability_family_label(intent) == label, (label, intent.kind)
     return out
@@ -197,6 +205,14 @@ def _probe_endpoints(intent: Any) -> int:
         return intent.grid_side_length ** 2 * intent.concentration
     if isinstance(intent, SrotaIntent):
         return intent.side_length ** 2 * intent.concentration
+    if getattr(intent, "kind", None) == "qtree_native":
+        return intent.radix ** intent.levels
+    if getattr(intent, "kind", None) == "tree4_native":
+        return intent.radix ** intent.levels
+    if getattr(intent, "kind", None) == "fly_native":
+        return intent.radix ** intent.levels
+    if getattr(intent, "kind", None) == "ring_native":
+        return intent.router_count
     if isinstance(intent, FatTreeIntent):
         return intent.endpoint_capacity
     if getattr(intent, "kind", None) == "structured":

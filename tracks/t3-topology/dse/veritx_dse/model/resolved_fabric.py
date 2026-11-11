@@ -382,6 +382,11 @@ class ResolvedFabric:
             routing_realization=routing_realization,
             packet_format=packet_format, router_behavior=router_behavior,
             address_decode=address_decode)
+        from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+            cdc_cells_for_agents,
+        )
+        cdc_cells = cdc_cells_for_agents(
+            tuple(getattr(design, "agents", ()) or ()))
         try:
             fabric.validate_against_deterministic(
                 topology=topology, attachment=attachment,
@@ -390,7 +395,8 @@ class ResolvedFabric:
                 packet_format=packet_format,
                 router_behavior=router_behavior,
                 address_decode=address_decode, route=route,
-                resolved_route=resolved_route, vc_assignment=vc_assignment)
+                resolved_route=resolved_route, vc_assignment=vc_assignment,
+                cdc_cells=cdc_cells)
         except ValueError as exc:
             raise ResolvedFabricError(
                 f"hardware fabric does not validate for the deterministic "
@@ -416,6 +422,11 @@ class ResolvedFabric:
             routing_realization=routing_realization,
             packet_format=packet_format, router_behavior=router_behavior,
             address_decode=address_decode)
+        from veritx_dse.model.clock_power_cdc import (  # noqa: PLC0415
+            cdc_cells_for_agents,
+        )
+        cdc_cells = cdc_cells_for_agents(
+            tuple(getattr(design, "agents", ()) or ()))
         try:
             fabric.validate_against_adaptive(
                 topology=topology, attachment=attachment,
@@ -424,7 +435,7 @@ class ResolvedFabric:
                 packet_format=packet_format,
                 router_behavior=router_behavior,
                 address_decode=address_decode, policy=policy,
-                relation=relation, binding=binding)
+                relation=relation, binding=binding, cdc_cells=cdc_cells)
         except ValueError as exc:
             raise ResolvedFabricError(
                 f"hardware fabric does not validate for the adaptive design: "

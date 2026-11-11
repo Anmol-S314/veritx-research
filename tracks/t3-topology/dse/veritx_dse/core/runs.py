@@ -5,7 +5,7 @@ Rationale: docs/decisions/modules/core.md
 from __future__ import annotations
 
 import datetime as _dt
-import fcntl
+from .file_lock import lock_exclusive, unlock
 import hashlib
 import json
 import os
@@ -27,18 +27,19 @@ from .recovery import atomic_write
 def _exclusive_lock(path: Path) -> Iterator[None]:
     """Interprocess exclusive lock for a run's read-modify-write authority.
 
-    ``flock`` on a dedicated lock file (POSIX, as the product targets
-    Linux containers). Two concurrent ``add_result`` writers are
+    OS-native locking on a dedicated file. Two concurrent ``add_result`` writers are
     serialized, so neither can observe a stale manifest and drop the
     other's result. The lock file is created but never contains data.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+        lock_exclusive(fd)
+        try:
+            yield
+        finally:
+            unlock(fd)
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
 STATES = ("CREATED", "VALIDATED", "PLANNED", "RUNNING",

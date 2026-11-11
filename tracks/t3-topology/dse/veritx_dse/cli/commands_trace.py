@@ -30,6 +30,38 @@ def cmd_trace_validate(ctx: Ctx, args):
         print(f"  \033[32m✓ Trace is usable but has {len(result.warnings)} warnings\033[0m")
     output(ctx, result.to_dict())
 
+def cmd_trace_profile(ctx: Ctx, args):
+    """Generate a BookSim trace from per-initiator traffic profiles."""
+    import json
+    from ..workload.traffic_profile import (
+        TrafficProfileSpec, generate_trace, scan_trace,
+    )
+    spec_path = Path(args.spec)
+    try:
+        spec = TrafficProfileSpec.from_dict(json.loads(spec_path.read_text()))
+        data = generate_trace(spec)
+        summary = scan_trace(
+            data, endpoint_count=spec.endpoint_count,
+            max_packet_flits=spec.max_packet_flits)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        fail(ctx, f"traffic profile refused: {exc}")
+        return
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    ok(ctx, f"Trace written: {out} ({summary.num_packets} packets, "
+            f"span {summary.max_timestamp} cycles)")
+    output(ctx, {
+        "trace": str(out),
+        "bytes": len(data),
+        "packets": summary.num_packets,
+        "max_timestamp": summary.max_timestamp,
+        "endpoint_count": summary.endpoint_count,
+        "profiles": len(spec.profiles),
+        "traffic_class": spec.profiles[0].traffic_class,
+    })
+
+
 def cmd_trace_info(ctx: Ctx, args):
     """Show detailed trace information."""
     from ..simulation.traces import validate_trace
@@ -146,6 +178,7 @@ def cmd_trace_hpc(ctx: Ctx, args):
 def _get_all():
     return {
         "validate": cmd_trace_validate,
+        "profile": cmd_trace_profile,
         "info": cmd_trace_info,
         "extract": cmd_trace_extract,
         "slice": cmd_trace_slice,
