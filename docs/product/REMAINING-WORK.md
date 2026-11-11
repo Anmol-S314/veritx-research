@@ -410,3 +410,25 @@ route/conservation qualification at the c=2 shape, and the product-level refusal
 updated to match. No redesign is implied. This row therefore moves from
 "producer/mapping missing" (L) to "live qualification" (M) — the code path is present
 and the claim on it is what is unproven.
+
+### Playwright row 12 — the fourth failure is not a UI defect (checked 2026-11-12)
+
+The row attributed it to "a UI input not enabled in the recorded fixture path". Isolated
+at the current head that does not reproduce: `npx playwright test tests/native-sweep.spec.ts`
+passes, and passes **3/3** under `--repeat-each=3` (8.7 s). The spec needs nothing the
+fixture lacks — `public/data/topology_sweep.json` carries 143 rows, 46 with
+`native_model.status == "AVAILABLE"`, `mesh4x4` at `native_area_mm2 = 0.280976` and
+`gec_mecs16` `UNSUPPORTED`, which is exactly what the assertions read.
+
+So the failure is **context-dependent**, i.e. test isolation rather than product
+behaviour. It appeared only in the 132-test run, whose `.last-run.json` records four
+failed ids with **two different project-hash prefixes** even though
+`playwright.config.ts` declares no `projects` — consistent with the three gateway-less
+`app_repro` specs perturbing shared state (one Vite server via
+`reuseExistingServer: true`, a global `page.route` mock over the same sweep endpoint)
+rather than with a control that is disabled.
+
+Consequence for the row: the three gateway failures stay operator-owned and red, but this
+one must not be charged to a Studio UI fix it does not need. It should be re-attributed
+to isolation and reproduced inside a full-suite run before anything is edited — a fix
+applied to passing UI code would be a change made to satisfy a phantom.
