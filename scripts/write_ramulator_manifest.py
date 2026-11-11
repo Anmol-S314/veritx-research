@@ -53,7 +53,7 @@ def main() -> int:
              "(repeatable; omit for whole-repo legacy semantics)")
     args = ap.parse_args()
     try:
-        backend = discover()
+        backend = discover(verify=False)
     except Exception as exc:  # noqa: BLE001
         print(f"ramulator manifest: discovery failed: {exc}")
         return 1

@@ -1,0 +1,21 @@
+{
+  "DESIGN_NAME": "project_top",
+  "VERILOG_FILES": [
+    "dir::src/noc_pkg.sv",
+    "dir::src/router.sv",
+    "dir::src/noc_top.sv",
+    "dir::src/addr_decode.sv",
+    "dir::src/ordering_fsm.sv",
+    "dir::src/adapter_axi5_g0.sv",
+    "dir::src/adapter_axi5_g1.sv",
+    "dir::src/cdc_bypass.sv",
+    "dir::src/destination_adapter.sv",
+    "dir::src/project_top.sv"
+  ],
+  "PDK": "sky130A",
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 10.0,
+  "LINTER_DISABLE_WARNINGS": [],
+  "USE_SLANG": true,
+  "ERROR_ON_SYNTH_CHECKS": false
+}

@@ -1,0 +1,9 @@
+{
+  "DESIGN_NAME": "destination_adapter",
+  "VERILOG_FILES": [
+    "dir::src/destination_adapter.sv"
+  ],
+  "PDK": "sky130A",
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 10.0
+}

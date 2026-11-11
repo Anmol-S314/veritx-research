@@ -104,9 +104,13 @@ def main() -> int:
                     "custom": "explicit",
                     "srota": "srota",
                     "tree4": "structured"}
+    # Structured declarations live in the same registry as their graph builders;
+    # a second handwritten name list drifted and hid shipped qtree support.
+    from veritx_dse.model.topology_artifact import STRUCTURED_FAMILIES
+    _INTENT_KIND.update({name: "structured" for name in STRUCTURED_FAMILIES})
     intent_declared = set()
     for name in families:
-        kind = _INTENT_KIND.get(name)
+        kind = _INTENT_KIND.get(name, name if name in AUTHORABLE_INTENT_KINDS else None)
         if kind and kind in AUTHORABLE_INTENT_KINDS:
             intent_declared.add(name)
 
