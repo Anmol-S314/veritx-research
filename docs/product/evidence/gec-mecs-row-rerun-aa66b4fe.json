@@ -1,0 +1,44 @@
+{
+  "record": "gec_mecs composed-family row re-run",
+  "why": "REMAINING-WORK item 9 / OPEN-PROBLEMS 2026-11-11 section: the committed release manifest at 587d45b127c4 recorded gec_mecs final_implementation false with 2 lint warnings (dead inject_vc, 32-bit vsel with [31:2] unused). c3d360e9 fixed both declarations but the row was never re-run, so the committed evidence said 11/14 families rather than 12/14.",
+  "git_head": "aa66b4fef4354d8bfce56204cf86babbb7def0b1",
+  "platform": "sky130A",
+  "release_claim": false,
+  "scope_note": "one family row. This is not a release matrix and must never be cited as one: the fourteen-family matrix has not been re-run at this commit.",
+  "run_dir": "runs/gec-mecs-row-20261111T213227Z/",
+  "run_dir_durability": "runs/ is gitignored (.gitignore:22), so this file is the durable record and the run dir is the working artifact. Copy the dir out of tree if it must survive the next cleanup_runs.sh.",
+  "measured": {
+    "stage": "family:gec_mecs",
+    "status": "PASS",
+    "compile": "COMPILED",
+    "lint": "PASS",
+    "lint_warning_count": 0,
+    "lint_clean": true,
+    "sim": "PASS",
+    "scenarios_passed": 13,
+    "scenarios_total": 13,
+    "final_implementation": true,
+    "final_implementation_open_rows": [],
+    "manifest_result": "PASS",
+    "manifest_exit_code": 0
+  },
+  "source_dirty": true,
+  "source_dirty_paths": [
+    "M docs/research/RTL-GEC-MECS-MULTIFLIT-PIPELINE.md",
+    "M tracks/t3-topology/dse/veritx_dse/product/project_top_rtl.py",
+    "M tracks/t3-topology/rtl/chipyard/CompiledGecCreditPreview.scala"
+  ],
+  "source_dirty_note": "All three are a concurrent session's in-flight work, not part of this measurement: the SROTA composed-router hunks plus an uncommitted edit relaxing a doc sentence, and a Chipyard preview emitter change adding a --flat equivalence flag. They were measured through, not authored here, and they are recorded by name instead of being summed into an unreadable boolean.",
+  "closes": "OPEN-PROBLEMS 2026-11-11 'still open' bullet 1's A2 precondition for gec_mecs: lint 0 warnings at the committed fix. REMAINING-WORK item 9's re-run requirement for that one row.",
+  "does_not_close": [
+    "the fourteen-family release matrix re-run at this commit (REMAINING-WORK item 9)",
+    "Scope B for gec_mecs: multicast bitmap, AXI/OrderingFSM/CDC composition, physical multidrop, and formal deadlock-freedom for the shared-wire fabric all stay open",
+    "C6 / P9 physical signoff",
+    "any claim that the shared fabric rather than the composed family slice was measured: this row runs run_composed_family, whose 13 scenarios are the composed slice's"
+  ],
+  "also_measured_this_cycle": {
+    "product_gates": "make -C tracks/t3-topology product-gates -> PRODUCT GATES ALL PASS",
+    "test_complete_design": "47 passed",
+    "test_multi_flit_contention_gate": "1 passed"
+  }
+}
