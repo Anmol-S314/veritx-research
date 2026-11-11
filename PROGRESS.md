@@ -1,3 +1,27 @@
+# Reproducible state at c3d360e9 / c96b835b (2026-11-12, late)
+
+The committed tree was re-verified end-to-end after the contention-TB /
+admission rework landed as `c3d360e9`:
+
+- `tests/test_gec_mecs_pinned_shape.py` — **PASS** at the selected r02 shape
+  (lint PASS, sim PASS, scenarios all true incl. multi_flit_contention and
+  reset_recovery; 5,476/5,476 flows, design hash `ab7bce8f…`).
+- `tests/test_project_top_slice.py::test_composed_family_lints_and_sims[gec_mecs]`
+  — **PASS** with `lint_warning_count == 0` and `lint_clean == True` asserted
+  by the gate; the
+  A2 row closes on that commit (the release-clean manifest at 587d45b1 stays
+  the record of the earlier 11/14 state and remains under `runs/`).
+- SROTA and GEC-hybrid fabrics re-verified green at HEAD (lint 0 warnings;
+  256/260-pair conservation; multi-flit ordered; Scope B rows complete as
+  recorded in the committed manifests).
+- Product gates (`make -C tracks/t3-topology product-gates`): **ALL PASS** on
+  the committed tree.
+- A fresh clean-tree release matrix is re-running at
+  `runs/release-clean-20261112T031500Z/` on the current head; the verdict is
+  read from that manifest, not from the 587d45b1 one.
+- The full DSE unit suite remains un-run on the clean tree and is not claimed
+  green; the Studio Playwright measurement stands at 115/4/13 (none RTL).
+
 # Clean-tree split into owned commits + Scope B framing (2026-11-12)
 
 The 12/14 + C5 claims no longer live in an unvetted dirty tree. Summary of
