@@ -432,3 +432,13 @@ Consequence for the row: the three gateway failures stay operator-owned and red,
 one must not be charged to a Studio UI fix it does not need. It should be re-attributed
 to isolation and reproduced inside a full-suite run before anything is edited — a fix
 applied to passing UI code would be a change made to satisfy a phantom.
+
+**Caveat on the above, recorded because it limits the claim.** While that isolated run
+was taken, the Studio tree was being modified by a concurrent session (eleven files
+under `apps/studio/prototype/src/`, uncommitted, including `App.tsx`, `FlowView.tsx`
+and `ui.tsx`), and the Playwright dev server serves source straight from disk. The
+"passes 3/3" measurement is therefore true of the tree at that moment, not necessarily
+of the tree after that lane commits. What does not depend on their edits: the fixture
+content (unchanged, and sufficient for every assertion), and the isolation argument
+(an ids prefix split under a config with no `projects`). The reproduction that settles
+this must be taken on a quiet Studio tree — by its owner, after that lane lands.
