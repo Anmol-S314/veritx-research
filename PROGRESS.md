@@ -93,14 +93,15 @@ this closeout line, measured not asserted:
   `runs/veritx-p2p7p11-evidence/` report remains dated 2026-11-09 and is
   explicitly stale until re-derived.
 
-Still open: the gec_mecs 2-warning fix must land and the row re-run for
-A2/12-of-14 to stand; Scope B multicast/AXI-CDC/physical rows; the 81-router
-Chisel credit-preview emit (still OOMs structurally); REMAINING-WORK items
-11–12 (full DSE unit suite, full Playwright re-run); the Studio Playwright
-suite measured **115 passed / 4 failed / 13 skipped** with the opener's
-environment — the 3 `app_repro` failures are the absent gateway on :8099
-(operator-owned), the `native-sweep` failure is a UI input not enabled
-(fixture-path control); neither is RTL; release-hermeticity items
+Still open: the full DSE unit suite verdict (in flight at the time of
+writing) and the full matrix re-run at the reworked head (NOT claimed — the
+completed clean-tree pass remains 020000Z at 587d45b1 and the gec_mecs row
+re-run is pinned in c3993525); Scope B multicast/AXI-CDC/physical rows; the
+81-router Chisel credit-preview emit (still OOMs structurally); the Studio
+Playwright suite measured **115 passed / 4 failed / 13 skipped** — the 3
+`app_repro` failures are the absent gateway on :8099 (operator-owned), the
+`native-sweep` failure does not reproduce in isolation (context-dependent,
+to be settled on a quiet tree; neither is RTL); release-hermeticity items
 GATE-5/6/7/10/11; INT-1/NEW-PROV-1 provenance persistence.
 
 # Handoff blockers: A8 parity, slice template shape, mesh A2 (2026-11-11 19:08)
