@@ -336,7 +336,7 @@ This section supersedes earlier snapshot estimates. Only items that remain are l
 8. **P1.5 — attachment-side stable identity binding** [this repo] — v4 `Agent.group_name` substrate landed (hash-stable absent, every-group-must-declare, unique refusals, 11/11 browser exact pins, compile COMPILED with named groups); the attachment artifact (`AgentAttachmentArtifact`) still binds positionally; no `group_name → attachment` mapping artifact or the reorder-safety check exists yet. M.
 
 ### Evidence / signoff (S–M)
-9. **`--release` matrix re-run after the 2026-11-10 kncube routing fix** — DONE 2026-11-12 on the committed tree: `runs/release-clean-20261112T020000Z/` (manifest sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`). Result: **14/14 family rows PASS, `PASS_WITH_NOT_RUN`** (physical `NOT_RUN`; KNCube native-equivalence stays operator-owned). **11/14 `final_implementation: true`** (release-clean row set: mesh, torus, concentrated_mesh, ring, fly, qtree, tree4, flatfly, fattree, dragonflynew, kncube). GEC-MECS reports `final_implementation: false` with **lint warnings = 2** at the committed state (`inject_vc` declared but unused; `vsel` 32-bit with [31:2] unused, instance `u_noc.u_credited_fabric`); both are dead-declaration nits fixed in `c3d360e9` — the gec_mecs row must be re-run on that commit for A2 to close and 12/14 to stand again. SROTA and GEC-hybrid stay false under their own Scope B lists (their `multi_flit` scenario now returns true with the framing line).
+9. **`--release` matrix re-run after the 2026-11-10 kncube routing fix** — DONE 2026-11-12 on the committed tree: `runs/release-clean-20261112T020000Z/` (manifest sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`). Result: **14/14 family rows PASS, `PASS_WITH_NOT_RUN`** (physical `NOT_RUN`; KNCube native-equivalence stays operator-owned). **11/14 `final_implementation: true`** (release-clean row set: mesh, torus, concentrated_mesh, ring, fly, qtree, tree4, flatfly, fattree, dragonflynew, kncube). GEC-MECS reports `final_implementation: false` with **lint warnings = 2** at the committed state (`inject_vc` declared but unused; `vsel` 32-bit with [31:2] unused, instance `u_noc.u_credited_fabric`); both are dead-declaration nits fixed in `c3d360e9` — the gec_mecs row must be re-run on that commit for A2 to close and 12/14 to stand again. SROTA and GEC-hybrid stay false under their own Scope B lists (their `multi_flit` scenario returns true with the framing line, and since 2026-11-12 their **multicast row is CLOSED** too: `test_project_top_shared.py` measures 20 copies from 8 injected flits on each fabric, including a forked HEAD/BODY/TAIL packet, with SROTA's island-class refusal counted and the hybrid mesh asserted multicast-free; evidence `docs/research/RTL-SCOPE-B-MULTICAST.md`). Their remaining open rows are AXI/OrderingFSM/CDC composition and the physical multidrop/STA/parity.
 10. **Single-project smoke manifest (`complete_design.py --request fixture.json --out runs/…`)** — DONE 2026-11-12: `runs/single-project-smoke-20261112T000000Z/manifest.json` — freeze/compile/hardware `PASS_WITH_NOT_RUN` (physical `NOT_RUN`; not a release claim), `git_head` = the committed tree.
 11. **Backend DSE full unit suite (`sequential-gates.sh dse-pytest`)** — still pending at the close of this cycle (the clean-tree matrix and the selected-seats re-verification consumed the machine). Must finish to validate backend pins honestly; not claimed green.
 12. **Full Playwright suite re-run** — DONE (measured, red) 2026-11-12: `apps/studio/prototype` — **115 passed / 4 failed / 13 skipped** (132 tests). The four failures are Studio-owned, none RTL: three `app_repro.spec.ts` failures are the absent operator-owned gateway on :8099 (`/gw/api/v1/health` and `/projects` return 500; the Find-fabrics button stays disabled) and one `native-sweep.spec.ts` failure does not reproduce in isolation (the spec passes 3/3 under `--repeat-each=3`; the full-run split of failing ids across two project-hash prefixes under a config declaring no projects points at shared Vite/route-mock state) and is recorded as context-dependent, to be settled on a quiet tree by the Studio owner. Gateway relaunch is operator-owned per `docs/product/GATEWAY-RESTART.md`; this row stays red until the Studio owner lands those fixes.
@@ -442,3 +442,42 @@ of the tree after that lane commits. What does not depend on their edits: the fi
 content (unchanged, and sufficient for every assertion), and the isolation argument
 (an ids prefix split under a config with no `projects`). The reproduction that settles
 this must be taken on a quiet Studio tree — by its owner, after that lane lands.
+
+### Full-suite runs: what the 2h14m run actually measured, and how to run it so the result means something
+
+`python3 -m pytest tests -q` completed on 2026-11-12: **9530 passed, 55 skipped, 8
+failed, 3 errors** (8055.89 s). Attributed one by one afterwards:
+
+| outcome | count | cause |
+|---|---|---|
+| `booksim_source_verification.VerificationError: source git provenance drift/mismatch` | 3 errors | three commits landed during the run; the provenance check is designed to notice exactly that |
+| `test_staleness_gate_reports_fresh_on_stable_tree` | 1 | its own guard printed "sources changed mid-run … rerun on a stable tree" |
+| `test_a_fresh_process_is_not_stale` | 1 | same |
+| `*_renderers_are_deterministic` ×3 | 3 | pytest collected the file **before** a concurrent edit retired a blanket `assert "//" not in …`; the old assertion ran against new renderers |
+| `test_hybrid_composed_lints_and_sims_on_the_top` | 1 | passes at rest (56.19 s) — it composed from a template being edited at that moment |
+| `TestInstalledConsoleScript::test_installed_package_is_used_not_the_worktree` | 1 | the invocation's `PYTHONPATH=.:tests` leaks into the venv subprocess, so the worktree shadows the installed package. Invocation artifact |
+| `test_the_table_agrees_with_the_declared_registry` | **1 real** | the registry declares `kncube`, `TOPOLOGY_FAMILIES` had no row. Fixed in `bc476e6d` |
+
+So **one of eleven was a product defect**; the other ten are the measurement reacting to
+a tree that moved. That is not a flake to shrug at — three of the repo's own gates
+(provenance, staleness, determinism) exist to refuse a verdict taken on a moving tree,
+and they were right.
+
+**The method that makes a green run meaningful:** run the suite from a detached git
+worktree at a pinned commit, so no other writer can move it. Two things a worktree needs
+that `.gitignore` withholds — the built BookSim binary
+(`third_party/booksim2/src/booksim`, 24 MB, untracked) must be copied in — and one test
+must be deselected, because `test_installed_package_is_used_not_the_worktree` asserts an
+installation property the worktree deliberately overrides:
+
+```
+git worktree add --detach /home/datavex/veritx-tmp/stable-wt <commit>
+cp third_party/booksim2/src/booksim /home/datavex/veritx-tmp/stable-wt/third_party/booksim2/src/
+cd /home/datavex/veritx-tmp/stable-wt/tracks/t3-topology/dse
+TMPDIR=/home/datavex/veritx-tmp PYTHONPATH=.:tests python3 -m pytest tests -q -p no:randomly \
+  --deselect "tests/test_entry_point.py::TestInstalledConsoleScript::test_installed_package_is_used_not_the_worktree"
+```
+
+**And redirect straight to a file, never through a pipe.** The first attempt of this run
+piped into `tail`; when its 90-minute limit hit, the pipe had buffered everything and the
+log was empty — an hour and a half of evidence lost to a `|`.
