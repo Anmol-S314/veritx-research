@@ -183,7 +183,14 @@ def test_the_renames_are_now_recorded():
     # construction (fixed +1/-1 port law, per-flow dateline halves) that
     # the same BookSim topology renders. The older `ring` fixture keeps its
     # own (different, uncertified) wiring.
-    assert families_for_backend("torus") == ("torus", "ring", "ring_native")
+    # `kncube` joins the same generator for a different reason: BookSim2 has no
+    # `kncube` topology string at all -- network.cpp:93-99 reaches KNCube only
+    # through `torus` (wrap off) and `mesh` (wrap on). The registry declares the
+    # family, so the table names it and points at the torus row's source. It sits
+    # third because it is defined beside `torus`/`ring`; `family_for_backend`
+    # still answers "torus" because `torus` is first in this tuple.
+    assert families_for_backend("torus") == ("torus", "ring", "kncube",
+                                             "ring_native")
     # Same backend, different construction: the balanced `tree4` preset keeps
     # its graph and stays the primary mapping; the native four-root tree is a
     # separate canonical family rendered by the same BookSim network.

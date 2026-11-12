@@ -149,6 +149,42 @@ def _torus_edges(v: dict[str, Any]) -> int | None:
     return None if k is None or n is None else n * k ** n
 
 
+def _kncube_params(values: dict[str, Any]) -> tuple[int | None, int | None]:
+    """`radix`/`dimensions` are the structured-intent spellings of the BookSim
+    config's `k`/`n` (topology-family-registry.yaml's kncube row vs
+    kncube.cpp:57-58), so accept either and let the caller keep its own."""
+    k, n = _int(values, "k"), _int(values, "n")
+    return (_int(values, "radix") if k is None else k,
+            _int(values, "dimensions") if n is None else n)
+
+
+def _kncube_wraps(values: dict[str, Any]) -> bool:
+    """kncube is the wrap-parameterized cube: one generator covers the mesh
+    (no wrap) and the torus (wrap) edge laws."""
+    w = values.get("wrap", True)
+    if isinstance(w, str):
+        return w.strip().lower() not in ("false", "0", "no", "")
+    return bool(w)
+
+
+def _kncube_nodes(values: dict[str, Any]) -> int | None:
+    """kncube.cpp:61,64 -- `_size = powi(_k,_n)`, `_nodes = _size`."""
+    k, n = _kncube_params(values)
+    return None if k is None or n is None else k ** n
+
+
+def _kncube_edges(values: dict[str, Any]) -> int | None:
+    """kncube.cpp:62 -- `_channels = 2*_n*_size` with wrap, i.e. `n * k^n`
+    distinct router pairs. Without wrap the generator omits the wraparound
+    links and the count is mesh.cpp's `n*(k-1)*k^(n-1)`."""
+    k, n = _kncube_params(values)
+    if k is None or n is None:
+        return None
+    if _kncube_wraps(values):
+        return n * k ** n
+    return n * (k - 1) * k ** (n - 1)
+
+
 def _flatfly_edges(v: dict[str, Any]) -> int | None:
     k, n, c = _int(v, "k"), _int(v, "n"), _int(v, "c")
     if k is None or n is None or c is None:
@@ -230,6 +266,17 @@ TOPOLOGY_FAMILIES: dict[str, dict[str, Any]] = {
     "ring": {"backend": "torus", "ir_kinds": ("ring",),
              "routing": "dim_order", "analytical": "Ring",
              "nodes": _k_n, "edges": _torus_edges},
+    # kncube.cpp:55-64 -- the wrap-parameterized cube the registry declares
+    # (topology-family-registry.yaml's kncube row) while this table had no row
+    # for it, so `declared <= mine` failed with ['kncube']. The backend is
+    # `torus` and not a "kncube" string because BookSim2 has no such topology
+    # name: network.cpp:93-99 reaches KNCube only through `torus` (wrap off) and
+    # `mesh` (wrap on), so KNCube::_ComputeSize is already the torus row's
+    # source. No IR kind either -- topology_ir.KINDS does not spell it, and the
+    # intent lowers through topology_artifact's kncube builder.
+    "kncube": {"backend": "torus", "ir_kinds": (),
+               "routing": "dim_order", "analytical": "Ring",
+               "nodes": _kncube_nodes, "edges": _kncube_edges},
     "concentrated_mesh": {"backend": "cmesh", "ir_kinds": (),
                           "routing": "dim_order", "analytical": "Ring",
                           "nodes": _c_kn, "edges": _cmesh_edges},
