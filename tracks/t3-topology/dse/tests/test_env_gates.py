@@ -104,6 +104,30 @@ def test_existing_binary_markers_cover_live_tests():
     runtime = (DSE / "tests" / "test_astra_runtime.py").read_text()
     assert "_requires_binary" in runtime
 
+
+def test_live_binary_refusals_skip_rather_than_return_green():
+    """A producer refusal must be visible in the suite line, not a green dot.
+
+    Regression: the multiclass bridge's live test caught a producer refusal
+    and bare-returned, so a passing dot meant "executed, or maybe nothing
+    ran". Its catch also named ``astra_execution.AstraExecutionError`` while
+    an absent binary raises ``astra.AstraUnavailable``, so the tolerance
+    never fired at all -- a no-binary tree raised straight through instead.
+    Both halves are pinned here: the refusal must skip with a reason, and the
+    classifier must know both families.
+    """
+    bridge = (DSE / "tests" / "test_astra_multiclass_bridge.py").read_text()
+    assert "_producer_refusal" in bridge, "refusal classifier disappeared"
+    # Both classes share a name across two modules; a classifier that knows
+    # only one of them is the bug this test exists to prevent.
+    assert "AstraUnavailable" in bridge or "_astra.AstraError" in bridge, (
+        "classifier no longer covers the astra-module exception family")
+
+    live = bridge.split("def test_live_two_class_collective_execution", 1)[1]
+    live = live.split("\ndef ", 1)[0]
+    assert "pytest.skip" in live, "live refusal must skip, not pass silently"
+    assert "\n        return\n" not in live, "bare return hides a refusal"
+
 def test_topology_family_checker_passes():
     """Runs the real checker: the gec_express registry row landed, so
     the tripwire marker was removed and this must stay green."""

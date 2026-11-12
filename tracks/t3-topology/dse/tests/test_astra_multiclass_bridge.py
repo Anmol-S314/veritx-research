@@ -48,6 +48,54 @@ TP = "tp_collective"
 EP_D = "ep_dispatch"
 EP_C = "ep_combine"
 
+#: Markers that identify a refusal as a *producer* refusal (the binary is
+#: absent or not found, the producer is unpinned or unqualified, no build-time
+#: manifest) as opposed to a refusal meaning the projection, the workload, or
+#: the ledger is wrong. Only the former is an environment/configuration fact
+#: the suite should skip on. Deliberately NOT here: bare ``absent`` (a semantic
+#: "absent from the qualified path" is substantive) and ``per-class
+#: conservation`` (a conservation refusal is a finding, not an environment).
+_PRODUCER_REFUSAL_MARKERS = (
+    "not pinned", "not qualified", "manifest",
+    "binary is absent", "runtime binary is absent", "binary not found",
+)
+
+
+def _producer_refusal(exc: BaseException) -> str | None:
+    """Return the reason when ``exc`` is a producer refusal, else ``None``.
+
+    Two different classes are named ``AstraExecutionError`` --
+    ``backend.astra_execution.AstraExecutionError`` (the gate/ledger
+    refusals) and ``backend.astra.AstraExecutionError`` -- and the
+    binary-absent path raises ``backend.astra.AstraUnavailable``, which
+    subclasses only ``backend.astra.AstraError``. Catching the first class
+    alone, as this file used to, made its refusal tolerance unreachable for
+    the exact condition it was written to tolerate, so a binary-less tree
+    raised straight through instead of being handled.
+
+    Everything here is a ``ValueError``, so the families are listed
+    explicitly rather than caught by base class: a ``TypeError`` or a
+    ``KeyError`` from a real defect is not a refusal.
+    """
+    from veritx_dse.backend import astra as _astra  # noqa: PLC0415
+    from veritx_dse.backend.astra_adapter import (  # noqa: PLC0415
+        Astra2SemanticRefusal,
+    )
+    from veritx_dse.backend.astra_execution import (  # noqa: PLC0415
+        AstraExecutionError as GateRefusal,
+    )
+    from veritx_dse.backend.producer import ProducerError  # noqa: PLC0415
+
+    families = (
+        GateRefusal, _astra.AstraError, Astra2SemanticRefusal, ProducerError,
+    )
+    if not isinstance(exc, families):
+        return None
+    text = str(exc)
+    if any(marker in text for marker in _PRODUCER_REFUSAL_MARKERS):
+        return text
+    return None
+
 def _compiled(count=COUNT):
     from test_canonical_compiler import _det, _design  # noqa: E402
     return _det(_design(compute=count, tp=count))
@@ -415,14 +463,16 @@ def test_balanced_per_class_counts_normalize():
 def test_live_two_class_collective_execution(tmp_path):
     """Small 2-class mesh design through the real embedded runtime.
 
-    Passes with EXECUTED + matching binding/ABI when the producer is
-    pinned; passes with the pin refusal when it is not. Any other
-    outcome (silent wrong numbers, flattening) fails."""
+    Executes and asserts EXECUTED + matching binding/ABI when the producer
+    is pinned. When it is not -- absent binary, unpinned producer, no
+    build-time manifest -- this test SKIPS with the refusal reason rather
+    than returning green, so a refusal is never indistinguishable from
+    execution in the suite line. The loud failure for an absent binary is
+    owned by ``test_env_gates::test_astra_producer_present``; duplicating it
+    here would only make the same fact fail twice. Any other outcome
+    (silent wrong numbers, flattening) fails."""
     from veritx_dse.application.evaluation_question import (  # noqa: E402
         EvaluationQuestion,
-    )
-    from veritx_dse.backend.astra_execution import (  # noqa: E402
-        AstraExecutionError,
     )
     context, native = _prepared_two_class()
     assert native.machine.embedded_network_class_abi_version >= 1
@@ -441,11 +491,11 @@ def test_live_two_class_collective_execution(tmp_path):
 
     try:
         evidence = adapter.execute(prepared, _Options())
-    except AstraExecutionError as exc:
-        assert ("not pinned" in str(exc) or "pin" in str(exc)
-                or "manifest" in str(exc) or "absent" in str(exc)
-                or "per-class conservation" in str(exc)), exc
-        return
+    except Exception as exc:  # noqa: BLE001 - classified, not swallowed
+        refusal = _producer_refusal(exc)
+        if refusal is None:
+            raise
+        pytest.skip(f"ASTRA producer refused: {refusal}")
     assert evidence.status == "EXECUTED"
     assert evidence.class_binding_id == \
         native.workload_projection.class_binding_id()
@@ -457,3 +507,54 @@ def test_live_two_class_collective_execution(tmp_path):
     assert set(injected) == {TP, EP_D}
     assert injected == completed
     assert all(count > 0 for count in injected.values())
+
+
+def test_producer_refusal_classifier_covers_both_exception_families():
+    """The tolerance branch must be reachable for what is actually raised.
+
+    Regression for a dead guard: the live test caught only
+    ``astra_execution.AstraExecutionError``, but an absent binary raises
+    ``astra.AstraUnavailable`` and an unpinned one raises ``astra.AstraError``
+    or ``ProducerError``. With the old single-class catch, the classifier
+    returned ``None`` for every real producer refusal -- so on a tree with no
+    binary the test raised instead of being handled, which is why a
+    binary-less worktree turned this test red while the same test executes
+    green in the main tree.
+    """
+    from veritx_dse.backend import astra as _astra  # noqa: E402
+    from veritx_dse.backend.astra_adapter import (  # noqa: E402
+        Astra2SemanticRefusal,
+    )
+    from veritx_dse.backend.astra_execution import (  # noqa: E402
+        AstraExecutionError as GateRefusal,
+    )
+    from veritx_dse.backend.producer import ProducerError  # noqa: E402
+
+    refusals = {
+        "absent binary": _astra.AstraUnavailable(
+            "the ASTRA2 runtime binary is absent"),
+        "astra-module pin": _astra.AstraExecutionError(
+            "ASTRA producer not pinned, refusing spawn: no manifest"),
+        "gate pin": GateRefusal(
+            "ASTRA producer not pinned, refusing spawn: no manifest"),
+        "producer pin": ProducerError(
+            "producer has no verified build-time manifest"),
+        "producer binary not found": ProducerError(
+            "BookSim binary not found: /x/AstraSim_BookSim2"),
+    }
+    for label, exc in refusals.items():
+        assert _producer_refusal(exc), label
+
+    # Substantive refusals are findings, not environment: the live test must
+    # fail on them, not skip. This is why neither "absent" on its own nor
+    # "per-class conservation" is in the marker set.
+    assert _producer_refusal(Astra2SemanticRefusal(
+        "the workload is absent from the qualified path")) is None
+    assert _producer_refusal(GateRefusal(
+        "runtime emitted no per-class conservation for canonical counts")) \
+        is None
+
+    # Defects are not refusals. All of these families are ValueErrors, so a
+    # base-class catch would have hidden them.
+    for defect in (TypeError("bug"), KeyError("absent"), ValueError("absent")):
+        assert _producer_refusal(defect) is None, defect
