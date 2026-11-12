@@ -17,12 +17,26 @@ Verdict encoded below:
   1 x flux-correct staleness gate (kept red-capable, asserted live), and
   1 x load-flake concurrency test (passes in isolation; asserted live).
 
+CURRENT STATE (appended later, and the paragraph above is history, not
+current fact): **all four are closed and this file carries no xfail marker
+at all** — `grep xfail` finds only this prose. The GEC-EXPRESS and kncube
+registry rows both landed, and the two strict-xfail gates were removed with
+them (`test_topology_family_checker_passes` records the removal and asserts
+the checker stays green). Whether they XPASSed first, as the law below
+requires, is recorded nowhere — so the tripwire's discipline is unverified
+for this instance and should not be cited as evidence that it worked.
+
 Laws for this file:
 - No test here ever skips release-critical coverage into a pass, and no
   assertion from another file is touched.
-- The strict-xfail tripwire MUST fail loudly (XPASS) the moment the
-  sibling topology lane lands the registry row, forcing triage-table
-  cleanup instead of silent staleness.
+- A strict-xfail tripwire must fail loudly (XPASS) the moment the sibling
+  topology lane lands the row it is waiting on, forcing triage-table
+  cleanup instead of silent staleness. None is installed today, because
+  nothing is currently pending: if a row regresses, install a tripwire
+  rather than a comment, so the closure is forced to be cleaned up.
+- A live-binary test that tolerates a producer refusal must SKIP with the
+  reason, never return green; see
+  `test_live_binary_refusals_skip_rather_than_return_green`.
 """
 from __future__ import annotations
 
