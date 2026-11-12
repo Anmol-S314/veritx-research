@@ -21,6 +21,14 @@ mkdir -p "$OUT"
 {
   echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "repo_head=$(git -C "$REPO" rev-parse HEAD)"
+  # A bare `git status --porcelain | wc -l` counts untracked scratch, which is
+  # permanently non-zero here, so on its own it cannot tell a dirty SOURCE tree
+  # from a repo carrying a screenshot. Split it, on the same rule the completion
+  # manifest uses (scripts/complete_design.py:source_dirty -- try there first):
+  # a tracked edit always means the bytes measured are not the bytes committed,
+  # while untracked files are context, not a verdict.
+  echo "repo_dirty_tracked=$(git -C "$REPO" status --porcelain --untracked-files=no | wc -l)"
+  echo "repo_untracked=$(git -C "$REPO" ls-files --others --exclude-standard | wc -l)"
   echo "repo_dirty_files=$(git -C "$REPO" status --porcelain | wc -l)"
   for tool in python3 gcc g++ make verilog verilator yosys openroad iverilog; do
     if command -v "$tool" >/dev/null 2>&1; then
