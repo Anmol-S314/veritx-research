@@ -24,10 +24,77 @@ admission rework landed as `c3d360e9`:
   `docs/product/evidence/gec-mecs-row-rerun-aa66b4fe.json` (lint 0 warnings,
   13/13 scenarios, `final_implementation: true`); the full matrix has NOT
   been re-run at the reworked head and is not claimed here.
-- A full DSE unit suite run is in flight at the time of writing
-  (`/home/datavex/veritx-tmp/basetemp2/` + `dse-full-suite.log`); its verdict
-  is not yet known and is not claimed. The Studio Playwright measurement
+- A full DSE unit suite ran to completion 2:14:15 — **9,530 passed, 8
+  failed, 55 skipped, 1 warning, 3 errors** — against a mid-rework tree
+  (`/home/datavex/veritx-tmp/dse-full-suite.log`). All eleven failures/errors
+  pass at the committed head in isolation; the suite is measured-but-stale,
+  never a green gate at one commit. The Studio Playwright measurement
   stands at 115/4/13 (none RTL).
+
+# Scope B multicast slice landed on both composed shared-wire fabrics (2026-11-12)
+
+The next named Scope B row after framing is measured, not asserted. GEC-hybrid
+and SROTA now carry multicast header and bitmap semantics at the 16-router
+composed shape:
+
+- **Packet contract.** The composed flit is 80 bits:
+  `dest[79:76] src[75:72] type[71:70] bitmap[69:54] payload[53:0]`. The
+  16-bit bitmap is one bit per router id; payload bit positions are unchanged.
+  Manifests record `emitted_packet_width_bits: 80` and
+  `emitted_mcast_bitmap_bits: 16`.
+- **Semantics.** Zero bitmap = the historical decoded unicast (bit-for-bit
+  unchanged path). Nonzero = exactly its set taps: the flit is broadcast on
+  the shared wire, every selected tap drops one copy in the same slot, and
+  unselected taps neither drop nor gate. Cross-row/column sets fork at the
+  source onto the row wires and at the turn routers onto the column wires;
+  admission is all-or-nothing over the selected taps. A flit retires only
+  after every target output has taken its copy.
+- **Measured** (`tests/test_project_top_shared.py`, **16 passed**, both
+  fabrics lint **0 warnings**): SROTA
+  `multicast_flits=8 multicast_copies=20 multicast_refused=2` and hybrid
+  `multicast_flits=8 multicast_copies=20`; 5 single-flit sets each (row from
+  two sources, cross-row/col, column broadcast, one-tap) plus a forked
+  HEAD/BODY/TAIL packet to `{0,15}`; every copy checked for payload,
+  membership and uniqueness. SROTA additionally refuses two island-class
+  bitmaps and checks the counter; the hybrid asserts no multicast flit on a
+  mesh channel. Unicast / multi-flit / island / UGAL-selector regressions
+  are unchanged (`accepted=256 delivered=256`, hybrid `accepted=260
+  delivered=260 mesh=1 mecs=387 tie=387`).
+- **Four real defects found while integrating.** (1) The first row-wire
+  direction predicate keyed on bits in the source's own row, so cross-row
+  destinations never forked — it must key on the destination's column.
+  (2) The hybrid's `*_credit` inputs are occupancy bits (1 = tap busy), not
+  availability; multicast admission must require the selected taps to be
+  free, indexed by tap position. (3) A multicast copy's valid pulse can share
+  its retirement edge with another fork, so the TB's negedge polling missed
+  it; the capture is now edge-armed before injection (the same class as the
+  GEC-MECS contention capture bug). (4) A naive fork can deadlock: two forked
+  packets at one SROTA router (source injection and row-tap turn, both
+  targeting yneg and ypos) can hold one column output each and wait for the
+  other. Copies are now acquired in a fixed output order (local, xneg, xpos,
+  yneg, ypos; hybrid local, row, col), making the intra-router lock order
+  acyclic — an ordering argument, not a liveness proof. A fifth, pre-existing
+  red: three renderer tests asserted "no `//`" in emitted RTL, which
+  contradicts the committed emitters and policy DEB-7; the stale assertion is
+  removed and determinism is still checked.
+- **Claim lists.** The multicast criterion moved from
+  `SROTA_SHARED_NOT_ESTABLISHED` / `GEC_HYBRID_SHARED_NOT_ESTABLISHED` to
+  the respective `*_PROVEN` tuples; the remaining limits are recorded as
+  `SROTA_MULTICAST_LIMITS` (row-first only; island-class bits refused and
+  counted) and `GEC_HYBRID_MULTICAST_LIMITS` (MECS-only; no mesh replication;
+  one wire VC class per packet). Both scopes still report
+  `final_implementation: false` because AXI/OrderingFSM/CDC composition and
+  the physical multidrop/STA/parity rows remain open. Evidence:
+  `docs/research/RTL-SCOPE-B-MULTICAST.md`.
+- **Lane note.** This slice touches `project_top_rtl.py`, its shared test and
+  the status docs only; the uncommitted GEC-MECS C4 follow-ups
+  (`gec_mecs_scaled.py`, `gec_mecs_credited.py`, their tests/doc) are
+  untouched and still carry the pending `gec_mecs` row re-run for A2.
+
+Still open on this line: Scope B AXI/OrderingFSM/CDC and physical rows;
+SROTA side buffers/telemetry/Valiant; C6/P9 physical (operator); the
+81-router Chisel credit-preview emit (structural OOM); release hygiene (the
+GEC-MECS lane commit + row re-run, full DSE suite, Playwright re-run).
 
 # Clean-tree split into owned commits + Scope B framing (2026-11-12)
 
