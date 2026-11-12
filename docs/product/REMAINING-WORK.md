@@ -481,3 +481,22 @@ TMPDIR=/home/datavex/veritx-tmp PYTHONPATH=.:tests python3 -m pytest tests -q -p
 **And redirect straight to a file, never through a pipe.** The first attempt of this run
 piped into `tail`; when its 90-minute limit hit, the pipe had buffered everything and the
 log was empty — an hour and a half of evidence lost to a `|`.
+
+**Disk headroom is a hard prerequisite, learned the hard way.** The first worktree
+attempt reached only 76% before `ENOSPC`: the suite keeps every Verilator build inside
+pytest's `--basetemp`, and one unbounded run peaked at 16 GB while disk writes were
+already failing, so even the pytest log truncated (8 KiB, no summary). Two consequences:
+
+- a full run needs **tens of GB** free, and the `basetemp` must be wiped afterwards —
+  after the first run the accumulated `basetemp*` directories held **34 GB** across three
+  runs, which is what starved the second;
+- to keep the peak bounded, shard it: four sequential shards, each with its own
+  `--basetemp` deleted before the next starts. Peak becomes roughly one shard and a
+  failure in a late shard still leaves the earlier shards' results.
+
+Do **not** free space by deleting `veritx-tmp/release-final*` or
+`veritx-tmp/selected-r02-*`: `docs/reports/FINAL-IMPLEMENTATION-HANDOFF-20261111.md:159,166`
+and `docs/product/RTL-FINAL-CLOSEOUT-STATUS.md:6` cite them by name as the release
+matrix. That is the same durability hole this file notes for `runs/` — cited evidence
+that git does not carry, one `rm` from unreproducible. `basetemp*` and
+`pytest-of-datavex` are the only safe targets.
