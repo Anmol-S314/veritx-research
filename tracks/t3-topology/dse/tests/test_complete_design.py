@@ -88,7 +88,7 @@ def test_requested_physical_stage_blocks_instead_of_claiming_not_run(tmp_path):
     manifest = {"blockers": [], "stages": []}
     physical_stage(manifest, tmp_path, "sky130A", True)
     assert manifest["stages"][-1]["status"] == "BLOCKED"
-    assert manifest["blockers"][0]["code"] == "DESIGN_BOUND_PHYSICAL_RUNNER_NOT_WIRED"
+    assert manifest["blockers"][0]["code"] == "PHYSICAL_DESIGN_ABSENT"
 
 
 def test_unrequested_physical_stage_is_explicitly_not_run(tmp_path):

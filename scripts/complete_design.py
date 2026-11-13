@@ -394,11 +394,17 @@ def kncube_lint_and_sim(params, topology, out: Path) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     target = out / "rtl"
     target.mkdir(parents=True, exist_ok=True)
+    # Every synthesizable file goes through the portability rewrite, which is
+    # what the physical flow's Yosys frontend needs; the testbench is
+    # simulation-only and is written as emitted.
+    from veritx_dse.product.sv_portable import portable_sv
     for name, content in fab_files.items():
-        (target / name).write_text(content)
-    (target / "cdc_bypass.sv").write_text(project_top_rtl.render_cdc_bypass())
-    (target / "destination_adapter.sv").write_text(project_top_rtl.render_destination_adapter(params))
-    (target / "project_top.sv").write_text(project_top_rtl.render_family_project_top(params))
+        (target / name).write_text(portable_sv(content))
+    (target / "cdc_bypass.sv").write_text(portable_sv(project_top_rtl.render_cdc_bypass()))
+    (target / "destination_adapter.sv").write_text(
+        portable_sv(project_top_rtl.render_destination_adapter(params)))
+    (target / "project_top.sv").write_text(
+        portable_sv(project_top_rtl.render_family_project_top(params)))
     (target / "tb_project_top.sv").write_text(project_top_rtl.render_family_tb(params))
     tb_files = list(dict.fromkeys(dut_files)) + ["tb_project_top.sv"]
     lint, _ = project_top_rtl._run_logged(
@@ -467,19 +473,87 @@ def completion_exit_code(result: str) -> int:
     return 0 if result == "PASS" else 1
 
 
-def physical_stage(manifest, out: Path, platform: str, with_physical: bool) -> None:
+def physical_stage(manifest, out: Path, platform: str, with_physical: bool,
+                   design_dir: Path | None = None, clock_ns: float = 50.0) -> None:
     if not with_physical:
         record_stage(manifest, out, "physical", "physical not requested (--with-physical)", 0,
                      "NOT_RUN", extra={
                          "reason": "no design-bound physical run requested; the fixed diagnostic "
                                    "LibreLane spike is not a substitute for the generated design"})
         return
-    manifest["blockers"].append({
-        "code": "DESIGN_BOUND_PHYSICAL_RUNNER_NOT_WIRED",
-        "detail": f"platform {platform!r}: available LibreLane spike uses a fixed diagnostic "
-                  "design/config, not the generated hardware artifact; no physical run started"})
-    record_stage(manifest, out, "physical", "design-bound physical runner unavailable", 1,
-                 "BLOCKED")
+    target = resolve_physical_design(out, design_dir)
+    if target is None:
+        manifest["blockers"].append({
+            "code": "PHYSICAL_DESIGN_ABSENT",
+            "detail": "--with-physical needs the emitted design directory; no generated RTL "
+                      "directory was found for this run"})
+        record_stage(manifest, out, "physical", "no generated design to implement", 1, "BLOCKED")
+        return
+    from veritx_dse.product import physical_runner
+    declared = None
+    meta_path = target / "meta.json"
+    if meta_path.is_file():
+        try:
+            declared = json.loads(meta_path.read_text()).get("files")
+        except ValueError:
+            declared = None
+    phys_out = out / "physical"
+    try:
+        result = physical_runner.run_design_physical(
+            target, phys_out, platform=platform, clock_period_ns=clock_ns,
+            declared_files=declared)
+    except Exception as exc:  # noqa: BLE001 - runner failure is evidence, not a crash
+        error_log = phys_out / "runner-error.log"
+        error_log.parent.mkdir(parents=True, exist_ok=True)
+        error_log.write_text(f"{type(exc).__name__}: {exc}\n")
+        manifest["blockers"].append({"code": "PHYSICAL_RUNNER_ERROR",
+                                     "detail": str(exc)[:600]})
+        record_stage(manifest, out, "physical", "run_design_physical", 1, "FAIL",
+                     log=error_log)
+        return
+    report_path = phys_out / "physical-evidence.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    status = result.get("status", "BLOCKED")
+    log_path = Path(result["log"]["path"]) if result.get("log") else None
+    record_stage(manifest, out, "physical", "run_design_physical",
+                 0 if status == "PASS" else 1, status,
+                 log=log_path,
+                 extra={
+                     "platform": platform,
+                     "clock_period_ns": clock_ns,
+                     "design_dir": str(target),
+                     "design_name": result.get("design_name"),
+                     "clock_port": result.get("clock_port"),
+                     "rtl": result.get("rtl"),
+                     "config_sha256": result.get("config_sha256"),
+                     "flow_complete": result.get("flow_complete"),
+                     "final_stage": result.get("final_stage"),
+                     "gates": result.get("gates"),
+                     "metrics": result.get("metrics"),
+                     "duration_s": result.get("duration_s"),
+                     "librelane": result.get("librelane"),
+                     "evidence": str(report_path),
+                     "evidence_sha256": sha_file(report_path),
+                 })
+    if status != "PASS":
+        manifest["blockers"].append({
+            "code": "PHYSICAL_GATES_NOT_MET",
+            "detail": (result.get("reason") or
+                       "physical implementation did not reach a signoff pass")[:600]})
+
+
+def resolve_physical_design(out: Path, design_dir: Path | None) -> Path | None:
+    """Locate the emitted design directory to hand to the physical runner."""
+    candidates = []
+    if design_dir is not None:
+        candidates.append(Path(design_dir).resolve())
+    else:
+        candidates.append(out / "hardware" / "rtl")
+    for candidate in candidates:
+        if (candidate / "project_top.sv").is_file():
+            return candidate
+    return None
 
 
 def main() -> int:
@@ -491,6 +565,10 @@ def main() -> int:
     ap.add_argument("--platform", default="sky130A")
     ap.add_argument("--release", action="store_true")
     ap.add_argument("--with-physical", action="store_true")
+    ap.add_argument("--physical-design", type=Path, default=None,
+                    help="emitted design RTL directory to implement (default: <out>/hardware/rtl)")
+    ap.add_argument("--physical-clock-ns", type=float, default=50.0,
+                    help="clock period constraint handed to LibreLane")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     out: Path = args.out.resolve()
@@ -504,7 +582,8 @@ def main() -> int:
             "fourteen-family release matrix; single-project runs never publish a "
             "14/14 claim")
         release_matrix(manifest, out)
-        physical_stage(manifest, out, args.platform, args.with_physical)
+        physical_stage(manifest, out, args.platform, args.with_physical,
+                       args.physical_design, args.physical_clock_ns)
         manifest["result"] = completion_result(manifest["stages"], manifest["blockers"])
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         return completion_exit_code(manifest["result"])
@@ -598,7 +677,8 @@ def main() -> int:
         print(json.dumps({"result": manifest["result"],
                           "design_hash": manifest["artifacts"].get("design_hash")}, indent=2))
         return 1
-    physical_stage(manifest, out, args.platform, args.with_physical)
+    physical_stage(manifest, out, args.platform, args.with_physical,
+                   args.physical_design, args.physical_clock_ns)
     manifest["scope_note"] = (
         "single-project run; this manifest covers exactly the declared project "
         "revision and never a fourteen-family claim")
