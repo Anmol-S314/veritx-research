@@ -2,8 +2,13 @@
 
 **Written:** 2026-11-13, for a strong incoming model with no prior context.
 **Repo:** `/home/datavex/bruh/veritx-research`
-**Branch / HEAD:** `integration/studio-reconciliation` @ `d5ce2f7a19557ce4a7ed8c60a7850525bc528556` (2026-11-12 12:26 +0530)
-**Working tree:** *dirty by design* — 2,400 entries (2,285 untracked, 114 modified, 1 deleted). See §7.5. Do not "clean" it.
+**Branch / HEAD:** `integration/studio-reconciliation` @ `148e013d` (2026-11-14)
+**Working tree:** **clean** — 0 tracked modifications. The Nov-13/14 work that was uncommitted when this document was first written landed as eight lane commits (`6ee6bd3e` rtl/emitter … `148e013d` this file) and is pushed to `github`. See §7.5.
+
+> **If you are reading a clone made before 2026-11-14:** the remote branch was frozen at
+> `8662623` (2026-11-03) for eleven days while 71 commits accumulated locally; those 71
+> plus the eight lane commits are now on `github/integration/studio-reconciliation`.
+> `git fetch github && git merge --ff-only github/integration/studio-reconciliation`.
 
 Read this document top to bottom once. Then read, in this order:
 `docs/product/RTL-FINAL-CLOSEOUT-STATUS.md` → `docs/product/REMAINING-WORK.md` → `docs/OPEN-PROBLEMS.md` (only the "Current status" block at the top) → `docs/architecture/FLOW-AND-VERSION-MAP.md`.
@@ -48,7 +53,7 @@ If you take nothing else from §0: **when a doc and a run disagree, the run wins
 | Evaluation (Ramulator / DRAM timing) | **UNSUPPORTED** — binary present, no prepare/execute path, correctly refused |
 | Serving / MoE campaigns | **Partial.** Llama path works end-to-end; Mixtral serving semantics + trace input missing |
 | Studio (production) | TypeScript clean, 217 Vitest, **115 passed / 4 failed / 13 skipped** Playwright |
-| Studio (prototype) | 325/325 Vitest, 8/8 focused Playwright, 56 routes, Tauri desktop variant |
+| Studio (prototype) | **344/344** Vitest (53 files) + clean tsc, 8/8 focused Playwright, 56 routes, Tauri desktop variant |
 | Full DSE unit suite | 9,530 passed / 8 failed / 55 skipped / 3 errors in 2 h 14 m — **measured but stale**; all 11 failures pass in isolation at the committed head. No green-at-one-commit run exists |
 | Product gates | **ALL PASS** on the committed tree (7 gates) |
 
@@ -372,7 +377,7 @@ Authority: `docs/product/INTENT-TO-PLACED-RTL-COMPLETION-PLAN.md` (615 lines) + 
 | Phase | Verdict | What that actually means | Where the evidence is |
 |---|---|---|---|
 | **P0** freeze target & truth | **BLOCKED overall** | Target + 27 focused contract tests exist; inventory captured; historical reports still need reconciliation; Constellation `KNCubeSourceSpec` absent; PDK/clock/bounds/block-scope approval is an operator gate | `runs/durability-revision-gate-current-tree-20261111/junit.xml` |
-| **P1** complete/lossless intent | **PARTIAL** | high-u64 draft entry, legacy snapshot restore, exact 64-bit addresses all fixed; ownership/endpoint identity, protocol compliance, IP materialization, physical-placement fields still partial/open | prototype 325/325 Vitest; backend exact-int test |
+| **P1** complete/lossless intent | **PARTIAL** | high-u64 draft entry, legacy snapshot restore, exact 64-bit addresses all fixed; ownership/endpoint identity, protocol compliance, IP materialization, physical-placement fields still partial/open | prototype 344/344 Vitest (clean tsc); backend exact-int test |
 | **P2** trustworthy workloads/evaluation | **OPEN** | Real paired run exists (128→256-bit link, completion 11,467→5,955 cycles, −48.07%), non-adopted; live Studio browser flow passes for Llama + selected r02; `DRAM_TIMING` correctly UNSUPPORTED; no hardware calibration (needs P9); no Mixtral serving experiment | `runs/p2-selected-r02-browser-e2e-20261110/`, `runs/p2-paired-gec-width-20261110T164450Z/` |
 | **P3** 14 request→hardware bindings | **PARTIAL** | 14/14 family rows PASS with per-family log hashes (165 logs verified); shared fabric emits/lints/sims at the pinned 81/162/8/8 shape; the 74 seats are not that run's traffic endpoints | `runs/release-clean-20261112T020000Z/manifest.json` (sha256 `b375ffca…`) |
 | **P4** packet router / native controls | **PARTIAL** | credit/router-policy tests pass; SBY/Z3 bounded credit proof; 9-router Chisel→Verilog→81-pair test passes; **36-router elaboration OOM-killed**; SROTA 64-cell lint 64/64 but 1,861 `UNUSEDSIGNAL` each | `runs/credit-gec-9router-2vc-9ep-v1-20261110T205649Z/` |
@@ -423,7 +428,8 @@ Matrix `runs/release-clean-20261112T020000Z/manifest.json`, re-verified 2026-11-
 | Studio production TS | clean | `cd apps/studio && npx tsc --noEmit` | |
 | Studio production Vitest | 217 passed | `cd apps/studio && npx vitest run` | |
 | Studio production Playwright | **115 / 4 failed / 13 skipped** | `cd apps/studio && npx playwright test` | 3 failures = absent gateway on :8099 (operator-owned); 1 = test isolation, not reproducible |
-| Prototype Vitest | 325/325 | `npm --prefix apps/studio/prototype test` | |
+| Prototype Vitest | **344/344** in 53 files, 2.8 s, exit 0 | `npm --prefix apps/studio/prototype test` | measured on the committed tree (`f18d23a9`); was 325 before the design-editor tests landed |
+| Prototype typecheck | **clean** (exit 0, no output) | `cd apps/studio/prototype && npx tsc --noEmit` | re-run without a pipe; a piped `$?` reports `tail`'s status, not tsc's |
 | Prototype Playwright (focused) | 8/8 | `npm --prefix apps/studio/prototype run test:e2e` | |
 | physical_runner + complete_design | 63 passed | `pytest tests/test_physical_runner.py tests/test_complete_design.py` | |
 
@@ -433,27 +439,54 @@ Matrix `runs/release-clean-20261112T020000Z/manifest.json`, re-verified 2026-11-
 
 ```
 branch:   integration/studio-reconciliation
-HEAD:     d5ce2f7a  (2026-11-12)
-status:   2,400 entries = 2,285 untracked + 114 modified + 1 deleted
-diffstat: 115 files changed, 5,157 insertions(+), 3,278 deletions(-)
+HEAD:     148e013d  (2026-11-14)
+status:   0 tracked modifications; remote == local
 ```
 
-The **modified tracked** files are the newest work and are *not* in any commit:
+**The tree is clean for the first time in this repo's recorded history.** The Nov-13/14
+work that §7.5 previously described as "uncommitted and load-bearing" landed as eight
+lane commits, then was pushed:
 
-| Area | Files |
-|---|---|
-| RTL/product engine | `product/project_top_rtl.py`, `adapter_factory_rtl.py`, `ordering_fsm_rtl.py`, `addr_decode_rtl.py`, `gec_mecs_credited.py`, `service.py`, `store.py`, `chipyard_sources.py` |
-| Model/verification | `model/gec_hybrid_route.py`, `verification/gec_hybrid_instance.py` |
-| Gateway | `gateway/app.py`, `gateway/errors.py`, `application/compile_result_view.py` |
-| RTL sources | `rtl/mot_htree/router_template.sv`, `rtl/tap_credit/tap_credit_pool.sv`, `rtl/srota64_native/*`, `rtl/chipyard/CompiledGecCreditPreview.scala` |
-| Evidence | 12 bundles under `docs/product/evidence/final-implementation/*.json` (re-pinned) |
-| Studio prototype | 71 files + 9 screenshots + 1 deleted (`src/MModulesEditor.tsx`) |
-| Docs | `RTL-FINAL-CLOSEOUT-STATUS.md`, `FINAL-IMPLEMENTATION-TRUE.md`, `OPEN-PROBLEMS.md`, 2 research notes |
-| Runner | `scripts/complete_design.py` |
+| Commit | Lane | What it carries | Verified? |
+|---|---|---|---|
+| `6ee6bd3e` | rtl / emitter | `gen_wq`/`gen_we` per-entry queue banks, the `automatic` strip, `memory_banks.sv` + TB + test, SROTA64 AXI5 bridge, CDC FIFO formal config, `sv_portable.py` | `test_memory_banks.py` 6 passed. **Not** synthesised — the cell counts are pre-change |
+| `a18e3609` | physical | `product/physical_runner.py` (484 lines), `scripts/complete_design.py`, 2 tests, `docs/research/RTL-PHYSICAL-RUNNER.md` | not run at this commit |
+| `2e7bcf9c` | product | AXI ordering/CDC slices, address decode, `final_evidence.py`, `derivation_scope.py`, service/store/gateway, `gec_mecs_credited`, hybrid route + rank proof | not run at this commit |
+| `2bc99d87` | evidence | 12 re-pinned family bundles, 3 status ledgers, 2 research notes | re-pinning does not re-measure |
+| `468cd56d` | studio | prototype tracked-file snapshot (incl. 1 retirement, 9 screenshots) | superseded by the next commit |
+| `f18d23a9` | studio | **correction**: the 29 new `src` modules, 4 new specs and the design pages that `468cd56d` needed to be buildable | this is the tree tsc/Vitest ran on |
+| `7d7fb921` | docs | `OPEN-PROBLEMS.md` multicast closure | read-only claim |
+| `148e013d` | docs | this document | — |
 
-**Untracked but load-bearing:** `veritx_dse/product/physical_runner.py` (484 lines, the whole P9 stage) and `docs/research/RTL-PHYSICAL-RUNNER.md`. Both are essential to the newest state and exist only in the working tree.
+Honest caveats attached to that table, because they matter more than the table:
 
-Untracked scratch that must stay untracked: `.pi/` (142 MB of agent task data), `.playwright-mcp/` (126 MB), `audit/`, `test-results/`, root-level screenshots and `calculator.*`.
+> **The `~/veritx-tmp/handoff-20261113/` bundle is superseded.** Its `worktree-code.patch`
+> was captured at 23:14 on 2026-11-13 and is stale against these commits (a concurrent
+> session kept writing for another ~2.5 h). Use the commits; the bundle is only useful as
+> an archaeological snapshot of that hour.
+
+- **`468cd56d` alone is not a buildable tree.** It used `git add -u`, which takes only
+tracked files, so every new prototype module was left behind. `f18d23a9` is the
+correction and says so in its own message. Do not bisect through `468cd56d` expecting a
+compiling prototype.
+- **`6ee6bd3e` is not independently green.** No synthesis ran on it. The −55.6 % /
+−98.7 % figures are measurements of the *pre-change* template; whether the transform
+reaches the netlist is the next experiment (§11 step 2).
+- **Lane commits are file-scoped slices of concurrent working sessions, not per-feature
+green commits.** Each message ends with a "Not claimed" line naming what it does not
+establish. Treat them as a faithful record of bytes, not as a test boundary.
+
+**Two sessions were editing this tree concurrently** (a `claude` process ran ~2 h 45 m on
+2026-11-14 and was still resident after it finished). The lane split was taken only after
+the tree had been quiet for 4+ minutes and the one runnable artifact of that session
+(`tests/test_memory_banks.py`) passed. If you take a snapshot under a live writer you will
+capture a half-written file — check `find <paths> -newermt '-5 minutes'` first, and prefer
+a named `wip/` branch over the mainline for anything you cannot vouch for.
+
+Untracked scratch that must stay untracked: `.pi/` (142 MB of agent task data),
+`.playwright-mcp/`, `audit/`, `test-results/`, `rtl/cdc/cdc_fifo/model/*` (sby
+intermediates), root-level screenshots, `calculator.*`, `test_calculator.py`, and
+`.librelane.sh` (a machine-local shim holding absolute paths).
 
 ### 7.6 Live services (present right now)
 
@@ -560,7 +593,7 @@ Open, and each is a real engineering line:
 - **Gateway dependency in Playwright.** 3 `app_repro` failures exist only because `:8099` was absent at run time (`/gw/api/v1/health`, `/projects` → 500, Find-fabrics button stays disabled). Gateway is **running now**; re-run before debugging UI code.
 - **One context-dependent Playwright failure** (`native-sweep.spec.ts`): passes 3/3 under `--repeat-each=3`; the full run splits failing ids across two project-hash prefixes under a Playwright config declaring **no projects** → shared Vite/route-mock state, i.e. isolation, not product. Caveat recorded: the measurement was taken while another session was editing 11 files under `apps/studio/prototype/src/`. Settle on a quiet tree.
 - **Multi-seat concentrator**: emitted, instantiated and linted, but the *tagless* concentrator answers into `owner_q` (most recently granted seat) and holds the router local port in `S_WAIT_RSP`, so it is correct only at **one outstanding request per router**. Endpoint-tagged families demux by destination endpoint field instead. Closing it means either carrying a tag in the flit for those families (packet-format + adapter + parity change) or proving strict single-outstanding is acceptable for the shape. → `docs/product/proposals/multi-seat-concentrator.md`
-- **Multi-seat memory co-seating** is the last typed refusal: co-seating a memory endpoint with initiator seats needs an endpoint-addressed composed fabric.
+- **Multi-seat memory co-seating** is the last typed refusal: co-seating a memory endpoint with initiator seats needs an endpoint-addressed composed fabric. **2026-11-14:** a primitive for it now exists and is gated — `rtl/multi_seat/memory_banks.sv` demuxes N memory endpoints onto one router ejection port by bank index, keeps per-bank ordering, holds the request port head-of-line, round-robins responses and keeps `rsp_flit`/`rsp_valid` stable while `rsp_ready` is low, and consumes an out-of-range bank id while latching `protocol_error` rather than deadlocking. Gate: `tb_memory_banks.sv` (S1–S5) + `tests/test_memory_banks.py` (**6 passed, 10.2 s**). **The refusal is still open:** the module is referenced only by its own testbench and its own pytest gate — it is not embedded in the emitter, no `veritx_dse` module imports it, and `multi_instance_seats.py:72` (`the memory group must seat exactly one endpoint`) plus the guard comment at `project_top_rtl.py:4838` are unchanged. A tested primitive is not a closed row.
 - **V5 intent materialization** — `DECLARED_V5_EXTENSION_STRUCTURE_ONLY`. Per-item remainders: transactions (generic backend execution open), access policy (emitted but not enforced), sidebands/clocks (structural only; general domain execution open), reset/power (architectural identity + typed refusals), CDC+async-FIFO (no RTL differential), IP catalog (12 templates; 9 honestly refused, each naming its blocker id in `ip_catalog.py ROADMAP`), multi-plane (single plane only).
 - **UVM** — generator emits `noc_dut_binding.sv` and it compiles/simulates, but there is no UVM library, no driver/environment, assertion templates unqualified.
 - **RTL generation seam** — `scripts/rtlgen/gen_rtl.py` works for a 2-VC connected mesh slice and is **not wired into `compile_model.py`'s `-rtl` path**. Do not label it READY.
@@ -734,7 +767,7 @@ make release-manifest-json    # binds the candidate to its facts
 
 ## 11. What I would do next, in dependency order
 
-1. **Freeze and interrogate the current dirty state (hours).** The newest work — `physical_runner.py`, the AXI/CDC/ordering RTL changes, the 12 re-pinned evidence bundles, 71 prototype files — exists only in the working tree. Split it into owned lane commits exactly as was done on 2026-11-12 (`574d5973` rtl, `00bfb780` compiler, `bb4e3ded` studio, `daca1562` gates, `841c3173` evidence/docs, `587d45b1` research). Until then no claim about the current code is reproducible.
+1. ~~**Freeze and interrogate the current dirty state.**~~ **DONE 2026-11-14.** The dirty tree landed as eight lane commits (`6ee6bd3e` rtl/emitter, `a18e3609` physical, `2e7bcf9c` product, `2bc99d87` evidence, `468cd56d` + `f18d23a9` studio, `7d7fb921` docs, `148e013d` this file) and is pushed to `github`; tracked working tree is clean. Caveats are in §7.5 — in particular `468cd56d` is not a buildable tree without `f18d23a9`, and `6ee6bd3e` was never synthesised.
 2. **Verify the fix that is already in the tree, then measure (§8.2 #2 and #5).** Do **not** start by "unifying two emitters" — that blocker was retracted; the product path has one template. Instead: re-emit the 2×2 mesh from the current tree, assert the emitted `router.sv` now contains `gen_wq`/`gen_we` and **zero** block-local `automatic`, then run `proc; opt -full; wreduce; stat -width` and ABC. That single experiment answers whether the −55.6 % / −98.7 % transform actually reaches the product RTL, and whether 4×4 becomes mappable. Nothing downstream is interpretable until it is done.
 3. **Scale the measurement: 2×2 → 4×4 → 8×8** with `YOSYS_LOG_LEVEL=WARNING` (8×8 died writing its log to `/dev/stdout`). If 4×4 still OOMs ABC at 14 GB after the transform, the next lever is the router's `NUM_PORTS × NUM_VCS × BUF_DEPTH` flop bank itself — 27k cells/router at DEG≈4 is a structural cost, not a mapping artefact.
 4. **Finish the `p-778826bde278-r04` refusals (§8.2 tail).** Two real bugs: flit width (64 < 256+6) and the single-HBM-controller seat rule vs a 4-controller request. These block the *actual* pinned design, which matters more than the 2×2 proxy.
