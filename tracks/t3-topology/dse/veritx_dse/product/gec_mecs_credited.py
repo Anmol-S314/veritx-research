@@ -417,7 +417,7 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
     text = text.replace(ROUTER_LOCAL_SCAN_ANCHOR, """      scan_idx = (rr_local + offset) % PORTS;
       cand_vc = flit_q[scan_idx][VC_LSB +: VC_W];
       candidate_dest = flit_q[scan_idx][DEST_LSB +: DEST_W];
-      if (!found_local && valid_q[scan_idx] && candidate_dest == DEST_W'(ID) &&
+      if (!found_local && valid_q[scan_idx] && candidate_dest == ROUTE_W'(ID) &&
           (!local_lock[cand_vc] || local_lock_port[cand_vc] == scan_idx)) begin
 """, 1)
     for _lock, _grant, _anchor in (
@@ -442,7 +442,7 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
       dest_x = K_W'(candidate_dest % K);
       cand_tap = TAP_W'((int'(dest_x) < int'(my_x)) ? int'(dest_x) : int'(dest_x) - 1);
       cand_vc = flit_q[scan_idx][VC_LSB +: VC_W];
-      if (!found_row && valid_q[scan_idx] && int'(candidate_dest) < K*K &&
+      if (!found_row && valid_q[scan_idx] && candidate_dest != ROUTE_W'(K*K) &&
           dest_x != my_x && row_credits[cand_tap][cand_vc] != '0 &&
           (!row_lock[cand_vc] || row_lock_port[cand_vc] == scan_idx)) begin
         found_row = 1'b1;
@@ -454,7 +454,7 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
       dest_y = K_W'(candidate_dest / K);
       cand_tap = TAP_W'((int'(dest_y) < int'(my_y)) ? int'(dest_y) : int'(dest_y) - 1);
       cand_vc = flit_q[scan_idx][VC_LSB +: VC_W];
-      if (!found_col && valid_q[scan_idx] && int'(candidate_dest) < K*K &&
+      if (!found_col && valid_q[scan_idx] && candidate_dest != ROUTE_W'(K*K) &&
           dest_x == my_x && dest_y != my_y && col_credits[cand_tap][cand_vc] != '0 &&
           (!col_lock[cand_vc] || col_lock_port[cand_vc] == scan_idx)) begin
         found_col = 1'b1;
@@ -556,6 +556,15 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
         "  wire [N-1:0][15:0] unused_col_available = col_available;\n",
     ]
     _require(text, FABRIC_DECL_ANCHOR, "fabric declarations")
+    # The mapped index is a router seat or the sentinel K*K, so it is
+    # $clog2(K*K+1) bits wide; the loop index is a router seat too. Both
+    # widths are declared here, before the code that uses them, because a
+    # machine-int index turns every coordinate decode into a 32-bit division.
+    text = text.replace(
+        FABRIC_DECL_ANCHOR,
+        "  localparam int ROUTE_W = $clog2(K*K + 1);\n"
+        "  localparam int SRC_W = $clog2(N + 1);\n"
+        + FABRIC_DECL_ANCHOR, 1)
     text = text.replace(FABRIC_DECL_ANCHOR, FABRIC_DECL_ANCHOR + "".join(decl), 1)
 
     # The destination's ingress port is indexed by row_tap(src, dst), but the
@@ -857,27 +866,128 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
 
     # Router IDs and packet endpoint IDs need not have the same width or value.
     # An invalid endpoint decodes outside the router range, never to router 0.
-    route = ["  function automatic int unsigned route_destination(input logic [W-1:0] flit);",
+    # The mapped destination is a router index or the "no router" sentinel
+    # K*K, so its width is $clog2(K*K+1) and not a machine int. The width is
+    # what keeps synthesis cheap: a 32-bit value feeds a 32-bit divider at
+    # every coordinate decode, and the high bits only ever constant-fold.
+    route = ["  localparam int ROUTE_W = $clog2(K*K + 1);",
+             "  function automatic logic [ROUTE_W-1:0] route_destination(input logic [W-1:0] flit);",
              "    automatic logic unused_flit_bits;",
              "    unused_flit_bits = &{1'b0, flit};"]
     if endpoint_routers:
         route.append(f"    case (flit[DEST_LSB +: {packet_dst_w}])")
-        route.extend(f"      {packet_dst_w}'d{ep}: return {router};"
+        route.extend(f"      {packet_dst_w}'d{ep}: return ROUTE_W'({router});"
                      for ep, router in enumerate(endpoint_routers))
-        route.extend(["      default: return K*K;", "    endcase"])
+        route.extend(["      default: return ROUTE_W'(K*K);", "    endcase"])
     else:
-        route.append(f"    return int'(flit[DEST_LSB +: {packet_dst_w}]);")
+        route.append(f"    return ROUTE_W'(flit[DEST_LSB +: {packet_dst_w}]);")
     route.append("  endfunction\n")
     anchor = "  logic [DEST_W-1:0] candidate_dest;\n"
     _require(text, anchor, "router destination decode")
-    text = text.replace(anchor, "\n".join(route) + "  int unsigned candidate_dest;\n", 1)
+    text = text.replace(anchor, "\n".join(route) + "  logic [ROUTE_W-1:0] candidate_dest;\n", 1)
     for index in ("scan_idx", "grant_row", "grant_col"):
         anchor = f"flit_q[{index}][DEST_LSB +: DEST_W]"
         _require(text, anchor, "router packet destination")
         text = text.replace(anchor, f"route_destination(flit_q[{index}])")
 
-    # 9. The proven pool travels in its own file: one module per file,
-    # each file named for the module it holds.
+    # 8b. Lookahead routing. The destination is a pure function of the flit,
+    #     so it is decoded once, when the flit is accepted, and kept beside
+    #     the flit. The arbitration cycle then compares registers instead of
+    #     running the decode case inside the priority scan, which is the
+    #     head of the measured critical chain (decode -> credit -> scan ->
+    #     output mux). Behaviour is unchanged: `dest_q[p]` is written on the
+    #     same edge that sets `valid_q[p]`, and every read is guarded by
+    #     `valid_q`, exactly as the decode-from-`flit_q` form was.
+    anchor = "  logic [ROUTE_W-1:0] candidate_dest;\n"
+    _require(text, anchor, "router candidate destination")
+    text = text.replace(
+        anchor,
+        anchor + "  // Decoded when the flit is accepted, not during arbitration.\n"
+                 "  logic [ROUTE_W-1:0] dest_q [0:PORTS-1];\n", 1)
+    anchor = "          flit_q[p] <= in_flit[p];\n"
+    _require(text, anchor, "router flit capture")
+    text = text.replace(
+        anchor,
+        anchor + "          dest_q[p] <= route_destination(in_flit[p]);\n", 1)
+    for index in ("scan_idx", "grant_row", "grant_col"):
+        anchor = f"route_destination(flit_q[{index}])"
+        _require(text, anchor, "router arbitration decode")
+        text = text.replace(anchor, f"dest_q[{index}]")
+
+    # 9. Coordinate decode, at seat width. Every value here is a router seat
+    #    (or the K*K that route_destination_f returns for an unmapped
+    #    endpoint), so the indices are declared with the width of that domain
+    #    instead of a machine int: `% K` and `/ K` on an int is a 32-bit
+    #    divider at every site, which is what exhausted the synthesiser's
+    #    memory at the 16-router shape. The sentinel is K*K too, and that is
+    #    the only correct reading of it: as written with `pd = -1`, an
+    #    unmapped endpoint satisfied `pd >= 0` and then landed on column 0 of
+    #    the source's own row. The anchors above match the template's own
+    #    spelling, so this pass runs once, over the finished text.
+    text = text.replace("      int pd;\n      int row_dst;\n      int col_dst;\n"
+                        "      pd = -1;\n      row_dst = 0;\n      col_dst = 0;\n",
+                        "      logic [ROUTE_W-1:0] pd;\n"
+                        "      logic [SRC_W-1:0] row_dst;\n"
+                        "      logic [SRC_W-1:0] col_dst;\n"
+                        "      pd = ROUTE_W'(K*K);\n      row_dst = '0;\n      col_dst = '0;\n")
+    text = text.replace("        int pd;\n        int row_dst;\n        int col_dst;\n"
+                        "        pd = -1;\n        row_dst = 0;\n        col_dst = 0;\n",
+                        "        logic [ROUTE_W-1:0] pd;\n"
+                        "        logic [SRC_W-1:0] row_dst;\n"
+                        "        logic [SRC_W-1:0] col_dst;\n"
+                        "        pd = ROUTE_W'(K*K);\n        row_dst = '0;\n        col_dst = '0;\n")
+    # The tap coordinates are router seats as well. `row_tap`/`col_tap` took
+    # machine ints, which put a 32-bit divider on every tap comparison, and
+    # the injection scan did the same with `n`, `dst_d`, `mx`, `my`, `dx` and
+    # `dy`. Narrowing the arguments makes each decode a few-bit operation.
+    text = text.replace(
+        "  function automatic int row_tap(input int src, input int dst);\n"
+        "    row_tap =  (src % K < dst % K) ? src % K : src % K - 1;\n",
+        "  function automatic int row_tap(input logic [SRC_W-1:0] src,"
+        " input logic [SRC_W-1:0] dst);\n"
+        "    row_tap = int'((src % K < dst % K) ? src % K : src % K - 1);\n")
+    text = text.replace(
+        "  function automatic int col_tap(input int src, input int dst);\n"
+        "    col_tap =  (src / K < dst / K) ? src / K : src / K - 1;\n",
+        "  function automatic int col_tap(input logic [SRC_W-1:0] src,"
+        " input logic [SRC_W-1:0] dst);\n"
+        "    col_tap = int'((src / K < dst / K) ? src / K : src / K - 1);\n")
+    text = text.replace("      int dst_d;\n      int mx;\n      int my;\n"
+                        "      int dx;\n      int dy;\n      int tap;\n",
+                        "      logic [ROUTE_W-1:0] dst_d;\n"
+                        "      logic [SRC_W-1:0] mx, my, dx, dy;\n"
+                        "      logic [SRC_W-1:0] tap;\n")
+    text = text.replace("      mx = n % K;\n      my = n / K;",
+                        "      mx = SRC_W'(n) % K;\n      my = SRC_W'(n) / K;")
+    text = text.replace("          dx = dst_d % K;\n          dy = dst_d / K;",
+                        "          dx = ROUTE_W'(dst_d) % K;\n          dy = ROUTE_W'(dst_d) / K;")
+    text = text.replace("        dst_d = int'(route_destination_f(ep_in_flit[n]));",
+                        "        dst_d = ROUTE_W'(route_destination_f(ep_in_flit[n]));")
+    text = text.replace("        if (dst_d >= N) begin",
+                        "        if (dst_d >= ROUTE_W'(N)) begin")
+    # The round-robin index is a port number, not a machine int: `% PORTS` on
+    # an int is a 32-bit divider per scan site (21 per router), and the
+    # registers that hold it are as wide as the port set.
+    text = text.replace(
+        "  int rr_local, rr_row, rr_col;\n",
+        "  localparam int PORT_W = $clog2(PORTS);\n"
+        "  logic [PORT_W-1:0] rr_local, rr_row, rr_col;\n")
+    for _rr in ("rr_local", "rr_row", "rr_col"):
+        text = text.replace(f"scan_idx = ({_rr} + offset) % PORTS;",
+                            f"scan_idx = int'((PORT_W'({_rr}) + PORT_W'(offset)) % PORTS);")
+    text = text.replace("pd >= 0 &&", "pd != ROUTE_W'(K*K) &&")
+    text = text.replace("pd = -1;", "pd = ROUTE_W'(K*K);")
+
+    for _wide, _narrow in (("(pd % K)", "(ROUTE_W'(pd) % K)"),
+                           ("(pd / K)", "(ROUTE_W'(pd) / K)"),
+                           ("(src % K)", "(SRC_W'(src) % K)"),
+                           ("(src / K)", "(SRC_W'(src) / K)"),
+                           ("(dst % K)", "(SRC_W'(dst) % K)"),
+                           ("(dst / K)", "(SRC_W'(dst) / K)")):
+        text = text.replace(_wide, _narrow)
+
+    # 9b. The proven pool travels in its own file: one module per file,
+    #     each file named for the module it holds.
     return text
 
 

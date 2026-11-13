@@ -65,6 +65,19 @@ def test_archive_preserves_all_sources_hashes_and_never_launches_compilers(sourc
         assert b'final case class KNCubeProfile' in archive.read('scala/constellation/veritx/CatalogRtlKNCubeExport.scala')
 
 
+def test_inventory_separates_repository_integration_from_the_archive_blocker(source_tree):
+    (source_tree / 'LICENSE').unlink()
+    status = sources.source_inventory()
+    assert status['available'] is False
+    assert status['integration_present'] is True
+    assert status['license_present'] is False
+    # The KNCube exporter is checked into the repository, so every family is
+    # present even though the external archive is blocked on its license.
+    assert status['exporters_present'] == 14
+    assert status['missing_exporters'] == []
+    assert status['reason']
+
+
 def test_missing_family_is_not_hidden_as_thirteen_of_fourteen(source_tree):
     (source_tree / 'src/main/scala/constellation/veritx/CatalogRtlHybridExport.scala').unlink()
     assert sources.source_inventory()['available'] is False

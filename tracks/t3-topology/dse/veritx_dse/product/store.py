@@ -47,6 +47,11 @@ class ProductStore:
                 finally:
                     self._tls.depth = depth
                 return
+            # The root is created once in __init__, but a long-lived store can
+            # outlive it: scripts/cleanup_runs.sh removes runs/studio-store
+            # wholesale. Recreate the directory here so a cleaned store heals
+            # instead of failing every mutation with an untyped 500.
+            self.root.mkdir(parents=True, exist_ok=True)
             handle = open(self.root / ".store.lock", "a+b")
             try:
                 lock_exclusive(handle.fileno())

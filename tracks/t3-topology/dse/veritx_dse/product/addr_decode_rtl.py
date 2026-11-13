@@ -331,7 +331,7 @@ def render_addr_decode(decode: Any, *, module: str = "addr_decode",
         ])
         if has_instance:
             lines.append("  input  logic [REQ_INST_W-1:0]    req_inst = '0,")
-        lines.append("  input  logic [REQ_ID_W-1:0]    wire_req_id = '0,")
+        lines.append("  input  logic [REQ_ID_W-1:0]    wire_req_id,")
         if has_instance:
             lines.append("  input  logic [REQ_INST_W-1:0]    wire_req_inst = '0,")
         if has_atomic:

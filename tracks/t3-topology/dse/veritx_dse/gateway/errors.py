@@ -54,7 +54,9 @@ def http_status_for(exc: BaseException) -> int | None:
 
     ``None`` means "this is not a declared failure" — the caller must treat
     it as a 500, never as a user error. A bare ``ValueError``/``TypeError``/
-    ``RuntimeError``/``AttributeError`` is deliberately unmapped.
+    ``RuntimeError``/``AttributeError`` is deliberately unmapped. ``OSError``
+    IS mapped (503): a filesystem fault is an environment failure with a
+    detail worth showing, not a programmer bug with nothing to say.
     """
     if isinstance(exc, HTTPException):
         return exc.status_code
@@ -77,6 +79,12 @@ def http_status_for(exc: BaseException) -> int | None:
         return 400
     if isinstance(exc, ControlPlaneError):
         return _STATUS_BY_CODE.get(exc.code, 500)
+    # A filesystem failure is an environment fault, not a user error and not a
+    # programmer bug: the request was well formed and nothing in it caused the
+    # failure. It is typed so the detail (path + errno) reaches the UI instead
+    # of collapsing into a bare "internal server error" that names nothing.
+    if isinstance(exc, OSError):
+        return 503
     # Series refusals (loom simulation API) carry a closed spec code.
     # Duck-typed so the gateway never imports the reader: any exception
     # with one of these codes maps the same way.
@@ -101,6 +109,8 @@ def error_code_for(exc: BaseException) -> str:
         return "NOT_FOUND"
     if isinstance(exc, ControlPlaneError):
         return exc.code.value
+    if isinstance(exc, OSError):
+        return "STORAGE_UNAVAILABLE"
     code = getattr(exc, "code", None)
     if isinstance(code, str):
         return code

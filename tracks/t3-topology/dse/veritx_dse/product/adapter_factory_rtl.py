@@ -1015,11 +1015,16 @@ module __MODULE__ #(
       prev_bvalid_q <= 1'b0;
       prev_bready_q <= 1'b0;
     end else begin
+      // The AXI5 protocol checks are simulation-only: a synthesis run has no
+      // place to report them, and the flow rejects the check cells it would
+      // otherwise leave in the netlist.
+`ifndef SYNTHESIS
       if (prev_awvalid_q && !prev_awready_q) assert (in_awvalid);
       if (prev_arvalid_q && !prev_arready_q) assert (in_arvalid);
       if (prev_wvalid_q && !prev_wready_q) assert (wvalid);
       if (prev_rvalid_q && !prev_rready_q) assert (rvalid);
       if (prev_bvalid_q && !prev_bready_q) assert (bvalid);
+`endif
       prev_awvalid_q <= in_awvalid;
       prev_awready_q <= in_awready;
       prev_arvalid_q <= in_arvalid;
@@ -1034,10 +1039,12 @@ module __MODULE__ #(
   end
   always_ff @(posedge clk) begin
     if (rst_n) begin
+`ifndef SYNTHESIS
       assert (aw_error == 1'b0 || in_awvalid);
       assert (ar_error == 1'b0 || in_arvalid);
       assert (!(out_awvalid && credit_full));
       assert (!(out_arvalid && credit_full));
+`endif
     end
   end
 endmodule

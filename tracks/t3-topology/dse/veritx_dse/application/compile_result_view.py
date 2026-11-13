@@ -38,6 +38,13 @@ def claims_are_current(claims: Any) -> bool:
             return False
     return True
 
+#: The `routing.shared_route_policy` values. A fabric with shared links
+#: always states WHY its route group does or does not carry a table, so the
+#: freshness guard can tell a deliberate refusal from a dropped relation.
+SHARED_ROUTE_POLICY_TABLE = "SHARED_ROUTE_TABLE"
+SHARED_ROUTE_POLICY_CANDIDATE_UNION = "CANDIDATE_UNION_WITHHELD"
+SHARED_ROUTE_POLICY_NONE = "NO_SHARED_ROUTE_ARTIFACT"
+
 def compile_result_is_current(payload: Any) -> bool:
     """True when a FROZEN CompileResultView may be served as-is.
 
@@ -53,7 +60,16 @@ def compile_result_is_current(payload: Any) -> bool:
     routing = groups.get("routing") or {}
     topology = (groups.get("fabric") or {}).get("topology") or {}
     if topology.get("shared_links") and not routing.get("shared_route"):
-        return False  # Older inspectors silently dropped the v3 route relation.
+        # Older inspectors silently dropped the v3 route relation. A payload
+        # that instead DECLARES the withheld relation is current: a GEC-hybrid
+        # route is a ranked candidate union per (src, dst), so it has no one
+        # deterministic table to carry (`_shared_route_table` refuses it by
+        # design). Without this branch no GEC-hybrid revision could ever be
+        # current, and every Compile Result / diff read would recompile the
+        # whole fabric (~7 s) on every request.
+        if routing.get("shared_route_policy") \
+                != SHARED_ROUTE_POLICY_CANDIDATE_UNION:
+            return False
     certificate = payload.get("certificate")
     if certificate is None:
         return True
@@ -360,6 +376,32 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
         "topology": topology_view,
     }
 
+def _shared_route_table(route: Any) -> dict[str, Any] | None:
+    """The shared-resource route table, recognized by ARTIFACT SHAPE.
+
+    Why not `schema_version == 3`: `RankPolicyRoute` stamps schema_version 1
+    from its own module constant while being a v3 shared-resource artifact
+    (`canonical_dict` + `route_artifact_id`, one decision union per pair). An
+    equality test on the integer therefore withheld the table from EVERY
+    SROTA revision compiled with `vc_policy=rank` — the Studio then reported
+    "this revision exposes no deterministic shared-resource route table" for
+    a fabric whose route was fully derived and differentially qualified.
+
+    The shape is the contract the reader depends on, so the shape is what is
+    tested. A GEC-hybrid route is a ranked candidate union per (source,
+    destination), not one deterministic table, so it stays excluded — that
+    refusal is deliberate and the Studio states it separately.
+    """
+    if not hasattr(route, "canonical_dict") \
+            or not hasattr(route, "route_artifact_id"):
+        return None
+    from veritx_dse.model.gec_hybrid_route import GEC_HYBRID_ROUTING_CLASS
+    if getattr(route, "routing_class", None) == GEC_HYBRID_ROUTING_CLASS:
+        return None
+    table = route.canonical_dict()
+    table["artifact_id"] = route.route_artifact_id()
+    return table
+
 def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
     """Gate 8 §58/§59 — expected and observed, never merged."""
     route = getattr(bundle, "router_route", None)
@@ -368,11 +410,18 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
     entries = dict(getattr(route, "entries", {}) or {})
     topology = getattr(bundle, "topology", None)
     classes = [c.id for c in getattr(route, "routing_classes", ())]
-    shared_route = None
-    if getattr(route, "schema_version", None) == 3 and hasattr(route, "canonical_dict"):
-        shared_route = route.canonical_dict()
-        shared_route["artifact_id"] = route.route_artifact_id()
+    shared_route = _shared_route_table(route)
+    if shared_route is not None:
+        shared_route_policy = SHARED_ROUTE_POLICY_TABLE
         classes = [route.routing_class]
+    else:
+        from veritx_dse.model.gec_hybrid_route import (
+            GEC_HYBRID_ROUTING_CLASS,
+        )
+        shared_route_policy = (
+            SHARED_ROUTE_POLICY_CANDIDATE_UNION
+            if getattr(route, "routing_class", None) == GEC_HYBRID_ROUTING_CLASS
+            else SHARED_ROUTE_POLICY_NONE)
 
     route_entries = [
         {"routing_class": cls, "src": src, "dst": dst, "channel_id": channel}
@@ -407,6 +456,7 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
         "entries": route_entries,
         "channel_hops": channel_hops,
         "shared_route": shared_route,
+        "shared_route_policy": shared_route_policy,
         "observation": observation,
         "observation_note": (
             "expected and observed are separate facts: the canonical route "
@@ -856,6 +906,9 @@ __all__ = [
     "CONTROL_PLANE_SCOPE",
     "claims_are_current",
     "compile_result_is_current",
+    "SHARED_ROUTE_POLICY_TABLE",
+    "SHARED_ROUTE_POLICY_CANDIDATE_UNION",
+    "SHARED_ROUTE_POLICY_NONE",
     "FULL_DETAIL_ROUTERS",
     "GROUPS",
     "MAX_DETAIL_ROUTERS",

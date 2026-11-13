@@ -6,6 +6,7 @@ The verifier owns acyclicity; this module owns the executable route relation.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -256,7 +257,12 @@ class GecHybridRoute:
                             for (s, d), options in sorted(self.choices.items())]}
 
     def route_artifact_id(self):
-        return content_id("srota/GecHybridRoute/v1", self.canonical_dict())
+        cached = self.__dict__.get("_artifact_id")
+        if cached is None:
+            cached = content_id("srota/GecHybridRoute/v1",
+                                self.canonical_dict())
+            object.__setattr__(self, "_artifact_id", cached)
+        return cached
 
     def validate_against(self, topology):
         if self.topology_hash != topology.topology_hash():
@@ -266,6 +272,9 @@ class GecHybridRoute:
             raise GecHybridCandidateError("hybrid choices differ from the complete source candidate union")
 
     def shared_resource_cdg(self) -> GecHybridDependencyGraph:
+        cached = self.__dict__.get("_shared_cdg")
+        if cached is not None:
+            return cached
         nodes, edges = set(), set()
         terminals = self.terminal_to_router
         transitions = set(self.allowed_transitions)
@@ -283,13 +292,15 @@ class GecHybridRoute:
                     if (a[1], b[1]) not in transitions:
                         raise GecHybridCandidateError("hybrid candidate violates phase VC order")
                     edges.add((a, b))
-        return GecHybridDependencyGraph(
+        graph = GecHybridDependencyGraph(
             tuple(sorted(nodes)), tuple(sorted(edges)),
             MappingProxyType(self.partition_to_vcs))
+        object.__setattr__(self, "_shared_cdg", graph)
+        return graph
 
 
-def gec_hybrid_route_for_topology(params: GecHybridParams,
-                                  topology: TopologyArtifact) -> GecHybridRoute:
+def _derive_gec_hybrid_route(params: GecHybridParams,
+                             topology: TopologyArtifact) -> GecHybridRoute:
     candidates = bound_gec_hybrid_candidates(params, topology)
     choices = {}
     for key, options in candidates.items():
@@ -303,3 +314,34 @@ def gec_hybrid_route_for_topology(params: GecHybridParams,
             choices[key] = (RouteDecision(ResourceRef(ResourceKind.CHANNEL,
                                                       len(topology.channels) + dest), src),)
     return GecHybridRoute(params, topology.topology_hash(), choices)
+
+
+#: Derived candidate unions, keyed by (params, topology identity).
+#:
+#: `gec_hybrid_route_for_topology` is a PURE function of its two arguments —
+#: the same params over the same materialized topology always yield the same
+#: union — and every verification pass asks for it once per router (49 calls:
+#: ~0.06 s each, ~4 s of a single compile) plus once per parent re-derivation.
+#: A route artifact validates against the union by re-deriving it and
+#: comparing the choices tuple-for-tuple, so sharing one derived union does
+#: not weaken the check: the derivation is still recomputed from authored
+#: intent the first time and every deep comparison still runs. Bounded and
+#: cleared wholesale, because a Studio session compiles a handful of fabrics.
+_ROUTE_UNION_CACHE: dict[tuple[GecHybridParams, str], GecHybridRoute] = {}
+_ROUTE_UNION_CACHE_LIMIT = 8
+_ROUTE_UNION_CACHE_LOCK = threading.Lock()
+
+
+def gec_hybrid_route_for_topology(params: GecHybridParams,
+                                  topology: TopologyArtifact) -> GecHybridRoute:
+    key = (params, topology.topology_hash())
+    with _ROUTE_UNION_CACHE_LOCK:
+        cached = _ROUTE_UNION_CACHE.get(key)
+    if cached is not None:
+        return cached
+    route = _derive_gec_hybrid_route(params, topology)
+    with _ROUTE_UNION_CACHE_LOCK:
+        if len(_ROUTE_UNION_CACHE) >= _ROUTE_UNION_CACHE_LIMIT:
+            _ROUTE_UNION_CACHE.clear()
+        _ROUTE_UNION_CACHE[key] = route
+    return route

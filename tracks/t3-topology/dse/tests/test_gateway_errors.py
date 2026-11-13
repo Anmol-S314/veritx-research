@@ -114,3 +114,28 @@ def test_unknown_run_is_404_and_traversal_is_rejected(tmp_path):
     assert missing.json()["code"] == "NOT_FOUND"
     traversal = client.get("/runs/..%2Fsecret")
     assert traversal.status_code in (400, 404), traversal.text
+
+@pytest.mark.parametrize("fault", [
+    FileNotFoundError(2, "No such file or directory",
+                      "/srv/runs/studio-store/projects/.store.lock"),
+    PermissionError(13, "Permission denied", "/srv/runs/studio-store"),
+    OSError(28, "No space left on device"),
+])
+def test_storage_faults_are_typed_with_their_detail(tmp_path, monkeypatch,
+                                                    fault):
+    """A filesystem fault must not collapse into a bare "internal server error".
+
+    `runs/studio-store` was deleted under a live gateway (scripts/
+    cleanup_runs.sh), and every `POST /api/v1/projects` answered 500 with the
+    detail "internal server error" — the path, the errno and the writer were
+    all discarded. An OSError is an environment failure: it maps to 503 and
+    keeps its message so the UI can name what is actually wrong.
+    """
+    monkeypatch.setattr(SrotaControlPlane, "compile", _raise(fault))
+    response = _client(tmp_path, with_binary=False).post(
+        "/compile", json={"preset": "mesh4"})
+    assert response.status_code == 503, response.text
+    body = response.json()
+    assert body["code"] == "STORAGE_UNAVAILABLE"
+    assert str(fault) == body["detail"]
+    assert body["detail"] != "internal server error"

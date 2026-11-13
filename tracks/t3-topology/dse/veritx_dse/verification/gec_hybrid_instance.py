@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from veritx_dse.core.artifact import content_id
+from veritx_dse.core.derivation_scope import scoped_derivation
 from veritx_dse.model.shared_resource import ResourceKind, ResourceRef
 from veritx_dse.model.topology_artifact import (
     MaterializedFamily, TopologyArtifact, materialize_gec_hybrid,
@@ -57,7 +58,20 @@ def prove_gec_hybrid_instance(
 
     Invalid geometry, taps, or routing invariants refuse rather than return
     a vacuous proof. Actual IDs need not match the materializer's numbering.
+
+    Reused only inside one adjudication (see ``core.derivation_scope``): one
+    plan asks for this proof once per question per adapter with identical
+    arguments. The derivation runs in full the first time it is asked for;
+    outside a scope every call derives afresh.
     """
+    return scoped_derivation(
+        "gec_hybrid_instance_proof", (params, topology.topology_hash()),
+        lambda: _prove_gec_hybrid_instance(params, topology))
+
+
+def _prove_gec_hybrid_instance(
+        params: GecHybridParams, topology: TopologyArtifact
+) -> GecHybridInstanceProof:
     if not isinstance(params, GecHybridParams):
         raise GecHybridCandidateError("params must be GecHybridParams")
     if not isinstance(topology, TopologyArtifact) or \

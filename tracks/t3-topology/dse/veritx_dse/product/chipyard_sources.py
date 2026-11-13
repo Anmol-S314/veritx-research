@@ -28,6 +28,14 @@ EXPORTERS = (
     ('kncube', 'CatalogRtlKNCubeExport'),
 )
 _DEFAULT_SOURCE = Path('/home/datavex/.cache/veritx-noc-lab/vla-native-execution/experiments/constellation_topology_rtl/rtl-completion-v3-20261109/execution/build/srota-component-fix-1-corrected/candidate-source')
+_INTEGRATION_ROOT = REPO / 'tracks/t3-topology/rtl/chipyard'
+_INTEGRATION_FILES = (
+    'AllTopologyRtlExport.scala',
+    'CatalogRtlKNCubeExport.scala',
+    'CompiledFabricPreview.scala',
+    'README.md',
+    'tests/KNCubeSourceSpec.scala',
+)
 _MAX_FILES = 512
 _MAX_FILE_BYTES = 4 * 1024 * 1024
 _MAX_TOTAL_BYTES = 32 * 1024 * 1024
@@ -88,9 +96,56 @@ def _files(repo_root: Path, source_root: Path) -> dict[str, Path]:
     return files
 
 
+def _presence(source_root: Path) -> dict:
+    """What exists even when the assembled archive cannot be produced.
+
+    The inventory used to answer one boolean for two different things: the
+    repository's integration sources and the external Constellation tree. When
+    the external tree was missing the UI could only say "unavailable", which
+    read as if the checked-in exporters did not exist. Report both layers so
+    the reason names the absent part instead of the whole stack.
+    """
+    scala = source_root / 'src/main/scala'
+    required_dirs = ('channel', 'noc', 'router', 'routing', 'topology')
+    missing_external = [f'src/main/scala/{name}' for name in required_dirs
+                        if not (scala / name).is_dir()]
+    if not (source_root / 'LICENSE').is_file():
+        missing_external.append('LICENSE')
+    exporters = {entry: (scala / 'constellation/veritx' / f'{entry}.scala').is_file()
+                 for _, entry in EXPORTERS}
+    missing_external.extend(
+        f'src/main/scala/constellation/veritx/{entry}.scala'
+        for entry, present in exporters.items() if not present)
+    repo_exporters = {
+        path.stem for path in _INTEGRATION_ROOT.glob('CatalogRtl*Export.scala')}
+    # The dispatcher's KNCube implementation is supplied by the repository, so
+    # an exporter is present when either tree carries it. An external-only
+    # count would report a family as missing when it is checked in here.
+    available = {entry for entry, present in exporters.items() if present} | (
+        repo_exporters & {entry for _, entry in EXPORTERS})
+    missing_exporters = sorted({entry for _, entry in EXPORTERS} - available)
+    integration = {name: (_INTEGRATION_ROOT / name).is_file()
+                   for name in _INTEGRATION_FILES}
+    return {
+        'integration_root': str(_INTEGRATION_ROOT),
+        'integration_present': all(integration.values()),
+        'integration_files': integration,
+        'repository_exporters': sorted(repo_exporters),
+        'external_source_root': str(source_root),
+        'external_tree_present': not missing_external,
+        'external_missing': missing_external,
+        'license_present': (source_root / 'LICENSE').is_file(),
+        'exporters_present': len(available),
+        'exporters_total': len(exporters),
+        'missing_exporters': missing_exporters,
+    }
+
+
 def source_inventory() -> dict:
+    root = _root()
+    presence = _presence(root)
     try:
-        files = _files(REPO, _root())
+        files = _files(REPO, root)
         reason = None
     except (ChipyardSourceError, OSError) as exc:
         files, reason = {}, str(exc)
@@ -100,6 +155,7 @@ def source_inventory() -> dict:
         'parameterized_core_present': 'parameterized/CompiledFabricPreview.scala' in files,
         'generation': 'NOT_RUN', 'simulation': 'NOT_RUN', 'qualification': 'NOT_QUALIFIED',
         'matches_selected_project': False, 'final_implementation': False,
+        **presence,
         'targets': [{'topology_id': key, 'entry_point': f'constellation.veritx.{entry}',
                      'source_present': f'scala/constellation/veritx/{entry}.scala' in files}
                     for key, entry in EXPORTERS],

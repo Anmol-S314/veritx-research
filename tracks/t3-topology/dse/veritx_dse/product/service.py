@@ -26,6 +26,7 @@ from veritx_dse.application.views import (
     design_view, lowering_view,
     staged_topology_view, topology_view,
 )
+from veritx_dse.core.derivation_scope import scoped_adjudication
 from veritx_dse.core.errors import (
     InvalidInput as _LoweringInvalid,
     MappingInvalid as _LoweringMappingInvalid,
@@ -54,6 +55,10 @@ from veritx_dse.product.workload_registry import (
 )
 
 _WORKLOAD_TEMPLATES = BUILTIN_WORKLOADS
+
+#: Re-derived CompileResultView payloads kept per process for legacy frozen
+#: revisions. One payload is ~100 KB; a Studio session opens a handful.
+_COMPILE_RESULT_CACHE_LIMIT = 16
 
 _RUN_STATUS = {
     "EVALUATED": "EVALUATED",
@@ -200,6 +205,10 @@ class ProductService:
                 ramulator_python=config.ramulator_python,
                 ramulator_geometry_profile=config.ramulator_geometry_profile)
         self._assessment_cache: dict[str, dict[str, Any]] = {}
+        # Re-derived CompileResultView payloads for legacy frozen revisions,
+        # keyed by revision id and guarded by the revision's identity stamp.
+        self._compile_result_cache: dict[
+            str, tuple[tuple[Any, ...], dict[str, Any]]] = {}
         for project in self.store.list_projects():
             self.jobs.recover_interrupted(project["project_id"])
 
@@ -1933,6 +1942,20 @@ Rationale: docs/decisions/modules/product.md
         if compilation_view_doc.get("status") != "COMPILED":
             return self._staged_compile_result(revision_id, revision)
 
+        # A legacy frozen payload is re-derived through the hash-checked path
+        # below, which costs a full recompilation (~2 s after the candidate-
+        # union memo, was ~9 s). Compile Result and its diff both read this
+        # funnel and a page load reads it repeatedly, so the verified result
+        # is kept for the revision's identity: the rebuild depends only on
+        # the immutable request and the loaded code, and a changed tree is
+        # already reported STALE by /health (restart required).
+        stamp = (revision.get("design_hash"), revision.get("created_at"),
+                 (compilation_view_doc.get("artifact_hashes") or {}).get(
+                     "router_route_hash"))
+        cached = self._compile_result_cache.get(revision_id)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+
         compilation = FabricCompiler().compile(
             parse_request_doc(revision["request"]))
         if compilation.status != "COMPILED":
@@ -1969,10 +1992,14 @@ Rationale: docs/decisions/modules/product.md
                     f"{key} for this revision",
                     operation="get_revision_compile_result",
                     resource_id=revision_id)
-        return build_compile_result(
+        built = build_compile_result(
             revision, compilation,
             self.get_revision_topology(revision_id),
             revision.get("artifact_chain") or artifact_chain_view(compilation))
+        if len(self._compile_result_cache) >= _COMPILE_RESULT_CACHE_LIMIT:
+            self._compile_result_cache.clear()
+        self._compile_result_cache[revision_id] = (stamp, built)
+        return built
 
     def _staged_compile_result(self, revision_id: str,
                                revision: dict[str, Any]) -> dict[str, Any]:
@@ -2438,11 +2465,51 @@ Rationale: docs/decisions/modules/product.md
         # pass its actual VC assignment too: a class-VC design may have two
         # VCs but is still a different switching contract.
         vc_assignment = None
+        compiled = None
         if revision_matches:
             from veritx_dse.application.fabric_compiler import FabricCompiler
             compiled = FabricCompiler().compile(request)
             if compiled.status == "COMPILED" and compiled.bundle is not None:
                 vc_assignment = compiled.bundle.vc_assignment
+        # Composed-family preflight. This is a check, not a claim: it names
+        # the request-level reason the family emitter would refuse. The
+        # topology-only preview can still be emitted, but it never substitutes
+        # for this path.
+        composed_preflight = None
+        if compiled is not None and compiled.status == "COMPILED" and compiled.bundle is not None:
+            packet = compiled.bundle.packet_format
+            flit_width = int(packet.flit_width_bits)
+            data_width = int(request.physical.default_data_width)
+            required = data_width + 6
+            agents = tuple(getattr(request, "agents", ()) or ())
+            kinds = tuple(str(getattr(getattr(agent, "kind", None), "value", getattr(agent, "kind", ""))) for agent in agents)
+            memory_groups = [index for index, kind in enumerate(kinds) if kind == "hbm_controller"]
+            memory_endpoints = sum(int(getattr(agents[index], "count", 1)) for index in memory_groups)
+            data_widths = {int(getattr(agent, "data_width", 0)) for agent in agents}
+            blockers: list[str] = []
+            if flit_width < required:
+                blockers.append(
+                    f"flit too narrow for data width ({flit_width}-bit packet vs "
+                    f"{data_width}-bit data; needs at least {required})")
+            if len(memory_groups) != 1:
+                blockers.append("exactly one hbm_controller memory group is required")
+            elif memory_endpoints != 1:
+                blockers.append(
+                    f"memory group has {memory_endpoints} endpoints; the composed-family slice supports exactly 1")
+            if not any(kind != "hbm_controller" for kind in kinds):
+                blockers.append("at least one initiator group is required")
+            if len(data_widths) != 1:
+                blockers.append("all agent groups must share one data width")
+            composed_preflight = {
+                "feasible": not blockers,
+                "flit_width_bits": flit_width,
+                "data_width_bits": data_width,
+                "required_flit_width_bits": required,
+                "memory_endpoints": memory_endpoints,
+                "blockers": blockers,
+                "blocker": blockers[0] if blockers else None,
+                "note": "Preflight only; a composed-family emission must still run and record its A1-A10 evidence.",
+            }
         support = rtl_support(request, topology, vc_assignment)
         if not support.supported and support.reason not in reasons:
             reasons.append(support.reason)
@@ -2450,8 +2517,14 @@ Rationale: docs/decisions/modules/product.md
         intent = getattr(request, "topology", None)
         fam = topology.get("family") if isinstance(topology, dict) else None
         research_rtl = prototype_for_family(fam, kind=getattr(intent, "kind", None))
+        final_reason = "A simulation-equivalent RTL implementation of the general compiled router/packet contract is not connected."
+        if composed_preflight and composed_preflight.get("blockers"):
+            final_reason = "Composed-family emission is blocked: " + "; ".join(composed_preflight["blockers"]) + "."
+        elif composed_preflight and composed_preflight.get("feasible"):
+            final_reason = "Composed-family emission is feasible for this request but has not been run for this revision."
         return {"contract_version": 1, "revision_id": revision_id, "draft_design_hash": source_hash,
-                "final_rtl_available": False, "final_rtl_reason": "A simulation-equivalent RTL implementation of the general compiled router/packet contract is not connected.",
+                "final_rtl_available": False, "final_rtl_reason": final_reason,
+                "composed_family_preflight": composed_preflight,
                 "preview_available": not reasons, "preview_blockers": reasons,
                 "preview_support": support.to_dict(),
                 "parameterized_source_available": bool(revision_matches and (revision or {}).get("chipyard_source_contract")),
@@ -2977,6 +3050,7 @@ Rationale: docs/decisions/modules/product.md
                 operation=operation,
                 resource_id=revision.get("revision_id"))
 
+    @scoped_adjudication
     def evaluation_plan(
         self,
         revision_id: str,
@@ -3804,6 +3878,7 @@ Rationale: docs/decisions/modules/product.md
                 operation="run_artifact_bytes", resource_id=run_id) from exc
         return data, hashlib.sha256(data).hexdigest()
 
+    @scoped_adjudication
     def revision_preflight(self, revision_id: str) -> dict[str, Any]:
         """PreflightView — the execution gate, evaluated before any run.
 

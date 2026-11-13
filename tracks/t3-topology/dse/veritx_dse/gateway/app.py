@@ -600,6 +600,24 @@ def _prewarm_topology_probe() -> None:
             "capability probe prewarm failed; it will run on demand",
             exc_info=True)
 
+
+def _prewarm_read_paths(product: ProductService) -> None:
+    """Warm the two read paths a first page load would otherwise pay cold.
+
+    The topology probe compiles every registered family (~4 s) and the
+    workload catalog materializes every registry workload once (module import
+    plus a cold page cache: ~6 s on the first call, ~8 ms after). Both are
+    read-only derivations of the tree on disk, so they are paid here, off the
+    request path, rather than inside the first page load.
+    """
+    _prewarm_topology_probe()
+    try:
+        product.workload_catalog()
+    except Exception:  # pragma: no cover - startup must never fail here
+        logger.warning(
+            "workload catalog prewarm failed; it will run on demand",
+            exc_info=True)
+
 # Read-only inventory of the artifacts the t3 report tools write. Three roots only: the generated
 # dashboard/report tree, the tracks results tree (plots), and the analysis output tree (Pareto,
 # area, energy, robustness figures). The endpoint never accepts a path from the client; report_id
@@ -700,7 +718,8 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     async def lifespan(_app):
         try:
             if cfg.prewarm_capability_probe:
-                threading.Thread(target=_prewarm_topology_probe,
+                threading.Thread(target=_prewarm_read_paths,
+                                 args=(product,),
                                  name="loom-capability-prewarm",
                                  daemon=True).start()
             yield
@@ -922,6 +941,12 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_rtl_prototypes() -> dict[str, Any]:
         """Current research RTL filesystem evidence; not product RTL."""
         return product.catalog_rtl_prototypes()
+
+    @app.get("/api/v1/catalog/final-implementation", tags=["product"])
+    def v1_final_implementation() -> dict[str, Any]:
+        """Recorded composed-family (A1-A10) evidence; not a selected-project claim."""
+        from veritx_dse.product.final_evidence import composed_family_evidence
+        return composed_family_evidence()
 
     @app.get("/api/v1/catalog/rtl-prototypes/{topology_id}/artifacts/{name}", tags=["product"])
     def v1_rtl_prototype_artifact(topology_id: str, name: str, version: str = "") -> StreamingResponse:
@@ -1658,7 +1683,13 @@ Rationale: docs/decisions/modules/gateway.md
                 content={"detail": "internal server error",
                          "code": "INTERNAL_ERROR"})
         if status >= 500:
-            logger.error("gateway typed failure %s: %s", code, exc)
+            if isinstance(exc, OSError):
+                # Storage faults keep their traceback: the detail names the
+                # path, but only the stack says which writer reached it.
+                logger.error("gateway storage failure %s: %s", code, exc,
+                             exc_info=exc)
+            else:
+                logger.error("gateway typed failure %s: %s", code, exc)
         return JSONResponse(status_code=status,
                             content={"detail": str(exc), "code": code})
 
