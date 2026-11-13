@@ -24,13 +24,13 @@
   "A2": {
    "measured": {
     "lint": "PASS",
-    "scenarios": 13,
+    "scenarios": 14,
     "sim": "PASS"
    },
    "reason": "lint clean, simulation green, every scenario true",
    "sha256": {
-    "lint_log": "b57846d39ace6af3562286cddd52f4cdc62a8e1f94dfc4f6609df75a4cf94114",
-    "sim_log": "7e54f3d62994803ef132be4b1a5a10cef707328193b4a49122d7eaace3b841f6"
+    "lint_log": "2e5afd9bf3ad948f3a088b5056267d7faf82760f685de27d24cf19ff9a7b5294",
+    "sim_log": "d58d56749aa77121f19dff125c4ec5b1130650a447aad69f8ff162ce530dc89f"
    },
    "status": "CLOSED"
   },

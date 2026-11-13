@@ -142,8 +142,8 @@ still passing the removed `WIRE_LATENCY` parameter).
   same shape delivers both contended packets with per-source order and
   stable per-packet VCs (`vc_a=3 vc_b=1`). The one qualification kept:
   **when both contended packets land on the same VC, they serialize** —
-  which is the property the lock exists to provide, and the seats run
-  measures exactly that (`source_switches=1`).
+  which is the property the lock exists to provide (the pre-change 74-seat
+  run measured `source_switches=1`).
 - Multicast, AXI/OrderingFSM/CDC composition, physical multidrop, STA, formal
   deadlock and cycle-accurate BookSim parity remain separate obligations.
 - Physical signoff (C6/P9) remains operator-owned.

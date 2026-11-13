@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design editor · concept demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* DESIGN.md tokens. Four sizes: 12 / 14 / 16 / 23 (+20 emphasis). Sentence case. */
+:root{--ground:#F2F4F6;--surface:#fff;--toolbar:#E9EDF1;--border:#C9D1DA;--ink:#1D242C;--ink2:#536170;
+--accent:#0F6C9E;--sel:#E3F0F8;--err:#A32928;--warn:#79540C;--ok:#246847}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;display:flex;flex-direction:column;background:var(--ground);color:var(--ink);
+font:14px/1.4 "IBM Plex Sans",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,"IBM Plex Mono",monospace;font-size:12px}
+small,.meta{font-size:12px;color:var(--ink2)}
+h1{font-size:23px;margin:0}h2{font-size:16px;margin:0}
+button,select,input{font:inherit;color:inherit}
+button{border:1px solid var(--border);background:var(--surface);border-radius:3px;padding:4px 10px;cursor:pointer}
+button:hover{background:var(--sel)}button:disabled{opacity:.45;cursor:default;background:var(--surface)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:disabled{background:var(--accent);opacity:.4}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.demo-banner{background:#FFF6DD;border-bottom:1px solid var(--border);padding:4px 16px;font-size:12px;color:var(--warn)}
+.heading{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 16px}
+.tabs{display:flex;gap:2px;background:var(--surface);border-bottom:1px solid var(--border);padding:0 12px}
+.tabs a{padding:8px 14px;color:var(--ink2);text-decoration:none;border-bottom:2px solid transparent}
+.tabs a.on{color:var(--accent);border-color:var(--accent);font-weight:600}
+.toolbar{display:flex;align-items:center;gap:8px;background:var(--toolbar);border-bottom:1px solid var(--border);padding:6px 12px}
+.sp{flex:1}
+.badge{display:inline-block;font-size:12px;padding:1px 7px;border-radius:3px;border:1px solid var(--border);background:var(--surface)}
+.b-ok{color:var(--ok);border-color:#a9d3bc}.b-warn{color:var(--warn);border-color:#e0c98f}
+.b-err{color:var(--err);border-color:#e3a9a8}.b-blue{color:var(--accent);border-color:#9cc7de;background:var(--sel)}
+.workspace{flex:1;min-height:0;display:grid;grid-template-columns:240px 1fr 320px;grid-template-rows:minmax(0,1fr) 190px}
+.panel{background:var(--surface);border-right:1px solid var(--border);overflow:auto;min-height:0}
+.panel>header{position:sticky;top:0;z-index:1;background:var(--toolbar);border-bottom:1px solid var(--border);
+padding:6px 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+#outline{grid-row:1}#canvasWrap{grid-row:1;background:var(--ground);display:flex;flex-direction:column;min-width:0}
+#props{grid-row:1;border-right:0}#problems{grid-column:1/4;grid-row:2;border-top:1px solid var(--border);border-right:0}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;border-radius:0;border-right:1px solid var(--border)}.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--sel);color:var(--accent);font-weight:600}
+.canvas{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px}
+.canvas{position:relative;overflow:hidden}.canvas svg{position:absolute;inset:8px;width:calc(100% - 16px);height:calc(100% - 16px)}
+.tree summary{padding:5px 12px;cursor:pointer;font-weight:600;list-style:none;display:flex;gap:6px;align-items:center}
+.tree summary::before{content:"▸";color:var(--ink2);font-size:12px}.tree details[open]>summary::before{content:"▾"}
+.tree .item{display:flex;align-items:center;gap:6px;padding:3px 12px 3px 28px;cursor:pointer;border-left:3px solid transparent}
+.tree .item:hover{background:var(--ground)}.tree .item.sel{background:var(--sel);border-left-color:var(--accent)}
+.tree .item .n{margin-left:auto}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.err{background:var(--err)}.dot.warn{background:#C99A2E}
+.form{padding:8px 12px;display:grid;gap:10px}
+.field label{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-bottom:2px}
+.field input,.field select{width:100%;border:1px solid var(--border);border-radius:3px;padding:4px 8px;background:var(--surface)}
+.field.bad input,.field.bad select{border-color:var(--err);background:#FDF3F3}
+.field.warnf input,.field.warnf select{border-color:#C99A2E;background:#FFFBEF}
+.field .why{font-size:12px;margin-top:2px}.field.bad .why{color:var(--err)}.field.warnf .why{color:var(--warn)}
+.field.flash{animation:flash 1.2s}@keyframes flash{0%,60%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+.group{border-top:1px solid var(--border);padding:8px 12px 2px;font-size:12px;color:var(--ink2);font-weight:600}
+table{width:100%;border-collapse:collapse}
+td,th{text-align:left;padding:3px 12px;border-bottom:1px solid #E3E8EE;font-weight:400}
+tr.prob{cursor:pointer}tr.prob:hover{background:var(--sel)}
+.sev{font-weight:600}.sev.err{color:var(--err)}.sev.warn{color:var(--warn)}.sev.ne{color:var(--ink2)}.sev.info{color:var(--accent)}
+details.assume{border-top:1px solid var(--border);padding:4px 12px;font-size:12px;color:var(--ink2)}
+.node{cursor:pointer}.node:focus-visible circle{stroke:var(--accent);stroke-width:3}
+.empty{padding:40px;color:var(--ink2);text-align:center;max-width:420px}
+</style>
+</head>
+<body>
+<div class="demo-banner">Concept sketch (superseded by apps/studio/prototype/src/DesignEditor.tsx) — illustrative data only, no gateway. Edit a knob, then watch the Problems panel; click a problem to jump to the object and field.</div>
+<div class="heading"><span class="meta">Falcon8_NoC_Gen2 / Design</span><h1>Editor</h1></div>
+<nav class="tabs" aria-label="Design views"><a class="on" href="#">Editor</a><a href="#">Fabric</a><a href="#">Agents</a><a href="#">Addresses</a><a href="#">Domains</a><a href="#">Floorplan</a></nav>
+
+<div class="toolbar" role="toolbar" aria-label="Design editor actions">
+  <button class="primary" id="save">Save &amp; compile</button>
+  <button id="undo" title="Undo">↶ Undo</button><button id="redo" title="Redo">↷ Redo</button>
+  <span class="sp"></span>
+  <span id="stDraft" class="badge"></span>
+  <span id="stCert" class="badge"></span>
+  <span id="stRtl" class="badge b-warn" title="A topology-only preview is not the selected design's implementation">RTL: preview tier only</span>
+</div>
+
+<div class="workspace">
+  <aside class="panel tree" id="outline" aria-label="Outline"></aside>
+  <section id="canvasWrap" aria-label="Canvas">
+    <div class="toolbar">
+      <div class="seg" id="modes" role="group" aria-label="Canvas view"></div>
+      <span class="sp"></span><span class="meta" id="canvasMeta"></span>
+    </div>
+    <div class="canvas" id="canvas"></div>
+  </section>
+  <aside class="panel" id="props" aria-label="Properties"></aside>
+  <section class="panel" id="problems" aria-label="Problems"></section>
+</div>
+
+<script>
+// ---------- illustrative state ----------
+const init = () => ({
+  fabric:{family:'mesh',side:4,vcs:2,depth:8,linkWidth:128,arb:'islip',iters:1},
+  agents:[
+    {id:'NPU_0',kind:'compute_tile',router:0,width:128,domain:'core_clk'},
+    {id:'NPU_1',kind:'compute_tile',router:6,width:128,domain:'core_clk'},
+    {id:'NPU_2',kind:'compute_tile',router:6,width:128,domain:'core_clk'},
+    {id:'NPU_3',kind:'compute_tile',router:9,width:128,domain:'core_clk'},
+    {id:'HBM_0',kind:'hbm_controller',router:3,width:256,domain:'mem_clk'},
+    {id:'HBM_1',kind:'hbm_controller',router:12,width:256,domain:'mem_clk'},
+    {id:'NIC_0',kind:'nic',router:15,width:128,domain:'core_clk'},
+    {id:'NIC_1',kind:'nic',router:10,width:128,domain:'core_clk'}],
+  ranges:[
+    {id:'HBM0_WIN',base:0x0,size:0x40000000,target:'HBM_0'},
+    {id:'HBM1_WIN',base:0x30000000,size:0x40000000,target:'HBM_1'},   // overlaps HBM0_WIN
+    {id:'NIC_CSR',base:0x80000000,size:0x10000,target:'NIC_0'}]
+});
+let S=init(), saved=JSON.stringify(S), compiledOnce=true, past=[], future=[];
+let sel={kind:'fabric',id:'fabric'}, mode='Fabric', flashField=null;
+const $=id=>document.getElementById(id), hex=n=>'0x'+n.toString(16).toUpperCase();
+const dirty=()=>JSON.stringify(S)!==saved;
+
+// ---------- the Problems engine: one list from several sources ----------
+function problems(){
+  const P=[]; const f=S.fabric;
+  // source: local checks
+  const R=[...S.ranges].sort((a,b)=>a.base-b.base);
+  for(let i=0;i<R.length;i++)for(let j=i+1;j<R.length;j++){
+    if(R[j].base<R[i].base+R[i].size) P.push({sev:'err',src:'Local check',code:'LOCAL-ADDR-01',
+      msg:`${R[i].id} and ${R[j].id} overlap at ${hex(R[j].base)}`,at:{kind:'range',id:R[j].id},field:'base',view:'Addresses'});}
+  S.agents.forEach(a=>{
+    if(a.width!==f.linkWidth) P.push({sev:'warn',src:'Local check',code:'WIDTH-01',
+      msg:`${a.id} is ${a.width}-bit; fabric links are ${f.linkWidth}-bit (adapter needed)`,at:{kind:'agent',id:a.id},field:'width',view:'Agents'});
+  });
+  // source: compile stage-1 style verdicts (illustrative rules)
+  if(f.depth<4) P.push({sev:'err',src:'Compile · stage 1',code:'CREDIT-RT',
+    msg:`Buffer depth ${f.depth} < credit round-trip (4); a link cannot sustain full rate`,at:{kind:'fabric',id:'fabric'},field:'depth',view:'Fabric'});
+  else if(f.depth<6) P.push({sev:'warn',src:'Compile · stage 1',code:'CREDIT-RT',
+    msg:`Depth ${f.depth} sustains full rate only for 1-cycle credit return`,at:{kind:'fabric',id:'fabric'},field:'depth',view:'Fabric'});
+  if(f.vcs<2) P.push({sev:'err',src:'Compile · stage 1',code:'DEADLOCK-VC',
+    msg:'1 VC cannot separate request/response classes (protocol deadlock)',at:{kind:'fabric',id:'fabric'},field:'vcs',view:'Fabric'});
+  // source: not evaluated, kept distinct from "pass" (DESIGN.md)
+  P.push({sev:'ne',src:'Not evaluated',code:'CDC-IMPL-01',
+    msg:'Clock/reset crossing implementation — no CDC tool connected; declaring domains does not resolve it',at:{kind:'fabric',id:'fabric'},view:'Domains'});
+  if(dirty()) P.unshift({sev:'info',src:'Compile',code:'STALE',
+    msg:'Edits are unsaved: certificate and derived routes describe the previous revision',at:{kind:'fabric',id:'fabric'}});
+  return P;
+}
+const fieldProb=(k,id,field)=>problems().find(p=>p.at.kind===k&&p.at.id===id&&p.field===field&&p.sev!=='info');
+const objProb=(k,id)=>problems().filter(p=>p.at.kind===k&&p.at.id===id&&(p.sev==='err'||p.sev==='warn'));
+
+// ---------- edit + history ----------
+function edit(fn){past.push(JSON.stringify(S));future=[];fn(S);render();}
+$('undo').onclick=()=>{if(!past.length)return;future.push(JSON.stringify(S));S=JSON.parse(past.pop());render();};
+$('redo').onclick=()=>{if(!future.length)return;past.push(JSON.stringify(S));S=JSON.parse(future.pop());render();};
+$('save').onclick=()=>{saved=JSON.stringify(S);compiledOnce=true;render();};
+function select(kind,id,field,viewMode){sel={kind,id};flashField=field||null;
+  if(viewMode&&['Fabric','Agents'].includes(viewMode))mode=viewMode; else if(kind==='agent'&&mode==='Fabric')mode='Agents';
+  render();flashField=null;}
+
+// ---------- panels ----------
+function renderToolbar(){
+  const d=dirty(), P=problems(), errs=P.filter(p=>p.sev==='err').length;
+  $('stDraft').className='badge '+(d?'b-blue':'b-ok');$('stDraft').textContent=d?'● Draft unsaved':'Draft saved · rev r02';
+  const c=$('stCert');
+  c.className='badge '+(d?'b-warn':errs?'b-err':'b-ok');
+  c.textContent=d?'Certificate: stale':errs?`Certificate: ${errs} blocking`:'Certificate: pass (model)';
+  $('save').disabled=!d;$('undo').disabled=!past.length;$('redo').disabled=!future.length;
+}
+function renderOutline(){
+  const item=(k,id,label,right='')=>{const pr=objProb(k,id);const bad=pr.some(p=>p.sev==='err');
+    return `<div class="item ${sel.kind===k&&sel.id===id?'sel':''}" tabindex="0" data-k="${k}" data-id="${id}">
+    ${pr.length?`<span class="dot ${bad?'err':'warn'}"></span>`:''}<span>${label}</span><span class="n meta">${right}</span></div>`;};
+  const routers=[...Array(16).keys()].map(i=>item('router',i,'R'+i,S.agents.filter(a=>a.router===i).length?S.agents.filter(a=>a.router===i).length+' EP':'')).join('');
+  $('outline').innerHTML=`<header>Outline</header>
+  ${item('fabric','fabric','<b>Fabric</b> · mesh 4×4')}
+  <details open><summary>Agents <span class="meta">${S.agents.length}</span></summary>${S.agents.map(a=>item('agent',a.id,a.id,'R'+a.router)).join('')}</details>
+  <details><summary>Routers <span class="meta">16</span></summary>${routers}</details>
+  <details open><summary>Address ranges <span class="meta">${S.ranges.length}</span></summary>${S.ranges.map(r=>item('range',r.id,r.id,hex(r.base))).join('')}</details>
+  <details><summary>Clock domains <span class="meta">2</span></summary>${['core_clk','mem_clk'].map(d=>item('domain',d,d)).join('')}</details>
+  <details><summary>Requirements <span class="meta">3</span></summary>${['Latency p95 ≤ 900 cyc','Throughput ≥ 0.4 f/c/n','Loss = 0'].map((t,i)=>item('req',i,t)).join('')}</details>`;
+  $('outline').querySelectorAll('.item').forEach(e=>{
+    const go=()=>select(e.dataset.k,isNaN(e.dataset.id)?e.dataset.id:+e.dataset.id);
+    e.onclick=go;e.onkeydown=ev=>{if(ev.key==='Enter')go();};});
+}
+const px=i=>({x:90+(i%4)*150,y:70+Math.floor(i/4)*130});
+function renderCanvas(){
+  $('modes').innerHTML=['Fabric','Agents','Addresses','Domains','Floorplan'].map(m=>`<button aria-pressed="${m===mode}">${m}</button>`).join('');
+  $('modes').querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.textContent;render();});
+  $('canvasMeta').textContent='Selection is shared across every view';
+  const c=$('canvas');
+  if(!['Fabric','Agents'].includes(mode)){c.innerHTML=`<div class="empty"><h2>${mode}</h2><p>In the real build this canvas reuses the existing ${mode.toLowerCase()} view, bound to the same selection and Problems list. Not drawn in this demo.</p></div>`;return;}
+  let svg=`<svg viewBox="30 30 600 470" width="100%" height="100%" role="img" aria-label="${mode} canvas">`;
+  for(let i=0;i<16;i++){const p=px(i);
+    if(i%4<3){const q=px(i+1);svg+=`<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="#9FB4C5" stroke-width="3"/>`;}
+    if(i<12){const q=px(i+4);svg+=`<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="#9FB4C5" stroke-width="3"/>`;}}
+  for(let i=0;i<16;i++){const p=px(i),pr=objProb('router',i),isSel=sel.kind==='router'&&sel.id===i;
+    svg+=`<g class="node" tabindex="0" data-k="router" data-id="${i}"><circle cx="${p.x}" cy="${p.y}" r="20" fill="${isSel?'#0F6C9E':'#fff'}" stroke="#0F6C9E" stroke-width="2"/>
+    <text x="${p.x}" y="${p.y+4}" text-anchor="middle" font-size="12" fill="${isSel?'#fff':'#1D242C'}">R${i}</text></g>`;}
+  if(mode==='Agents'||true){
+    const byR={};S.agents.forEach(a=>(byR[a.router]=byR[a.router]||[]).push(a));
+    Object.entries(byR).forEach(([r,list])=>{const p=px(+r);list.forEach((a,k)=>{
+      const x=p.x+28,y=p.y-30+k*24,isSel=sel.kind==='agent'&&sel.id===a.id,pr=objProb('agent',a.id);
+      const col=a.kind==='hbm_controller'?'#246847':a.kind==='nic'?'#79540C':'#0F6C9E';
+      svg+=`<g class="node" tabindex="0" data-k="agent" data-id="${a.id}" ${mode==='Fabric'?'opacity=".55"':''}>
+      <rect x="${x}" y="${y}" width="68" height="20" rx="3" fill="${isSel?col:'#fff'}" stroke="${pr.length?'#A32928':col}" stroke-width="${pr.length?2.5:1.5}"/>
+      <text x="${x+34}" y="${y+14}" text-anchor="middle" font-size="12" fill="${isSel?'#fff':'#1D242C'}">${a.id}</text></g>`;});});}
+  svg+='</svg>';c.innerHTML=svg;
+  c.querySelectorAll('.node').forEach(n=>{const go=e=>{e.stopPropagation();select(n.dataset.k,isNaN(n.dataset.id)?n.dataset.id:+n.dataset.id);};
+    n.onclick=go;n.onkeydown=e=>{if(e.key==='Enter')go(e);};});
+}
+function fld(label,input,k,id,field,extra=''){
+  const p=fieldProb(k,id,field);
+  const fid='f_'+field;input=input.replace(/^<(input|select)/,`<$1 id="${fid}" name="${fid}"`);
+  return `<div class="field ${p?(p.sev==='err'?'bad':'warnf'):''} ${flashField===field?'flash':''}" data-field="${field}">
+  <label for="${fid}"><span>${label}</span><span>${p?(p.sev==='err'?'⚠ error':'⚠ warning'):''}</span></label>${input}${p?`<div class="why">${p.msg}</div>`:''}${extra}</div>`;}
+const inp=(v,attr)=>`<input value="${v}" ${attr||''}>`;
+const selOpts=(opts,cur)=>opts.map(o=>`<option ${o==cur?'selected':''}>${o}</option>`).join('');
+function renderProps(){
+  let h=`<header>Properties <span class="badge">${sel.kind}${sel.kind==='fabric'?'':' · '+sel.id}</span></header><div class="form">`;
+  if(sel.kind==='fabric'){const f=S.fabric;
+    h+=`<div class="group" style="margin:-8px -12px 0">Topology</div>`+
+      fld('Family','<select disabled><option>mesh</option></select>','fabric','fabric','family')+
+      fld('Side length',inp(f.side,'disabled'),'fabric','fabric','side')+
+      `<div class="group" style="margin:0 -12px">Router &amp; link</div>`+
+      fld('Virtual channels per port',inp(f.vcs,'type=number min=1 max=8 data-bind="fabric.vcs"'),'fabric','fabric','vcs')+
+      fld('Buffer depth (flits / VC)',inp(f.depth,'type=number min=1 max=64 data-bind="fabric.depth"'),'fabric','fabric','depth')+
+      fld('Link width (bits)',`<select data-bind="fabric.linkWidth">${selOpts([64,128,256,512],f.linkWidth)}</select>`,'fabric','fabric','linkWidth')+
+      fld('Arbitration',`<select data-bind="fabric.arb">${selOpts(['islip','round_robin','matrix'],f.arb)}</select>`,'fabric','fabric','arb')+
+      fld('Allocator iterations',inp(f.iters,'type=number min=1 max=4 data-bind="fabric.iters"'),'fabric','fabric','iters');
+  }else if(sel.kind==='agent'){const a=S.agents.find(x=>x.id===sel.id);
+    h+=fld('Kind',`<select disabled><option>${a.kind}</option></select>`,'agent',a.id,'kind')+
+      fld('Attached router',`<select data-bind="agent.router">${[...Array(16).keys()].map(i=>`<option value="${i}" ${i===a.router?'selected':''}>R${i}</option>`).join('')}</select>`,'agent',a.id,'router')+
+      fld('Data width (bits)',`<select data-bind="agent.width">${selOpts([64,128,256,512],a.width)}</select>`,'agent',a.id,'width')+
+      fld('Clock domain',`<select data-bind="agent.domain">${selOpts(['core_clk','mem_clk'],a.domain)}</select>`,'agent',a.id,'domain');
+  }else if(sel.kind==='range'){const r=S.ranges.find(x=>x.id===sel.id);
+    h+=fld('Base address',inp(hex(r.base),'data-bind="range.base"'),'range',r.id,'base')+
+      fld('Size',inp(hex(r.size),'data-bind="range.size"'),'range',r.id,'size')+
+      fld('Target agent',`<select data-bind="range.target">${selOpts(S.agents.map(a=>a.id),r.target)}</select>`,'range',r.id,'target');
+  }else if(sel.kind==='router'){
+    const at=S.agents.filter(a=>a.router===sel.id);
+    h+=`<p class="meta">Router R${sel.id} · ports N S E W + Local · ${S.fabric.vcs} VC · ${S.fabric.depth} flits/VC<br>Attached: ${at.map(a=>a.id).join(', ')||'none'}</p><p class="meta">Router-level overrides come from the same knob inventory; fabric-wide values are edited on <a href="#" id="toFab">Fabric</a>.</p>`;
+  }else h+=`<p class="meta">${sel.kind} ${sel.id} — editor for this object type is part of v2.</p>`;
+  h+=`</div><details class="assume"><summary>Assumptions &amp; scope</summary>Illustrative values. Problem rules here are demo stand-ins for the compiler's real stage-1 verdicts, certificate obligations and local checks. A local check is never presented as hardware verification.</details>`;
+  $('props').innerHTML=h;
+  $('props').querySelectorAll('[data-bind]').forEach(el=>el.onchange=()=>{
+    const [obj,key]=el.dataset.bind.split('.');let v=el.value;
+    edit(s=>{
+      if(obj==='fabric')s.fabric[key]=isNaN(v)?v:+v;
+      if(obj==='agent'){const a=s.agents.find(x=>x.id===sel.id);a[key]=['router','width'].includes(key)?+v:v;}
+      if(obj==='range'){const r=s.ranges.find(x=>x.id===sel.id);r[key]=['base','size'].includes(key)?parseInt(v,16)||parseInt(v):v;}});});
+  const tf=$('toFab');if(tf)tf.onclick=e=>{e.preventDefault();select('fabric','fabric');};
+}
+function renderProblems(){
+  const P=problems(),n=s=>P.filter(p=>p.sev===s).length;
+  const label={err:'Error',warn:'Warning',ne:'Not evaluated',info:'Info'};
+  $('problems').innerHTML=`<header>Problems
+    <span class="badge b-err">${n('err')} errors</span><span class="badge b-warn">${n('warn')} warnings</span>
+    <span class="badge">${n('ne')} not evaluated</span><span class="meta">Merged from local checks, compile verdicts and certificate obligations</span></header>
+  <table><tbody>${P.map((p,i)=>`<tr class="prob" tabindex="0" data-i="${i}"><td style="width:130px;white-space:nowrap" class="sev ${p.sev}">${label[p.sev]}</td>
+    <td style="width:130px" class="meta">${p.src}</td><td class="mono" style="width:140px;white-space:nowrap">${p.code}</td><td>${p.msg}</td>
+    <td class="meta" style="width:110px;white-space:nowrap;text-align:right">→ ${p.at.kind==='fabric'?'Fabric':p.at.id}</td></tr>`).join('')}</tbody></table>`;
+  $('problems').querySelectorAll('.prob').forEach(r=>{const p=P[+r.dataset.i];
+    const go=()=>select(p.at.kind,p.at.id,p.field,p.view);r.onclick=go;r.onkeydown=e=>{if(e.key==='Enter')go();};});
+}
+function render(){renderToolbar();renderOutline();renderCanvas();renderProps();renderProblems();}
+render();
+</script>
+</body>
+</html>

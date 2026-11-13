@@ -44,7 +44,7 @@ This is the scope that covers "production-ready RTL for a topology at a declared
 
 ## Scope B — shared-wire families (GEC-MECS / GEC-hybrid / SROTA)
 
-Their own claim lists (`GEC_MECS_SHARED_NOT_ESTABLISHED`, `SROTA_SHARED_NOT_ESTABLISHED`) hold the criteria: multi-flit framing, VC allocation + credit pipeline, multicast semantics, AXI/OrderingFSM/CDC composition, physical multidrop. All **OPEN** today; the single-flit prototypes are the current artifacts.
+Their own claim lists (`GEC_MECS_SHARED_NOT_ESTABLISHED`, `SROTA_SHARED_NOT_ESTABLISHED`) hold the criteria: multi-flit framing, VC allocation + credit pipeline, multicast semantics, AXI/OrderingFSM/CDC composition, physical multidrop. **2026-11-12:** multi-flit framing and **multicast** are now CLOSED for GEC-hybrid and SROTA at the 16-router composed shape. Multicast is an in-flit 16-bit router-id bitmap (flit widened to 80 bits, payload bits 53:0 unchanged): zero = decoded unicast, nonzero = exactly the set taps, with same-slot tap drops, source/turn-router forking, all-or-nothing admission and per-copy conservation. Measured 20 copies from 8 injected flits (including a forked HEAD/BODY/TAIL packet), no wrong or duplicate destination; SROTA refuses and counts island-class bitmaps, and the hybrid mesh carries no multicast flit. Evidence and limits: `docs/research/RTL-SCOPE-B-MULTICAST.md`. The multicast row is CLOSED; the **AXI/OrderingFSM/CDC composition, physical multidrop and STA/parity rows remain OPEN**, so both scopes still report `final_implementation: false`.
 
 **The verdict mechanism reaches them too (2026-11-12).** GEC-hybrid and SROTA do
 not claim the A rows, so `COMPOSED_FAMILY_ROWS` does not apply to them — but a
