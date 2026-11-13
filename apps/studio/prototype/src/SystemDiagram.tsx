@@ -71,7 +71,7 @@ export function SystemDiagram({ agents, workload, topology, mapping, certificate
         <rect x={14} y={top} width={176} height={cardH} rx={6} />
         <text className="system-card-title" x={28} y={top + 20}>Workload</text>
         <text className="system-card-value" x={28} y={top + 40}>{truncate(workload?.model_name ?? 'Not declared', 22)}</text>
-        <text className="system-card-line" x={28} y={top + 59}>TP{workload?.tp ?? 1} · DP{workload?.dp ?? 1} · EP{workload?.ep ?? 1} · PP{workload?.pp ?? 1}</text>
+        <text className="system-card-line" x={28} y={top + 59}>{workload ? `TP${workload.tp ?? 1} · DP${workload.dp ?? 1} · EP${workload.ep ?? 1} · PP${workload.pp ?? 1}` : 'Parallelism not declared'}</text>
         <text className="system-card-line" x={28} y={top + 77}>{mapping ? `Mapped ${mapped}/${rankCount} · idle ${idle}` : 'Rank mapping not carried'}</text>
         <text className="system-card-line" x={28} y={top + 95}>{workload?.collectives?.length ? `${workload.collectives.length} declared collectives` : 'No collectives declared'}</text>
         <text className="system-card-line" x={28} y={top + 113}>{totalAgents} declared agents</text>

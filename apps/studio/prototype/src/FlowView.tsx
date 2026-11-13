@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import { gateway, type CatalogAnalysis, type CatalogRow } from './gateway';
 import type { PageId } from './model';
-import { useLoadedProject, useLoadedRun, useProject, type LoadedProject } from './project';
+import { useLoadedProject, useLoadedRun, useProject, type LoadedProject, type LoadedRun } from './project';
 import { Assumptions, Badge, Button, Empty, Icon, Notice, PageLink, Section, type ViewProps } from './ui';
-import { LiveWorkloadPage } from './WorkloadStudio';
-import { LiveRequirementsPage } from './RequirementsStudio';
-import type { IntentSaveState } from './intent';
+import { stamp } from './format';
+import { IntentWorkspace } from './IntentWorkspace';
+import type { IntentSaveState, IntentTab } from './intent';
 import { CatalogCampaign } from './CatalogCampaign';
 import { LiveAgents } from './LiveAgents';
 import { useGatewayDocument } from './LiveOperations';
 import { DraftEditor } from './DraftEditor';
 import { LaunchEvaluation } from './LaunchEvaluation';
-import { LiveAnalysisWorkspace, type AnalysisTab } from './LiveAnalysis';
 import { RunSelect } from './RevisionHistory';
-import { FinalDelivery } from './FinalDelivery';
 import { FlowStart } from './FlowStart';
+import { RtlStack } from './RtlStack';
+import { FinalDelivery } from './FinalDelivery';
 
 const STEPS: PageId[] = ['flow/start', 'flow/tune', 'flow/search', 'flow/optimize', 'flow/run'];
 
@@ -57,41 +57,27 @@ export function FlowViews(props: ViewProps & { page: PageId }) {
 
 function FlowNoProject({ step }: { step: number }) {
   return <>
-    <Empty title={`Step ${step + 1} needs a project`}>Start from a shipped preset or open an existing project before continuing.</Empty>
-    <div className="toolbar"><PageLink page="flow/start" primary>Go to step 1 · Workload template</PageLink><PageLink page="shared/projects">Open projects &amp; revisions</PageLink></div>
+    <Empty icon="branch" title={`Step ${step + 1} needs a project`} action={<><PageLink page="flow/start" primary>Go to step 1 · Workload template</PageLink><PageLink page="shared/projects">Open projects &amp; revisions</PageLink></>}>
+      The guided flow runs against a gateway project so every save, compile and run has an identity. Start from a workload template or open an existing project; the local sample is never substituted for it.
+    </Empty>
     <Assumptions rows={[['Scope', 'A project is the input to every later step. Nothing is substituted when none is loaded.']]} />
   </>;
 }
 
 function FlowTune({ project, notify, navigate }: ViewProps & { project: LoadedProject }) {
-  const [tab, setTab] = useState<'workload' | 'requirements'>('workload');
-  const [saveState, setSaveState] = useState<IntentSaveState | null>(null);
-  const changeTab = (next: 'workload' | 'requirements') => {
-    if (next === tab) return;
-    if (saveState?.dirty && !window.confirm('Discard unsaved changes in this tab?')) return;
-    setSaveState(null); setTab(next);
-  };
-  // One action bar for both tabs, rendered inside the page's footer so the
-  // assumptions block stays below it instead of being split in two.
-  const actions = <div className="toolbar flow-launch-actions">
-    <PageLink page="flow/start">Back · Workload templates</PageLink>
-    <div className="actions">
-      <Button primary={saveState?.dirty} disabled={!saveState?.dirty || !saveState.valid || saveState.busy} onClick={() => saveState?.save()}>{saveState?.busy ? 'Saving…' : 'Save workload intent'}</Button>
-      <Button primary={!saveState?.dirty} disabled={!project.request || !!saveState?.dirty || !!saveState?.busy} onClick={() => navigate('flow/search')}>Next · Generate traffic &amp; evaluate catalog</Button>
-    </div>
-  </div>;
-  return <>
-    <Section title="Define the workload" actions={<Badge>{project.detail.project.name}</Badge>}>
-      <div className="intent-tabs" role="tablist" aria-label="Workload intent sections">
-        <button type="button" role="tab" aria-selected={tab === 'workload'} onClick={() => changeTab('workload')}>Workload</button>
-        <button type="button" role="tab" aria-selected={tab === 'requirements'} onClick={() => changeTab('requirements')}>Requirements</button>
-      </div>
-      {tab === 'workload'
-        ? <LiveWorkloadPage project={project} notify={notify} embedded onSaveState={setSaveState} footer={actions} />
-        : <LiveRequirementsPage project={project} notify={notify} embedded onSaveState={setSaveState} footer={actions} />}
-      {saveState?.error && <Notice tone="red">{saveState.error}</Notice>}
-    </Section>
-  </>;
+  const [tab, setTab] = useState<IntentTab>('workload');
+  return <IntentWorkspace
+    project={project}
+    notify={notify}
+    tab={tab}
+    onTabChange={setTab}
+    tabs={['workload', 'requirements']}
+    actions={({ save }) => <>
+      <PageLink page="flow/start">Back · Workload templates</PageLink>
+      <Button primary={!!save?.dirty} disabled={!save?.dirty || !save.valid || save.busy} onClick={() => save?.save()}>{save?.busy ? 'Saving…' : 'Save workload intent'}</Button>
+      <Button primary={!save?.dirty} disabled={!project.request || !!save?.dirty || !!save?.busy} onClick={() => navigate('flow/search')}>Next · Evaluate catalog</Button>
+    </>}
+  />;
 }
 
 function FlowSearch(props: ViewProps & { project: LoadedProject }) {
@@ -126,7 +112,9 @@ function FlowOptimize({ project, navigate, notify }: ViewProps & { project: Load
   }, [manualDirty]);
   if (!data) return error ? <Notice tone="red">{error}</Notice> : <p role="status">Reading fabric selection…</p>;
   if (!data.selection) return <>
-    <Empty title="Choose a measured fabric first">Run the catalog on your workload, then choose a result before refining its parameters. <PageLink page="flow/search">Evaluate &amp; choose fabric</PageLink></Empty>
+    <Empty icon="chart" title="Choose a measured fabric first" action={<PageLink page="flow/search" primary>Evaluate &amp; choose fabric</PageLink>}>
+      Refinement edits the measured winner's existing topology and router controls. Run the catalog on this workload, inspect the comparison, and choose a result before this step can open.
+    </Empty>
     <Assumptions rows={FLOW_OPTIMIZE_SCOPE} />
   </>;
   const revision = project.detail.active_revision_id;
@@ -137,24 +125,22 @@ function FlowOptimize({ project, navigate, notify }: ViewProps & { project: Load
   const system = baselineRow?.objective_values?.system_makespan_cycles ?? baselineRow?.analyses?.find((row: CatalogAnalysis) => row.question === 'SYSTEM_MAKESPAN')?.normalized_metrics?.find((metric: any) => metric.key === 'system_makespan_cycles' && !metric.dimensions?.length)?.value;
   const requirements = baselineRow?.requirements_pass === true ? 'Satisfied' : baselineRow?.requirements_pass === false ? 'Not satisfied' : 'Not established';
   return <>
-    <Section title={`Selected fabric · ${data.selection.label}`} actions={<Badge tone={data.selection.workload_id && data.workload_id && data.selection.workload_id !== data.workload_id ? 'amber' : 'blue'}>{data.selection.workload_id && data.workload_id && data.selection.workload_id !== data.workload_id ? 'Workload changed' : 'Workload preserved'}</Badge>}>
-      {data.selection.workload_id && data.workload_id && data.selection.workload_id !== data.workload_id && <Notice tone="amber">This fabric was selected for a different saved workload. Re-run the catalog before treating its baseline as current. <PageLink page="flow/search">Evaluate this workload</PageLink></Notice>}
-      <div className="stat-strip">
-        <div className="stat"><span>Selected fabric</span><strong>{data.selection.label}</strong><small className="mono">{data.selection.candidate_id}</small></div>
-        <div className="stat"><span>Network baseline</span><strong>{typeof network === 'number' ? `${network.toLocaleString()} cyc` : baseline.data || baseline.error ? 'Unavailable' : 'Reading…'}</strong><small>Catalog BookSim result</small></div>
-        <div className="stat"><span>System baseline</span><strong>{typeof system === 'number' ? `${system.toLocaleString()} cyc` : baseline.data || baseline.error ? 'Unavailable' : 'Reading…'}</strong><small>Catalog ASTRA-SIM result</small></div>
-        <div className="stat"><span>Requirements</span><strong>{requirements}</strong><small>{baselineRow?.vc_count != null ? `${baselineRow.vc_count} VCs at selection` : 'VC count not recorded'}</small></div>
-      </div>
-      <div className="flow-baseline-note"><small>Catalog-time measurements, not the edited draft · {compileState}</small><PageLink page="flow/search">Review catalog evidence</PageLink></div>
-      {baseline.error && <Notice tone="amber">Catalog baseline could not be read: {baseline.error}<Button onClick={() => setBaselineRetry(value => value + 1)}>Retry baseline</Button></Notice>}
-    </Section>
-    <Section title="Parameter refinement" actions={<>
+    <Section title={`Parameter refinement · ${data.selection.label}`} actions={<>
       <div className="segmented" role="group" aria-label="Refinement method">
         <button type="button" className={method === 'manual' ? 'active' : ''} aria-pressed={method === 'manual'} disabled={!!editorState?.busy} onClick={() => changeMethod('manual')}>Manual parameters</button>
         <button type="button" className={method === 'ai' ? 'active' : ''} aria-pressed={method === 'ai'} disabled={!!editorState?.busy} onClick={() => changeMethod('ai')}>AI-assisted refinement</button>
       </div>
       <button type="button" className="text-button" onClick={() => { if (manualDirty && !window.confirm('Change fabric? Unsaved parameter changes will be discarded.')) return; navigate('flow/search'); }}>Change fabric</button>
     </>}>
+      {data.selection.workload_id && data.workload_id && data.selection.workload_id !== data.workload_id && <Notice tone="amber">This fabric was selected for a different saved workload. Re-run the catalog before treating its baseline as current. <PageLink page="flow/search">Evaluate this workload</PageLink></Notice>}
+      <div className="fact-line flow-baseline">
+        <span><small>Network</small> <strong>{typeof network === 'number' ? `${network.toLocaleString()} cyc` : baseline.data || baseline.error ? 'Unavailable' : 'Reading…'}</strong></span>
+        <span><small>System</small> <strong>{typeof system === 'number' ? `${system.toLocaleString()} cyc` : baseline.data || baseline.error ? 'Unavailable' : 'Reading…'}</strong></span>
+        <span><small>Requirements</small> <strong>{requirements}</strong></span>
+        <span><small>Draft</small> <strong>{compileState}</strong></span>
+        <PageLink page="flow/search">Catalog evidence</PageLink>
+      </div>
+      {baseline.error && <Notice tone="amber">Catalog baseline could not be read: {baseline.error}<Button onClick={() => setBaselineRetry(value => value + 1)}>Retry baseline</Button></Notice>}
       {method === 'manual'
         ? <DraftEditor project={project} embedded tuning onDirty={setManualDirty} onSaveState={setEditorState}
             onCompiled={() => notify('Fabric settings compiled. Evaluate the new revision to measure the changes.')}
@@ -165,14 +151,38 @@ function FlowOptimize({ project, navigate, notify }: ViewProps & { project: Load
   </>;
 }
 
+function RunReceipt({ run }: { run: LoadedRun }) {
+  const metric = (key: string) => run.detail.analyses
+    ?.flatMap(analysis => analysis.normalized_metrics ?? [])
+    .find(value => value.key === key && !value.dimensions?.length)?.value;
+  const network = metric('completion_cycles');
+  const system = metric('system_makespan_cycles');
+  return <>
+    <div className="stat-strip">
+      <div className="stat"><span>Network completion</span><strong>{typeof network === 'number' ? `${network.toLocaleString()} cyc` : 'Not recorded'}</strong><small>BookSim</small></div>
+      <div className="stat"><span>System makespan</span><strong>{typeof system === 'number' ? `${system.toLocaleString()} cyc` : 'Not recorded'}</strong><small>ASTRA-SIM</small></div>
+      <div className="stat"><span>Requirements</span><strong>{run.detail.requirements_pass === true ? 'Pass' : run.detail.requirements_pass === false ? 'Fail' : 'Not recorded'}</strong><small>{run.detail.qualification ?? 'Qualification not recorded'}</small></div>
+    </div>
+    <div className="fact-line flow-run-facts">
+      <span><small>Run</small> <strong>{run.detail.display_name ?? run.detail.run_id.slice(0, 13)}</strong></span>
+      <span><small>Backend</small> <strong>{run.detail.backend ?? 'Not recorded'}</strong></span>
+      <span><small>Completed</small> <strong>{run.detail.completed_at ? stamp(run.detail.completed_at) : 'Not recorded'}</strong></span>
+    </div>
+    <div className="toolbar toolbar-start">
+      <PageLink page="analysis/summary" primary>Open full analysis</PageLink>
+      <PageLink page="verify/evidence">Verify evidence</PageLink>
+    </div>
+  </>;
+}
+
 function FlowRun({ project }: ViewProps & { project: LoadedProject }) {
   const { evaluationJob, loadRun } = useProject();
   const run = useLoadedRun();
   const currentRun = run?.detail.revision_id === project.detail.active_revision_id;
-  const selection = useGatewayDocument(`final-selection:${project.detail.project.project_id}:${project.draftMeta?.revisionToken}`, () => gateway.catalogPlan(project.detail.project.project_id));
+  const [selectionRetry, setSelectionRetry] = useState(0);
+  const selection = useGatewayDocument(`final-selection:${project.detail.project.project_id}:${project.draftMeta?.revisionToken}:${selectionRetry}`, () => gateway.catalogPlan(project.detail.project.project_id));
   const [view, setView] = useState<'launch' | 'analyze'>(currentRun ? 'analyze' : 'launch');
   const [touched, setTouched] = useState(false);
-  const [tab, setTab] = useState<AnalysisTab>('summary');
 
   useEffect(() => {
     if (evaluationJob.job?.state === 'COMPLETED') { setTouched(true); setView('analyze'); }
@@ -184,38 +194,39 @@ function FlowRun({ project }: ViewProps & { project: LoadedProject }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.detail.run_id, currentRun, touched]);
 
-  if (!selection.data) return selection.error ? <Notice tone="red">{selection.error}</Notice> : <p role="status">Reading finalized fabric…</p>;
-  if (!selection.data.selection) return <Empty title="Choose a measured fabric first"><PageLink page="flow/search">Evaluate &amp; choose fabric</PageLink></Empty>;
-  if (project.draftMeta?.dirty || !project.detail.active_revision_id) return <Notice tone="amber">Compile the selected fabric's saved parameters before final validation. <PageLink page="flow/optimize">Review & compile parameters</PageLink></Notice>;
+  if (!selection.data) return selection.error
+    ? <Notice tone="red">{selection.error}<div className="toolbar"><Button onClick={() => setSelectionRetry(value => value + 1)}>Retry fabric selection</Button></div></Notice>
+    : <p role="status">Reading finalized fabric…</p>;
+  if (!selection.data.selection) return <Empty icon="shield" title="Choose a measured fabric first" action={<PageLink page="flow/search" primary>Evaluate &amp; choose fabric</PageLink>}>
+    Final validation and the RTL preview are scoped to the fabric selected from a measured catalog run. Choose a result first; this step does not invent one.
+  </Empty>;
+  if (project.draftMeta?.dirty || !project.detail.active_revision_id) return <Empty icon="layers" title="Compile the selected parameters first" action={<><PageLink page="flow/optimize" primary>Review &amp; compile parameters</PageLink><PageLink page="workloads/workflow">Open project workflow</PageLink></>}>
+    Compile the selected fabric's saved parameters before final validation. Final validation reads a compiled revision, so there is nothing stable to evaluate here yet.
+  </Empty>;
+  const showingRun = view === 'analyze' && !!run;
   return <>
-    {view === 'analyze' && run && !currentRun && <Notice tone="amber">This is historical evidence from {run.detail.revision_id}, not the finalized revision {project.detail.active_revision_id}. Launch a new evaluation to validate the final parameters.</Notice>}
-    {project.draftMeta?.dirty && <Notice tone="amber"><strong>The saved draft differs from the active revision.</strong> Compile in Fine-tune before launching, or this evaluates the revision that is already published, not the draft changes.</Notice>}
-    <Section title="Final fabric evaluation" actions={<>
-      <Badge>{project.detail.runs?.length ?? 0} run{(project.detail.runs?.length ?? 0) === 1 ? '' : 's'} in project</Badge>
-      {/* In analyze mode the embedded analysis workspace renders its own run
-          selector; two selects for one value is duplication, not a choice. */}
-      {view === 'launch' && <RunSelect revisions={project.detail.revisions ?? []} runs={project.detail.runs ?? []} value={run?.detail.run_id ?? ''} onChange={runId => { setTouched(true); setView('analyze'); loadRun(runId); }} ariaLabel="Selected run" activeRevisionId={project.detail.active_revision_id} />}
-    </>}>
-      <div className="toolbar">
-        <div className="segmented" role="group" aria-label="Run or analyze">
-          <button type="button" className={view === 'launch' ? 'active' : ''} aria-pressed={view === 'launch'} onClick={() => { setTouched(true); setView('launch'); }}>Launch evaluations</button>
-          <button type="button" className={view === 'analyze' ? 'active' : ''} aria-pressed={view === 'analyze'} onClick={() => { setTouched(true); setView('analyze'); }} disabled={!run}>Analyze selected run</button>
-        </div>
+    {showingRun && run && !currentRun && <Notice tone="amber">This is historical evidence from {run.detail.revision_id}, not the finalized revision {project.detail.active_revision_id}. Launch a new evaluation to validate the final parameters.</Notice>}
+    {showingRun && run
+      ? <Section title="Final evaluation" actions={<>
+        <Badge tone={run.detail.status === 'EVALUATED' ? 'green' : run.detail.status === 'FAILED' ? 'red' : 'amber'}>{run.detail.status.toLowerCase()}</Badge>
+        <RunSelect revisions={project.detail.revisions ?? []} runs={project.detail.runs ?? []} value={run.detail.run_id} onChange={runId => { setTouched(true); loadRun(runId); }} ariaLabel="Selected run" activeRevisionId={project.detail.active_revision_id} />
+        <Button onClick={() => { setTouched(true); setView('launch'); }}>New evaluation</Button>
         <PageLink page="flow/optimize">Refine parameters</PageLink>
-      </div>
-    </Section>
-
-    {view === 'analyze' && run
-      ? <LiveAnalysisWorkspace project={project} run={run} tab={tab} onTabChange={setTab} />
-      : view === 'analyze' && !run
-        ? <Empty title="No run selected">Launch an evaluation, or select an existing run above.</Empty>
-        : <LaunchEvaluation project={project} />}
+      </>}>
+        <RunReceipt run={run} />
+      </Section>
+      : <>
+        {run && <div className="toolbar"><Button onClick={() => { setTouched(true); setView('analyze'); }}>Back to selected run</Button></div>}
+        <LaunchEvaluation project={project} />
+      </>}
     <FinalDelivery project={project} />
+    <RtlStack project={project} />
+    <div className="flow-delivery-link"><PageLink page="deliver/package">Open delivery &amp; RTL preview</PageLink></div>
     <Assumptions rows={[
       ['Evaluation plan', 'The gateway determines which analyses are READY for the active revision. Blocked analyses cannot be selected.'],
       ['Launch', 'Launching appends a real run using backend binaries on this host; confirmation is required.'],
       ['Result', 'After completion, the published run is selected for analysis.'],
-      ['Qualification', 'A completed run does not imply requirement compliance, RTL qualification or hardware sign-off. Research RTL evidence below is reported separately.'],
+      ['Qualification', 'A completed run does not imply requirement compliance, RTL qualification or hardware sign-off.'],
     ]} />
   </>;
 }

@@ -8,3 +8,10 @@ export type IntentSaveState = {
   error: string;
   save: () => void;
 };
+
+/** What a workflow step needs to render its own primary action. The workspace
+ *  owns draft state; callers only decide what the next move is. */
+export type IntentActionState = {
+  save: IntentSaveState | null;
+  dirty: boolean;
+};

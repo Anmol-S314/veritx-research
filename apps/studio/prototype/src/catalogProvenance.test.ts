@@ -27,12 +27,13 @@ describe('catalog selection provenance', () => {
       vc_count: 1, emitted_vcs: 2, matches_certified_vc_count: false,
       shared_wire_links: 0, router_count: 36,
     });
-    expect(certified.tone).toBe('green');
-    expect(certified.text).toContain('2 VC');
-    expect(single.tone).toBe('green');
-    expect(single.text).toContain('1 VC');
+    expect(certified.tone).toBe('amber');
+    expect(certified.text).toContain('Preview · 2 VCs');
+    expect(single.tone).toBe('amber');
+    expect(single.text).toContain('Preview · 2 VCs (measured 1)');
     // Both are preview support, never a final-RTL claim.
-    expect(certified.detail).toContain('not a simulation-equivalent implementation');
+    expect(certified.detail).toContain('not final RTL');
+    expect(single.detail).toContain('VC scheme is not equivalent');
   });
 
   it('carries the backend reason for an unsupported fabric', () => {

@@ -1,6 +1,6 @@
 # Prototype page guide
 
-This guide covers every route registered in `src/model.ts` (55 routes). It describes the current prototype, including differences between the local illustrative preview and a loaded gateway project. Routes marked as aliases remain valid deep links even when navigation hides them or redirects them to a shared live surface.
+This guide covers every route registered in `src/model.ts` (56 routes). It describes the current prototype, including differences between the local illustrative preview and a loaded gateway project. Routes marked as aliases remain valid deep links even when navigation hides them or redirects them to a shared live surface.
 
 ## How to read the prototype
 
@@ -12,7 +12,7 @@ This guide covers every route registered in `src/model.ts` (55 routes). It descr
 
 ## Flow
 
-The guided Flow workspace is a gateway-project workflow with five visible steps: `start`, `tune`, `search`, `optimize`, and `run`. Except for its start page, the steps require a loaded project. Its cards link to the full workspace that owns each editing or evidence surface. The hidden `flow/compare` compatibility alias remains registered, preserving all 55 route IDs.
+The guided Flow workspace is a gateway-project workflow with five visible steps: `start`, `tune`, `search`, `optimize`, and `run`. Except for its start page, the steps require a loaded project. Its cards link to the full workspace that owns each editing or evidence surface. The hidden `flow/compare` compatibility alias remains registered, preserving all 56 route IDs.
 
 ### `flow/start` — Start from a workload template
 
@@ -40,43 +40,63 @@ Shows the selected fabric's catalog-time network completion, system makespan, re
 
 ### `flow/run` — Finalize topology & RTL
 
-Offers evaluation launch and run analysis, alongside RTL-generation readiness/preview. Select a run, review execution questions, explicitly confirm backend execution, and inspect run detail, traffic matrix, integrity, and artifacts. RTL preview has a separate confirmation and download path when supported. The selected fabric must be present and compiled before evaluation. Run completion does not establish qualification. The available emitter is a constrained topology-only preview, not final simulation-equivalent implementation RTL.
+Offers evaluation launch and run analysis, alongside RTL-generation readiness/preview. Select a run, review execution questions, explicitly confirm backend execution, and inspect run detail, traffic matrix, integrity, and artifacts. RTL preview has a separate confirmation and download path when supported. The selected fabric must be present and compiled before evaluation. Run completion does not establish qualification. The available emitter is a constrained topology-only preview, not final simulation-equivalent implementation RTL. Composed-family A1–A10 evidence and physical implementation are separate tiers: family evidence is keyed to a design hash and does not transfer to this revision, and no tier upgrades another.
 
 ## Design
 
 Without a gateway project, Design pages edit or inspect the local illustrative draft. With a project loaded, they generally render revision-backed declared topology and intent; only the fabric, catalog, and placement pages provide notable live writes. A live diagram is not a physical implementation view.
 
+Every workspace is one surface with a horizontal section strip under the page heading; the left view rail is gone. The Design sections are Editor, Fabric topology, Agent catalog, Agent map, Address map, Domains and Placement; Fabric topology remains the landing until Editor replaces it. System, Endpoints and Mapping remain hidden context routes with no gateway write path, reached from the page that owns the change. The page heading carries only the single Compile draft action; draft, revision, artifact and run state live in the page that owns them. Each strip entry is a real route, so deep links and history still work; the selected router, run or draft stays inside the surface. A workspace with a single destination renders no strip.
+
+### `design/editor` — Design Editor
+
+Live-project only; without a gateway project it states that none is loaded and does not invent a local draft. One workspace for the design: an outline of endpoints, routers and address ranges (left), the compiled fabric canvas or the full draft settings (centre, toggled; the settings stay mounted so unsaved edits survive the toggle), an inspector for the selection (right), and one Problems list under the canvas. Selecting a router shows what the compiler derived there — attached endpoints with their agent-group facts, and the address ranges whose decode rows target those endpoints; selecting a range rings its target endpoint. Endpoint colour overlays (agent kind, clock domain, address ranges) are drawn only from served data; unassigned values are dashed, never coloured. Problems merges stage-1 verdicts and findings, non-passing certificate obligations (kept as "not evaluated" unless they failed), the local address-overlap check and the save state. Router parameters are fabric-wide in the compile request, so the inspector says so rather than offering per-router overrides. Agent-group and range editing still happens on the Agent map and Address map pages; V5 domain, crossing and access-policy objects are not surfaced because the Studio draft model is schema 4.
+
+### `design/flow` — Design Workflow
+
+A hidden compatibility route, not a navigation destination. It keeps the cross-page stage map (draft intent → compile → derive → measure → collateral), the consequences table, and the per-page surface table for old links and live-backend checks. The persistent heading replaces it for daily use; status and the compile action do not require opening this page.
+
 ### `design/fabric-topology` — Fabric Topology
 
-Shows the fabric graph, routers, channels, endpoint attachments, and (where available) declared overlays. The fixture uses a fixed 4×4 mesh and derived utilization proxy; the live view uses the project's declared topology and can expose router/wire selection, zoom, layers, and findings. In the fixture, router/overlay selection and queue-depth edits affect local draft state. Live users can edit explicit graph links or buffer depth when the schema supports it; writes go through draft save/compile. Fixture utilization is not measured traffic; live channel properties describe declared structure, not observed counters. Neither view establishes deadlock freedom, physical signoff, or hardware qualification.
+Shows the fabric graph, routers, channels, endpoint attachments, and (where available) declared overlays. The fixture projects the sample draft onto a declared 4×4 mesh and draws it with the same topology renderer the live view uses, so the graph, its load emphasis and the derived-proxy table read one set of numbers; the live view uses the project's declared topology and can expose router/wire selection, zoom, layers, and findings. In the fixture, router/overlay selection and queue-depth edits affect local draft state. Live users can edit explicit graph links or buffer depth when the schema supports it; writes go through draft save/compile. Fixture utilization is not measured traffic; live channel properties describe declared structure, not observed counters. Neither view establishes deadlock freedom, physical signoff, or hardware qualification.
 
-### `design/system` — System / Block Diagram
+### `design/system` — System / Block Diagram (context route)
 
-Shows a system block diagram: the fixture displays sample endpoint blocks and mesh summary; the live view combines request agents/workload/NoC controls with topology counts and any derived certificate. Fixture users can zoom, fit, select endpoints, and navigate to the catalog. Live view is informational. It is a declared-composition diagram, not a floorplan, packet path, or evaluation of latency, throughput, power, or area.
+Read-only context route; it is not a Design strip destination. The gateway has no composition write path, so edits belong to Agent Catalog or Fabric Topology.
 
-### `design/catalog` — IP Catalog
+Shows the shared declared-composition diagram — workload, agent groups, attached endpoint seats and fabric — followed by the declared-system, endpoint-attachment and open-obligation tables. The sample has no workload block, so its workload card says so rather than inventing parallelism. The live view combines request agents/workload/NoC controls with topology counts, any derived certificate, and a workload → agent group → seat → fabric composition diagram under the same toolbar contract. It is a declared-composition diagram, not a floorplan, packet path, or evaluation of latency, throughput, power, or area. The live page also exposes the backend's preflight gates, native UVM generation from the compiled bundle, and the Chipyard source inventory; each action is a gateway call and each refusal is shown verbatim.
 
-The fixture lists a small set of architecture/interface descriptions; search or select an item and add an endpoint instance to the local draft. The live page shows request agent groups and topology-derived endpoint seats and can add an agent group to the gateway draft. Live additions require compilation before seats are materialized. Fixture entries are descriptions, not implementation IP; live agent intent does not itself supply RTL, an adapter, or a qualified endpoint.
+### `design/catalog` — Agent Catalog
 
-### `design/endpoints` — Hardware Endpoints
+The fixture lists a small set of architecture/interface descriptions, then the same seat-coverage table the live page uses. One operation adds an agent group: the fixture represents it as one local endpoint seat; the live page writes the group to the gateway draft. Live additions stay pending until compilation materializes topology and seats. Fixture entries are descriptions, not implementation IP; live agent intent does not itself supply RTL, an adapter, or a qualified endpoint.
 
-Lists endpoint role, interface, domain, router, and source. Fixture users can filter/select endpoints and review an attachment change; attachment checks enforce the prototype's router/concentrator constraints. The live view compares declared agent groups with compiled endpoint seats and links to related views. Neither view proves protocol compatibility, CDC implementation, permissions, or hardware implementation.
+### `design/endpoints` — Hardware Endpoints (context route)
 
-### `design/mapping` — Initiator–Target Mapping
+Read-only context route; it is not a Design strip destination. Seats are compiler-derived, so the only action is to change the agent group or fabric and compile.
 
-The fixture exposes separate intent, permission, logical reachability, and configured-route layers for source/target pairs. Pair intent/permission edits update the local draft; displayed routes use a deterministic mesh route. The live view shows a router incidence/adjacency matrix and explicitly treats initiator-target mapping as absent. Router adjacency does not prove access permission, endpoint mapping, route validity, or guaranteed reachability.
+Shows the shared seat-attachment graph, declared agent groups and attached-endpoint table, with toolbar counts for attached routers and concentrated slots. The sample projects its draft onto the revision topology shape, so a seat row and a graph node describe the same endpoint. Fixture users can filter/select endpoints and review a local attachment change; attachment checks enforce the prototype's router/concentrator constraints. The live view adds a declared-topology seat-attachment graph and a declared-agents-versus-materialized-seats table, grouped by agent kind; attachment is read-only there because seats come from the compiled revision. Neither view proves protocol compatibility, CDC implementation, permissions, or hardware implementation.
+
+### `design/agent-map` — Agent Fabric Map
+
+Owns agent grouping, interface fields and agent-scoped address windows. The agents tab edits data width, address width, protocol, clock and power domain; count and kind remain workload intent. The windows tab authors `address_map.ranges` with the target group and FIXED_INSTANCE/STRIPED selection, validates them locally, and saves or saves-and-compiles the gateway draft. The matrix tab reports window counts and instance coverage, not permissions or observed flows. The controls tab compares declared controls with compiler and preview reach. Protocol-ownership findings from the compiler are shown per revision: an unowned literal is preserved for identity and reports only and generates no adapter. The system-wide window editor, resolved decode and blocking checks live on Address Map. This page keeps the agent-scoped auto-map and coverage view; both surfaces write the same `address_map.ranges` field.
+
+### `design/mapping` — Initiator–Target Mapping (context route)
+
+Read-only context route; it is not a Design strip destination. Address windows are edited on Address Map and Agent Map; this page queries the compiled route.
+
+The fixture exposes separate intent, permission, logical reachability, and configured-route layers for source/target pairs, and draws the selected pair's configured X-then-Y route on the logical mesh. Pair intent/permission edits update the local draft; displayed routes use a deterministic mesh route. The sample keeps its four declared layers first, then adds the shared router incidence/adjacency matrix as supporting structure. The live view shows that matrix and explicitly treats initiator-target mapping as absent. Router adjacency does not prove access permission, endpoint mapping, route validity, or guaranteed reachability. The live page also walks the frozen compile result for one routing class, source, and destination and shows the derived channel hops; a revision with no routing class returns a typed refusal instead of an invented path.
 
 ### `design/addresses` — Address Map
 
-Shows declared memory regions and address bounds. The fixture calculates overlaps and mapped union and allows a proposed BAR relocation after validating the 48-bit address and overlap constraints. The live view lists the gateway draft's address ranges but does not run the fixture's interval validation. Neither view checks runtime decode, permissions, alignment requirements, or whether every external window is backed by materialized hardware.
+Shows declared memory regions and address bounds, plus a windowed address-space map (Low 4 GiB or HBM window) that draws each declared region and any interval overlap in place. Both modes draw the same windowed map and the same coverage/blocking table from their own declared intervals; the sample converts its regions to the window shape and keeps its proposed BAR relocation behind a 48-bit and overlap validation. The live view joins resolved decode rows and endpoint attachments where the active revision carries them. It is the system-wide view and the single blocking-check surface; agent-scoped window authoring stays on the Agent fabric map, and the page links there instead of duplicating the editor. Neither view checks runtime decode, permissions, alignment requirements, or whether every external window is backed by materialized hardware.
 
 ### `design/domains` — Clock & Power Domains
 
-Shows sample clock declarations and endpoint crossings in fixture mode; live mode displays physical parameters and agent clock-domain declarations. Fixture users can select an endpoint and review a local domain assignment. Live view is read-only. These declarations do not constitute CDC/reset analysis, timing closure, power intent, or process-specific power/area evidence; absent values remain unknown.
+Shows a domain-lane diagram of declared clock frequencies and endpoint assignments, with non-fabric endpoints drawn as dashed crossings whose bridge is not established; a crossings table and power-intent empty state follow. Both modes render the same physical-parameter, domain-lane, per-agent assignment, blocked CDC and power-intent sections. The live view maps agent groups; the fixture draws one chip per declared endpoint and can review a local domain assignment. These declarations do not constitute CDC/reset analysis, timing closure, power intent, or process-specific power/area evidence; absent values remain unknown. The live page also saves and compiles declared clock-domain intent for agent groups; a successful compile creates a new revision, and CDC/timing remain unanalysed.
 
 ### `design/placement` — Placement Constraints
 
-Fixture mode shows an illustrative die frame and router-anchor intent; users can switch display mode and review local anchor changes. Live mode shows topology coordinates and a gateway floorplan declaration; users can declare/update or remove that floorplan. The gateway stores authored geometry bound to a topology. It is not calibrated placement, extracted parasitics, PPA, congestion, DRC, LVS, or signoff evidence.
+Both modes draw the same declared-floorplan renderer, floorplan properties and logical-coordinate table. The sample's frame, router rectangles and anchor box are authored intent, so it shows geometry without derived area or delay and cannot claim what it has not measured; live mode declares, updates or removes a gateway floorplan and adds derived estimates. The gateway stores authored geometry bound to a topology. It is not calibrated placement, extracted parasitics, PPA, congestion, DRC, LVS, or signoff evidence.
 
 ## Workloads & Requirements
 
@@ -228,7 +248,7 @@ Fixture mode shows no backend generation job; after local export preparation it 
 
 ### `deliver/package` — Package Review & Manifest
 
-Fixture mode reviews the prepared descriptive JSON file, captured draft, producer/classification, and download; without a prepared export it directs the user to configuration. Live mode reads the active revision artifact graph, inputs, named proofs/revalidation, scope coverage, freshness/origin, and generated reports; users can download manifest/evidence indexes or compare another revision. A certificate is a derivation graph, not a signature; named compiler proofs are not independent proof, and manifest comparison is not correctness evaluation. The manifest does not claim hardware/physical qualification.
+Fixture mode reviews the prepared descriptive JSON file, captured draft, producer/classification, and download; without a prepared export it directs the user to configuration. Live mode reads the active revision artifact graph, inputs, named proofs/revalidation, scope coverage, freshness/origin, and generated reports; users can download manifest/evidence indexes or compare another revision. A certificate is a derivation graph, not a signature; named compiler proofs are not independent proof, and manifest comparison is not correctness evaluation. The manifest does not claim hardware/physical qualification. The RTL & implementation path and research RTL evidence sections separate four tiers: selected-project preview, composed-family A1–A10 evidence keyed to a design hash, research Verilog file presence, and physical implementation. No tier upgrades another.
 
 ### `deliver/artifacts` — Artifact Inspection & Export
 
@@ -238,15 +258,15 @@ Fixture mode previews/downloads the locally prepared JSON, or points to configur
 
 ### `shared/projects` — Projects, Revisions & Recovery
 
-Lists and loads gateway projects, creates projects, reloads project data, and permits deletion after explicit ID confirmation. Deletion removes the project and its associated revisions/runs and cannot be undone from this page. It also supports import/export and recovery of **local preview** project JSON, restoring a preserved local draft as a copy, and resetting local preview state after confirmation. Browser storage is best-effort; local recovery is separate from the gateway store. Desktop startup with no selected gateway project presents the project picker rather than treating the sample fixture as live.
+Lists and loads gateway projects, creates projects, reloads project data, and permits deletion from the selected row after explicit ID confirmation. There is no second selected-project panel; the table is the object list and the row is the action surface. Deletion removes the project and its associated revisions/runs and cannot be undone from this page. It also supports import/export and recovery of **local preview** project JSON, restoring a preserved local draft as a copy, and resetting local preview state after confirmation. Browser storage is best-effort; local recovery is separate from the gateway store. Desktop startup with no selected gateway project presents the project picker rather than treating the sample fixture as live.
 
 ### `shared/environment` — Environment & Local Settings
 
-Reports the current environment boundary: browser-local persistence, gateway connection status, execution/agent runtime availability, and whether remote AI or local inference is connected. It is informational, not a settings editor. It does not inspect host tools, protect credentials, enforce runtime budgets, or establish certified air-gap isolation, encrypted storage, or firewall enforcement.
+Reports the current environment boundary: browser-local persistence, gateway connection status, execution/agent runtime availability, and whether remote AI or local inference is connected. It now has working local settings (compact table rows, reduce motion) and a diagnostics JSON download; both are local-only. It does not inspect host tools, protect credentials, enforce runtime budgets, or establish certified air-gap isolation, encrypted storage, or firewall enforcement.
 
 ### `shared/jobs` — Jobs, Problems & Logs
 
-Provides local Jobs, Problems, and Logs tabs: operation summaries, local declaration findings with links, and exportable prototype events. This is not a live gateway job monitor or backend log. Fixture entries are historical illustrations; the page has no simulation, formal-check, generation-worker, or cancellation controls.
+Provides gateway Jobs, Problems and Logs. Jobs lists the project's real gateway jobs; Problems starts with gateway health and backend gaps, then local declaration findings and failed jobs; Logs streams the selected job's state events and worker log when the gateway exposes them, and keeps local prototype activity in a separate section. Local events are not backend logs. The page has no cancellation controls.
 
 ## Optional agents
 

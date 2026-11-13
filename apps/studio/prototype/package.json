@@ -10,6 +10,8 @@
     "backend:build": "python3 desktop/build_backend.py",
     "desktop:test": "python3 desktop/test_gateway.py",
     "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit && vitest run",
+    "gate": "npm run check && npm run build && npm run test:e2e",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "preview": "vite preview --host 127.0.0.1 --port 5174 --strictPort"

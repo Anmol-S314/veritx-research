@@ -107,15 +107,6 @@ test('workload ablation names the candidate arms and keeps the knob audit out of
   await expect(gec).toContainText('k=4');
 
   await expect(page.getByRole('heading', { name: 'Knob provenance' })).toHaveCount(0);
-  const provenance = page.locator('details.assumptions');
-  await expect(provenance).not.toHaveAttribute('open', '');
-  await provenance.locator('summary').first().click();
-  await expect(provenance.locator('.knob-summary')).toHaveCount(1);
-  await expect(provenance.locator('.knob-summary').getByText('pinned where recorded', { exact: true })).toBeVisible();
-  const samplePeriod = provenance.getByRole('row').filter({ hasText: 'sample_period' });
-  await expect(samplePeriod).toContainText('1000');
-  await expect(samplePeriod).toContainText('10000');
-
   const runner = page.locator('details.runner-command');
   await expect(runner.locator('.code-preview')).toBeHidden();
   await runner.locator('summary').click();
@@ -163,11 +154,6 @@ test('curves and Pareto carry workload power, area, energy, hops and VC evidence
   await expect(power.getByText('Power–delay product', { exact: true }).first()).toBeVisible();
   await expect(power.getByRole('table', { name: 'Power composition by component' })).toBeVisible();
 
-  const caveats = page.locator('.assumptions');
-  await caveats.locator('summary').click();
-  await expect(caveats.getByText('0.9 V · fixed technology constant', { exact: true })).toBeVisible();
-  await expect(caveats.getByText('No P–V or P–T curve exists in this evidence.', { exact: false })).toBeVisible();
-  await expect(caveats.getByText('VC counts are canonical per family and not equalised.', { exact: false })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Reference: power versus offered load', exact: true })).toHaveCount(0);
 
   expect(errors).toEqual([]);

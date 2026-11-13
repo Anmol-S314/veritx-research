@@ -292,13 +292,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
           if (resumable) startTracking(resumable.job_id);
         }
       } catch (error) {
-        if (current()) {
-          if (error instanceof GatewayHttpError && error.status === 404) {
-            activeProject.current = null;
-            remember(null);
-          }
-          setProject({ phase: 'error', projectId, reason: gatewayReason(error) });
+        if (!current()) return;
+        // A saved selection can outlive the project it names. That is not a
+        // workspace error: clear it, return to the project list, and let the
+        // operator choose again instead of pinning a 404 banner over the app.
+        if (error instanceof GatewayHttpError && error.status === 404) {
+          activeProject.current = null;
+          preferredRun.current = null;
+          remember(null);
+          setRun({ phase: 'idle' });
+          setProject({ phase: 'idle' });
+          setTick(value => value + 1);
+          return;
         }
+        setProject({ phase: 'error', projectId, reason: gatewayReason(error) });
       }
     })();
   }, [loadRun, stopPolling, startTracking]);

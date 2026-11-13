@@ -126,6 +126,11 @@ export function LiveAnalysisSummary({ project, run, onTabChange }: {
   const d = run.detail;
   const metrics = d.evaluation?.metrics ?? {};
   const metricKeys = [...METRIC_ORDER.filter(key => metrics[key] !== undefined), ...Object.keys(metrics).filter(key => !METRIC_ORDER.includes(key))];
+  const knownMetricKeys = new Set(METRIC_GROUPS.flatMap(group => group.keys));
+  const metricGroups = [
+    ...METRIC_GROUPS.map(group => ({ ...group, keys: group.keys.filter(key => metricKeys.includes(key)) })).filter(group => group.keys.length),
+    ...(metricKeys.some(key => !knownMetricKeys.has(key)) ? [{ label: 'Other reported values', keys: metricKeys.filter(key => !knownMetricKeys.has(key)) }] : []),
+  ];
   const entries = d.requirements?.entries ?? [];
   const satisfied = entries.filter(e => /SATISFIED|PASS|MET/i.test(String(e.verdict))).length;
   const failed = entries.filter(e => /FAIL|VIOLAT|UNSATISF|UNMET/i.test(String(e.verdict))).length;
@@ -168,8 +173,11 @@ export function LiveAnalysisSummary({ project, run, onTabChange }: {
     </Section>
     {run.gaps.length > 0 && <Section title="Partial reads"><ul>{run.gaps.map(g => <li key={g}>{g}</li>)}</ul></Section>}
     <Section title="Reported metrics" actions={<Badge>{metricKeys.length} values</Badge>}>
-      {metricKeys.length ? <div className="table-scroll"><table aria-label="Reported metrics"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>
-        {metricKeys.map(key => <tr key={key}><th className="mono">{key}</th><td className="numeric">{num(metrics[key])}</td></tr>)}
+      {metricKeys.length ? <div className="table-scroll metric-table-scroll"><table aria-label="Reported metrics" className="metric-table"><thead><tr><th>Metric</th><th>Unit</th><th className="numeric">Value</th></tr></thead><tbody>
+        {metricGroups.map(group => <Fragment key={group.label}>
+          <tr className="metric-group"><th colSpan={3}>{group.label}</th></tr>
+          {group.keys.map(key => <tr key={key}><th><span>{metricLabel(key)}</span><small className="mono">{key}</small></th><td>{metricUnit(key)}</td><td className="numeric">{num(metrics[key])}</td></tr>)}
+        </Fragment>)}
       </tbody></table></div> : <Empty title="No metrics reported">This evaluation produced no metric block.</Empty>}
     </Section>
     <LaunchEvaluation project={project} collapsed />
@@ -196,6 +204,24 @@ export function LiveAnalysisSummary({ project, run, onTabChange }: {
 const shortRevision = (id?: string | null): string => revisionLabel(id);
 
 const METRIC_ORDER = ['completion_cycles', 'sample_window_cycles', 'delivered_packets', 'flits_injected', 'flits_accepted', 'injected_trace_packets', 'loaded_trace_packets', 'packet_latency_avg', 'flit_latency_avg'];
+const METRIC_GROUPS: { label: string; keys: string[] }[] = [
+  { label: 'Run totals', keys: ['completion_cycles', 'sample_window_cycles', 'delivered_packets', 'flits_injected', 'flits_accepted'] },
+  { label: 'Trace replay', keys: ['injected_trace_packets', 'loaded_trace_packets', 'pkt_count'] },
+  { label: 'Latency', keys: ['packet_latency_avg', 'flit_latency_avg', 'honest_latency', 'p50', 'p95', 'p99'] },
+];
+const METRIC_LABELS: Record<string, string> = {
+  completion_cycles: 'Completion cycles', sample_window_cycles: 'Sample window', delivered_packets: 'Delivered packets',
+  flits_injected: 'Flits injected', flits_accepted: 'Flits accepted', injected_trace_packets: 'Injected trace packets',
+  loaded_trace_packets: 'Loaded trace packets', packet_latency_avg: 'Packet latency average', flit_latency_avg: 'Flit latency average',
+  honest_latency: 'Honest latency', p50: 'Packet P50', p95: 'Packet P95', p99: 'Packet P99', pkt_count: 'Packet count',
+};
+const METRIC_UNITS: Record<string, string> = {
+  completion_cycles: 'cycles', sample_window_cycles: 'cycles', delivered_packets: 'packets', flits_injected: 'flits',
+  flits_accepted: 'flits', injected_trace_packets: 'packets', loaded_trace_packets: 'packets', packet_latency_avg: 'cycles',
+  flit_latency_avg: 'cycles', honest_latency: 'cycles', p50: 'cycles', p95: 'cycles', p99: 'cycles', pkt_count: 'packets',
+};
+const metricLabel = (key: string) => METRIC_LABELS[key] ?? key.replaceAll('_', ' ');
+const metricUnit = (key: string) => METRIC_UNITS[key] ?? '—';
 
 export type AnalysisTab = 'summary' | 'memory' | 'matrix' | 'topology' | 'trace' | 'comparison' | 'curves';
 
@@ -279,9 +305,13 @@ export function LiveMemory({ project, run }: { project: LoadedProject; run: Load
   const tone = memory && /PASS|QUALIFIED/i.test(String(memory.qualification ?? memory.status)) ? 'green' : 'amber';
   if (!memory) return <div className="view-main analysis-page">
     <RunBar project={project} run={run} />
-    <Notice tone="amber"><strong>No DRAM_TIMING analysis in this run.</strong></Notice>
-    <Empty title="Ramulator did not run for this evaluation">The run reports no <code>RAMULATOR2_HBM3_V1</code> analysis.</Empty>
-    <div className="toolbar toolbar-start"><PageLink page="analysis/summary">Inspect this run's analyses</PageLink><PageLink page="workloads/lowering">Inspect workload intent</PageLink></div>
+    <Empty title="No DRAM_TIMING analysis in this run" action={<>
+      <PageLink page="analysis/summary" primary>Inspect this run's analyses</PageLink>
+      <PageLink page="workloads/lowering">Inspect workload intent</PageLink>
+    </>}>
+      Ramulator did not run for this evaluation, so the run records no <code>RAMULATOR2_HBM3_V1</code> result.
+      No DRAM timing is estimated from the network measurements.
+    </Empty>
     <Assumptions rows={[
       ['Evidence', 'The Memory tab is populated only from a recorded Ramulator result; no DRAM result is estimated from the network run.'],
       ['Scope', 'Ramulator is invoked only when the run plan includes memory timing. Memory-access bytes remain workload input.'],
@@ -490,131 +520,11 @@ function MatrixHeatmap({ grid, basis, selected, onSelect }: {
   </div>;
 }
 
-const CHORD_COLORS = ['#0f6c9e', '#a32928', '#246847', '#79540c', '#6b4f9e', '#0d7f7a', '#8a4b1f', '#3d5a80', '#9a2f6a', '#4b6a2f', '#5b5f66', '#1f6f8b'];
-
-/** Directed pair flows around one endpoint ring. Reciprocal pairs bend to
- *  opposite sides, so 0→1 and 1→0 stay separately visible. */
-function PairChord({ pairs, basis, selectedKey, onSelect }: {
-  pairs: { src: number; dst: number; packets: number; flits: number }[];
-  basis: 'packets' | 'flits';
-  selectedKey: string | null;
-  onSelect: (key: string) => void;
-}) {
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const valueOf = (pair: { packets: number; flits: number }) => basis === 'flits' ? pair.flits : pair.packets;
-  const flows = pairs.filter(pair => pair.src !== pair.dst && valueOf(pair) > 0);
-  const ranked = [...flows].sort((a, b) => valueOf(b) - valueOf(a));
-  const shown = showAll ? ranked : ranked.slice(0, 8);
-  const nodes = [...new Set(shown.flatMap(pair => [pair.src, pair.dst]))].sort((a, b) => a - b);
-  const total = shown.reduce((sum, pair) => sum + valueOf(pair), 0);
-  const allTotal = ranked.reduce((sum, pair) => sum + valueOf(pair), 0);
-  if (!flows.length || nodes.length < 2 || total <= 0) return null;
-  const nodeTotal = new Map(nodes.map(id => [id, 0]));
-  const outTotal = new Map(nodes.map(id => [id, 0]));
-  for (const pair of shown) {
-    nodeTotal.set(pair.src, (nodeTotal.get(pair.src) ?? 0) + valueOf(pair));
-    nodeTotal.set(pair.dst, (nodeTotal.get(pair.dst) ?? 0) + valueOf(pair));
-    outTotal.set(pair.src, (outTotal.get(pair.src) ?? 0) + valueOf(pair));
-  }
-  const W = 560, H = 468, cx = W / 2, cy = H / 2, R = 174;
-  const gap = Math.min(0.03, Math.PI / nodes.length * 0.12);
-  const span = Math.PI * 2 - gap * nodes.length;
-  const nodeArc = new Map<number, { a0: number; a1: number }>();
-  let cursor = -Math.PI / 2;
-  for (const id of nodes) {
-    // Every flow contributes to both endpoints, so the node shares sum to 2×total.
-    const share = (nodeTotal.get(id) ?? 0) / Math.max(1, total * 2);
-    const a0 = cursor, a1 = cursor + span * share;
-    nodeArc.set(id, { a0, a1 });
-    cursor = a1 + gap;
-  }
-  const srcUsed = new Map<number, number>();
-  const dstUsed = new Map<number, number>();
-  const links = shown.map(pair => {
-    const key = `${pair.src}:${pair.dst}`;
-    const value = valueOf(pair);
-    const sourceArc = nodeArc.get(pair.src)!, destArc = nodeArc.get(pair.dst)!;
-    const sSpan = sourceArc.a1 - sourceArc.a0, dSpan = destArc.a1 - destArc.a0;
-    const sShare = value / Math.max(1, outTotal.get(pair.src) ?? 1);
-    const dShare = value / Math.max(1, nodeTotal.get(pair.dst) ?? 1);
-    const s0 = sourceArc.a0 + (srcUsed.get(pair.src) ?? 0);
-    const s1 = s0 + sSpan * sShare;
-    const d0 = destArc.a0 + (dstUsed.get(pair.dst) ?? 0);
-    const d1 = d0 + dSpan * dShare;
-    srcUsed.set(pair.src, s1 - sourceArc.a0);
-    dstUsed.set(pair.dst, d1 - destArc.a0);
-    const r = R - 15;
-    const sm = (s0 + s1) / 2, dm = (d0 + d1) / 2;
-    const sx = cx + r * Math.cos(sm), sy = cy + r * Math.sin(sm);
-    const dx = cx + r * Math.cos(dm), dy = cy + r * Math.sin(dm);
-    const delta = ((dm - sm + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    const mx = (sx + dx) / 2, my = (sy + dy) / 2;
-    const vx = dx - sx, vy = dy - sy;
-    const length = Math.max(1, Math.hypot(vx, vy));
-    const bend = (delta >= 0 ? 1 : -1) * (24 + length * 0.28);
-    const qx = mx - (vy / length) * bend, qy = my + (vx / length) * bend;
-    const at = (angle: number) => `${cx + r * Math.cos(angle)} ${cy + r * Math.sin(angle)}`;
-    const dLarge = Math.abs(d1 - d0) > Math.PI ? 1 : 0;
-    const sLarge = Math.abs(s1 - s0) > Math.PI ? 1 : 0;
-    const path = `M${at(s0)} Q${qx} ${qy} ${at(d0)} A${r} ${r} 0 ${dLarge} ${d1 > d0 ? 1 : 0} ${at(d1)} Q${qx} ${qy} ${at(s1)} A${r} ${r} 0 ${sLarge} ${s0 > s1 ? 1 : 0} ${at(s0)} Z`;
-    const center = `M${sx} ${sy} Q${qx} ${qy} ${dx} ${dy}`;
-    return { key, pair, value, path, center, colour: CHORD_COLORS[nodes.indexOf(pair.src) % CHORD_COLORS.length] };
-  });
-  const active = hovered ?? selectedKey;
-  // Keep the DOM order stable while hovering: reordering on pointerenter can
-  // move the node between pointerdown and pointerup, which drops the click.
-  const orderedLinks = [...links].sort((a, b) => Number(a.key === selectedKey) - Number(b.key === selectedKey));
-  const point = (angle: number, radius: number) => `${cx + radius * Math.cos(angle)} ${cy + radius * Math.sin(angle)}`;
-  const readout = links.find(link => link.key === (hovered ?? selectedKey));
-  const coverage = allTotal > 0 ? Math.round(100 * total / allTotal) : 0;
-  return <figure className="pair-chord">
-    <div className="pair-chord-readout">
-      {readout
-        ? <><strong>{readout.pair.src} → {readout.pair.dst}</strong><span>{num(readout.value)} {basis}</span><span>{num(readout.pair.flits)} flits</span></>
-        : <span>Hover or select a chord to inspect a pair.</span>}
-    </div>
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Endpoint pair flows: ${shown.length} pairs across ${nodes.length} endpoints, weighted by ${basis}`}>
-      {orderedLinks.map(link => {
-        const dim = active !== null && active !== link.key;
-        return <g key={link.key} className="pair-chord-link" role="button" tabIndex={0}
-          aria-label={`Inspect pair ${link.pair.src} to ${link.pair.dst}`} aria-pressed={selectedKey === link.key}
-          onPointerEnter={() => setHovered(link.key)} onPointerLeave={() => setHovered(null)}
-          onFocus={() => setHovered(link.key)} onBlur={() => setHovered(null)}
-          onClick={() => onSelect(link.key)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(link.key); } }}>
-          <path d={link.center} fill="none" stroke="transparent" strokeWidth={14} pointerEvents="stroke" />
-          <path d={link.path} fill={link.colour} fillOpacity={dim ? 0.05 : active === link.key ? 0.78 : 0.45} stroke="none" pointerEvents="none" />
-          <title>{`${link.pair.src} → ${link.pair.dst}: ${num(link.value)} ${basis}`}</title>
-        </g>;
-      })}
-      {nodes.map(id => {
-        const arc = nodeArc.get(id)!;
-        const large = arc.a1 - arc.a0 > Math.PI ? 1 : 0;
-        const path = `M${point(arc.a0, R)} A${R} ${R} 0 ${large} 1 ${point(arc.a1, R)} L${point(arc.a1, R - 14)} A${R - 14} ${R - 14} 0 ${large} 0 ${point(arc.a0, R - 14)} Z`;
-        const mid = (arc.a0 + arc.a1) / 2;
-        const anchor = Math.cos(mid) > 0.2 ? 'start' : Math.cos(mid) < -0.2 ? 'end' : 'middle';
-        return <g key={id} className="pair-chord-node">
-          <path d={path} fill={CHORD_COLORS[nodes.indexOf(id) % CHORD_COLORS.length]} />
-          <text x={cx + (R + 18) * Math.cos(mid)} y={cy + (R + 18) * Math.sin(mid) + 4} textAnchor={anchor}>{id}</text>
-          <title>{`Endpoint ${id}: ${num(nodeTotal.get(id) ?? 0)} ${basis} in and out`}</title>
-        </g>;
-      })}
-    </svg>
-    <figcaption>
-      <span>Colour = source endpoint</span>
-      <span>Width = {basis}</span>
-      <span>{showAll ? `All ${flows.length}` : `Top ${shown.length} of ${flows.length}`} pairs · {coverage}% of {basis}</span>
-      {flows.length > 8 && <button type="button" className="text-button" onClick={() => { setShowAll(value => !value); setHovered(null); }}>{showAll ? 'Show top 8' : `Show all ${flows.length}`}</button>}
-    </figcaption>
-  </figure>;
-}
-
 export function LiveMatrix({ project, run, variant }: { project: LoadedProject; run: LoadedRun; variant?: 'missing' }) {
   const [basis, setBasis] = useState<'packets' | 'flits'>('packets');
   const [trafficClass, setTrafficClass] = useState<string>('all');
   const [pair, setPair] = useState<string>('');
   const [query, setQuery] = useState('');
-  const [limit, setLimit] = useState(25);
   const matrix = run.matrix;
   if (!matrix) return <div className="view-main"><RunBar project={project} run={run} /><Notice tone="amber"><strong>No traffic matrix.</strong> {run.gaps.find(g => g.startsWith('traffic matrix')) ?? ''}</Notice><Assumptions rows={[['Scope', 'The run bundled no traffic matrix; pair counts are unavailable rather than zero.']]} /></div>;
   const classMatrices = matrix.class_matrices ?? {};
@@ -630,7 +540,7 @@ export function LiveMatrix({ project, run, variant }: { project: LoadedProject; 
   const totalFlits = classData?.flits ?? matrix.flits ?? pairs.reduce((sum, p) => sum + p.flits, 0);
   const allPackets = matrix.packets ?? Object.values(matrix.classes ?? {}).reduce((sum, value) => sum + value, 0);
   const classLabel = trafficClass === 'all' ? 'all classes' : `class ${trafficClass}`;
-  const selectClass = (next: string) => { setTrafficClass(next); setPair(''); setQuery(''); setLimit(25); };
+  const selectClass = (next: string) => { setTrafficClass(next); setPair(''); setQuery(''); };
   const patterns = (() => {
     const groups = new Map<string, { packets: number; flits: number; count: number; totalFlits: number; example: typeof pairs[number] }>();
     for (const entry of pairs) {
@@ -648,11 +558,6 @@ export function LiveMatrix({ project, run, variant }: { project: LoadedProject; 
     .sort((a, b) => basis === 'flits'
       ? b.flits - a.flits || b.packets - a.packets
       : b.packets - a.packets || b.flits - a.flits);
-  const visible = filtered.slice(0, limit);
-  const pairPeak = Math.max(1, ...filtered.map(entry => basis === 'flits' ? entry.flits : entry.packets));
-  const chordFlows = filtered.filter(entry => entry.src !== entry.dst && (basis === 'flits' ? entry.flits : entry.packets) > 0);
-  const chordNodes = new Set(chordFlows.flatMap(entry => [entry.src, entry.dst]));
-  const useChord = chordNodes.size > 1 && chordNodes.size <= 32;
   const shareOf = (value: number) => totalPackets > 0 ? `${(100 * value / totalPackets).toFixed(2)} %` : '—';
   const topFlows = [...pairs].sort((a, b) => basis === 'flits' ? b.flits - a.flits : b.packets - a.packets).slice(0, 5);
   const topFlowPeak = Math.max(1, ...topFlows.map(entry => basis === 'flits' ? entry.flits : entry.packets));
@@ -688,13 +593,14 @@ export function LiveMatrix({ project, run, variant }: { project: LoadedProject; 
       <label className="field pair-search"><span>Find a pair</span>
         <input aria-label="Filter endpoint pairs" value={query} placeholder="source, destination, or 0→8" onChange={event => {
           const value = event.target.value;
-          setQuery(value); setLimit(25);
+          setQuery(value);
           const first = pairs.filter(entry => pairMatches(entry, value)).sort((a, b) => b.flits - a.flits)[0];
           setPair(first ? `${first.src}:${first.dst}` : '');
         }} />
       </label>
     </div>
     <Section title="Traffic profile" actions={<div className="actions"><Badge>{pairs.length} pairs</Badge>{trafficClass !== 'all' && <Badge tone="amber">{classLabel}</Badge>}</div>}>
+      <p className="meta-line">Source trace · <span className="mono">{matrix.source?.trace ?? 'Not declared'}</span></p>
       <div className="stat-strip matrix-kpis">
         <div className="stat"><span>{trafficClass === 'all' ? 'Trace packets' : `Class ${trafficClass} packets`}</span><strong>{num(totalPackets)}</strong><small>measured pair counts</small></div>
         <div className="stat"><span>{trafficClass === 'all' ? 'Trace flits' : `Class ${trafficClass} flits`}</span><strong>{num(totalFlits)}</strong><small>same measurement window</small></div>
@@ -764,6 +670,15 @@ export function LiveMatrix({ project, run, variant }: { project: LoadedProject; 
           {pair && <Button onClick={() => setPair('')}>Clear</Button>}
         </div>
       </div>}
+      {pairs.length > 0 && <details className="plot-data" open={!!query}><summary>Pair table · {filtered.length === pairs.length ? `all ${pairs.length} reported pairs` : `${filtered.length} of ${pairs.length} pairs`}</summary>
+        {query && <p className="meta-line">Filtered by “{query}”. Clear the search to restore every reported pair. <Button onClick={() => { setQuery(''); setPair(''); }}>Clear search</Button></p>}
+        {filtered.length ? <div className="table-scroll capped"><table>
+          <thead><tr><th>Source</th><th>Destination</th><th>Packets</th><th>Flits</th><th>Trace share</th></tr></thead>
+          <tbody>{filtered.map(entry => <tr key={`${entry.src}:${entry.dst}`} className={selected && entry.src === selected.src && entry.dst === selected.dst ? 'selected' : ''} {...contextTarget('pair', `${entry.src}:${entry.dst}`, `Endpoint pair ${entry.src} → ${entry.dst}`, `${entry.packets.toLocaleString()} packets · ${entry.flits.toLocaleString()} flits`)} onClick={() => setPair(`${entry.src}:${entry.dst}`)}>
+            <td className="mono"><button type="button" className="text-button" onClick={() => setPair(`${entry.src}:${entry.dst}`)} aria-label={`Select pair ${entry.src} to ${entry.dst}`}>{entry.src}</button></td><td className="mono">{entry.dst}</td><td className="numeric">{num(entry.packets)}</td><td className="numeric">{num(entry.flits)}</td><td className="numeric">{shareOf(entry.packets)}</td>
+          </tr>)}</tbody>
+        </table></div> : <p className="meta-line">No pair matches. Try a source or destination number, or a pair such as <code>0→8</code>.</p>}
+      </details>}
     </Section>
     {patterns.length > 1 && <Section title="Flow patterns" actions={<Badge>{patterns.length} patterns</Badge>}>
       <div className="table-scroll"><table>
@@ -777,44 +692,11 @@ export function LiveMatrix({ project, run, variant }: { project: LoadedProject; 
         </tr>)}</tbody>
       </table></div>
     </Section>}
-    <Section title="Endpoint pairs" actions={<Badge>{pairs.length} reported</Badge>}>
-      {pairs.length ? <>
-        <p className="meta-line pair-result-line">{[filtered.length === pairs.length ? 'All reported pairs' : `${filtered.length} of ${pairs.length} pairs`]} · {useChord ? `width = ${basis}` : `ranked by ${basis}`} · select a pair to inspect {query && <Button onClick={() => { setQuery(''); setLimit(25); }}>Clear search</Button>}</p>
-        {visible.length ? (useChord
-          ? <PairChord pairs={chordFlows} basis={basis} selectedKey={selected ? `${selected.src}:${selected.dst}` : null} onSelect={setPair} />
-          : <div className="flow-bars pair-bars">
-            {visible.map(entry => {
-              const value = basis === 'flits' ? entry.flits : entry.packets;
-              const isSelected = Boolean(selected && entry.src === selected.src && entry.dst === selected.dst);
-              return <button type="button" key={`${entry.src}:${entry.dst}`} className="flow-row" aria-pressed={isSelected}
-                {...contextTarget('pair', `${entry.src}:${entry.dst}`, `Endpoint pair ${entry.src} → ${entry.dst}`, `${entry.packets.toLocaleString()} packets · ${entry.flits.toLocaleString()} flits`)}
-                onClick={() => setPair(`${entry.src}:${entry.dst}`)}
-                title={`${entry.src} → ${entry.dst}: ${num(entry.packets)} packets · ${num(entry.flits)} flits · ${shareOf(entry.packets)} of trace packets`}>
-                <span className="mono flow-name">{entry.src} → {entry.dst}</span>
-                <span className="flow-track"><i style={{ width: `${100 * value / pairPeak}%` }} /></span>
-                <span className="numeric">{num(value)}</span>
-              </button>;
-            })}
-          </div>) : <Empty title="No pair matches">Try a source or destination number, or a pair such as <code>0→8</code>.</Empty>}
-        {!useChord && visible.length < filtered.length && <div className="toolbar toolbar-start">
-          <Button onClick={() => setLimit(current => current + 50)}>Show {Math.min(50, filtered.length - visible.length)} more</Button>
-          <span className="muted">Showing {visible.length} of {filtered.length}</span>
-        </div>}
-      </> : <Empty title="No pair rows">Counts exist only in the grid.</Empty>}
-      <details className="plot-data"><summary>All pair rows · {filtered.length}</summary>
-        <div className="table-scroll capped"><table>
-          <thead><tr><th>Source</th><th>Destination</th><th>Packets</th><th>Flits</th><th>Trace share</th></tr></thead>
-          <tbody>{filtered.map(entry => <tr key={`${entry.src}:${entry.dst}`} className={selected && entry.src === selected.src && entry.dst === selected.dst ? 'selected' : ''} {...contextTarget('pair', `${entry.src}:${entry.dst}`, `Endpoint pair ${entry.src} → ${entry.dst}`, `${entry.packets.toLocaleString()} packets · ${entry.flits.toLocaleString()} flits`)} onClick={() => setPair(`${entry.src}:${entry.dst}`)}>
-            <td className="mono">{entry.src}</td><td className="mono">{entry.dst}</td><td className="numeric">{num(entry.packets)}</td><td className="numeric">{num(entry.flits)}</td><td className="numeric">{shareOf(entry.packets)}</td>
-          </tr>)}</tbody>
-        </table></div>
-      </details>
-    </Section>
     <Assumptions rows={[
       ['Scope', 'Zero cells are recorded zeros, not missing data.'],
       ['Not supplied', 'Per-pair latency and observed route. The selected pair shows packet/flit counts only.'],
       ['Per-class matrices', classIds.length ? `${classIds.length} classes reported. Aggregate class counts are never split into inferred pairs.` : 'Not supplied. Aggregate class counts are never split into inferred pairs.'],
-      ['Grouping', 'Pairs with identical reported counters are grouped under Flow patterns when more than one pattern exists; the endpoint-pair chart always keeps the full reported list.'],
+      ['Grouping', 'Pairs with identical reported counters are grouped under Flow patterns when more than one pattern exists; the pair table always keeps the full reported list.'],
       ['Availability', matrix.availability],
       ['Source trace', <span className="mono">{matrix.source?.trace ?? 'Not declared'}</span>],
       ['Declared packets', num(matrix.source?.declared_packets)],
@@ -1298,7 +1180,7 @@ export function LiveEvidence({ project, run }: { project: LoadedProject; run: Lo
     <EvidenceDocuments key={run.detail.run_id} runId={run.detail.run_id} />
     <RawArtifacts key={`raw-${run.detail.run_id}`} runId={run.detail.run_id} files={files} />
     <Section title="Bundle files" actions={<Badge>{total} listed</Badge>}>
-      {total ? <div className="table-scroll"><table><thead><tr><th>Path</th><th>Status</th></tr></thead><tbody>
+      {total ? <div className="table-scroll bundle-files-table"><table><thead><tr><th>Path</th><th>Status</th></tr></thead><tbody>
         {Object.keys(files).map(path => <tr key={path}><td className="mono">{path}</td><td><Badge tone="green">Recorded</Badge></td></tr>)}
       </tbody></table></div> : <Empty title="No bundle files returned">The artifacts endpoint returned no bundle files for this run.</Empty>}
     </Section>

@@ -101,23 +101,21 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
   const latestStudy = detail.latest_optimization_study ?? null;
   const study = latestStudy && (!latestStudy.base_revision_id || latestStudy.base_revision_id === detail.active_revision_id) ? latestStudy : null;
   const nextAction = intentDirty
-    ? { text: 'Save and compile the draft to publish it as a revision before evaluating or exploring it. Use Save draft, then Compile draft in the Intent bar.', page: null, label: '' }
+    ? { text: 'Save the draft, then compile it to publish a revision.', page: null, label: '' }
     : dirty
-      ? { text: 'Compile the saved draft to publish it as a revision before evaluating or exploring it. Use Compile draft in the Intent bar.', page: null, label: '' }
+      ? { text: 'Compile the saved draft to publish a revision.', page: null, label: '' }
       : !detail.active_revision_id
-        ? { text: 'Declare the workload, requirements and fabric in the Intent step, then compile the draft into a revision.', page: null, label: '' }
+        ? { text: 'Declare the workload, requirements and fabric, then compile the draft.', page: null, label: '' }
         : !activeRun
           ? { text: `Evaluate ${revisionLabel(revisionId)} to produce evidence for this revision.`, page: 'analysis/summary' as const, label: 'Evaluate active revision' }
-          : { text: 'Review the run. If you want a different fabric, choose one for this workload and compile a new revision.', page: 'explore/fabric' as const, label: 'Choose fabric for this workload' };
+          : { text: 'Review the run, or choose a different fabric and compile a new revision.', page: 'explore/fabric' as const, label: 'Choose fabric for this workload' };
   const compile = () => run('compile', async () => {
     await gateway.compileProject(detail.project.project_id, active.draftMeta?.revisionToken);
     notify('Draft compiled. Evaluate the active revision to produce new verdicts.');
     reload();
   });
 
-  return <><Section title={`Workflow · ${detail.project.name}`} actions={<>
-    {topology ? <Badge tone="blue">Live store</Badge> : <Badge tone="amber">No topology</Badge>}
-  </>}>
+  return <><Section title={`Workflow · ${detail.project.name}`}>
     <Notice tone="blue">
       <strong>Next:</strong> <span>{nextAction.text}</span>{' '}
       {nextAction.page && <PageLink page={nextAction.page} primary>{nextAction.label}</PageLink>}
@@ -133,7 +131,7 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
     </Step>
 
     <Step index={2} title="Intent"
-      summary={<>{workloadName} · {draftFabric} · {tileAgents} compute tiles {intentDirty ? '· unsaved edits' : dirty ? '· saved draft differs from revision' : '· matches compiled revision'}</>}
+      summary={<>{workloadName} · {draftFabric} · {tileAgents} compute tiles</>}
       actions={<>
         <Badge tone={dirty || intentDirty ? 'amber' : 'green'}>{intentDirty ? 'unsaved edits' : dirty ? 'uncompiled' : 'compiled'}</Badge>
         <Button onClick={() => setIntentTab(intentStart)}>Edit draft</Button>
@@ -143,9 +141,13 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
         notify={notify}
         tab={intentTab}
         onTabChange={setIntentTab}
-        onCompile={compile}
-        compileBusy={busy === 'compile'}
         onDirtyChange={setIntentDirty}
+        actions={({ save, dirty: editorDirty }) => <>
+          {save?.save && <Button disabled={!save.dirty || !save.valid || save.busy}
+            title={!save.dirty ? 'No unsaved changes' : !save.valid ? 'Validate the draft before saving' : undefined}
+            onClick={save.save}>{save.busy ? 'Saving…' : 'Save draft'}</Button>}
+          <Button primary disabled={busy === 'compile' || editorDirty || save?.busy || !active.request} onClick={compile}>{busy === 'compile' ? 'Compiling…' : 'Compile draft'}</Button>
+        </>}
       />
     </Step>
 
@@ -156,11 +158,7 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
       actions={<>
         {topology && <Button aria-pressed={showLayout} onClick={() => setShowLayout(open => !open)}>{showLayout ? 'Hide layout' : 'Show layout'}</Button>}
       </>}>
-      {(dirty || intentDirty) && <Notice tone="amber">
-        <strong>This card is the compiled snapshot{revisionId ? ` (${revisionLabel(revisionId)})` : ''}, not the current draft.</strong>{' '}
-        {intentDirty ? 'The open Intent tab has unsaved changes: save them in the Intent bar, then compile.' : 'The saved draft differs from this revision: compile from the Intent bar to publish it.'}{' '}
-        The saved draft declares <span className="mono">{draftFabric}</span>{revisionId && topology ? `; this revision has ${topology.counts?.routers ?? topology.routers.length} routers and ${topology.counts?.channels ?? topology.channels.length} channels.` : '.'}
-      </Notice>}
+      {(dirty || intentDirty) && <p className="meta-line">Compiled snapshot. Draft declares <span className="mono">{draftFabric}</span>.</p>}
       {topology && showLayout && <TopologyGraph topology={topology} />}
     </Step>
 
@@ -171,7 +169,6 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
           : <>No run on {revisionLabel(revisionId)} · latest historical <span className="mono">{latest ? runLabels.get(latest.run_id) : '—'}</span> {latest?.status}</>
         : 'No run yet.'}
       actions={<>
-        {activeRun && <Badge tone="green">Run recorded on active revision</Badge>}
         {activeRun
           ? <Button primary onClick={() => openRun(activeRun.run_id)}>Open latest run</Button>
           : <PageLink page="analysis/summary" primary>Evaluate active revision</PageLink>}
@@ -189,18 +186,15 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
         <PageLink page="explore/fabric-search">Catalog fabric search</PageLink>
         <PageLink page="explore/brief" primary={!!activeRun}>Revision study</PageLink>
       </>}>
-      {activeRun
-        ? <p className="meta-line">A catalog fabric is reference evidence. Apply its topology to the draft to test it here; the revision study measures candidates on this revision and is the only path that adopts a winner.</p>
-        : <Notice tone="amber">Evaluate the active revision before carrying a fabric shortlist into a measured study.</Notice>}
+      {!activeRun && <Notice tone="amber">Evaluate the active revision before carrying a fabric shortlist into a measured study.</Notice>}
     </Step>
 
     <Step index={6} title="Verify & deliver"
       summary={activeRun ? 'Evidence and the revision manifest are available.' : 'No evaluation evidence yet.'}
       actions={<>
         <PageLink page="verify/evidence" primary={!!activeRun}>Verify evidence</PageLink>
-        <PageLink page="deliver/readiness">Deliver manifest</PageLink>
+        <PageLink page="deliver/package" primary={!activeRun}>Deliver manifest</PageLink>
       </>}>
-      <p className="meta-line">Verification is scoped to the active revision and its run. Delivery exports the declared architecture; RTL and hardware qualification remain not established.</p>
     </Step>
 
     <DraftHistory key={`${detail.project.project_id}:${active.draftMeta?.revisionToken}`} project={active} />
@@ -217,13 +211,10 @@ export function ProjectFlow({ active, notify }: { active: LoadedProject; notify:
     </div>
   </Section>
     <Assumptions rows={[
-      ['Revision', 'A revision is a compiled snapshot of the saved draft.'],
-      ['Run', 'A run is one evaluation of a revision; failed compile attempts stay visible so the sequence has no gaps.'],
-      ['Missing evidence', 'No run on a revision means no evaluation evidence; nothing is inferred from its absence.'],
-      ['Intent workspace', 'Fabric and workload edits are local to the draft; validate, save, then compile to publish a revision.'],
-      ['Virtual channels', 'VC count is derived by the compiler from traffic-class dependencies; buffer depth is per VC.'],
-      ['Topology probe', 'Backend family status is probed server-side against the compiler, projection, execution handler and qualification profile; authorable does not imply executable.'],
-      ['Fabric scope', 'The Srota editor declares plane, MECS and island intent; the compiler maps it to the BookSim Srota model, and simulator knobs (VC counts, allocators, seeds) are not authorable.'],
+      ['Revision & run', 'A revision is a compiled snapshot of the saved draft; a run is one evaluation of a revision. Missing evidence is not inferred.'],
+      ['Explore', 'A catalog fabric is reference evidence. The revision study measures candidates on the active revision and is the only path that adopts a winner.'],
+      ['Delivery', 'Delivery exports the declared architecture; RTL and hardware qualification are not established.'],
+      ['Derivation', 'VC count and deadlock rules are compiler-derived from traffic-class dependencies. Backend family status is probed server-side; authorable does not imply executable.'],
     ]} />
   </>;
 }

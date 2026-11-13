@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { JobEvents } from './JobEvents';
-import { gateway, gatewayReason, type EvaluationPlan, type EvaluationPlanRow, type Job } from './gateway';
+import { gateway, gatewayReason, type EvaluationPlan, type EvaluationPlanRow } from './gateway';
 import type { LoadedProject } from './project';
 import { useProject } from './project';
 import { Badge, Button, Empty, Notice, Properties, Section } from './ui';
@@ -31,7 +31,6 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
   const [confirmed, setConfirmed] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [history, setHistory] = useState<Job[]>([]);
   const [awaiting, setAwaiting] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const job = evaluationJob.job;
@@ -45,18 +44,12 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
   const polledAgo = jobActive ? secondsSince(job.updated_at) : null;
   const jobKey = job?.job_id;
 
-  const loadHistory = () => {
-    gateway.projectJobs?.(project.detail.project.project_id, 'EVALUATION')
-      .then(d => setHistory(d.jobs ?? []))
-      .catch(() => setHistory([]));
-  };
-
   useEffect(() => {
     if (!needsPlan) return;
     if (!revisionId) { setPlan({ phase: 'error', reason: 'This project has no active revision to evaluate.' }); return; }
     let live = true;
     ++generation.current;
-    setConfirmed(false); setSelected([]); setSubmitError(null); setAwaiting(false); setHistory([]);
+    setConfirmed(false); setSelected([]); setSubmitError(null); setAwaiting(false);
     setPlan({ phase: 'loading' });
     gateway.evaluationPlan(revisionId)
       .then(result => {
@@ -66,7 +59,6 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
         setSelected(ready);
       })
       .catch(error => { if (live) setPlan({ phase: 'error', reason: gatewayReason(error) }); });
-    loadHistory();
     return () => { live = false; ++generation.current; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revisionId, needsPlan]);
@@ -92,7 +84,6 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
     if (job) setAwaiting(false);
   }, [job]);
   useEffect(() => {
-    if (jobState && TERMINAL.includes(jobState)) loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobState]);
   // Bring the job panel into view as soon as it exists; the user just pressed a button.
@@ -121,12 +112,12 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
     {superseded && <Notice tone="blue"><strong>An earlier refusal for this revision is superseded.</strong> {superseded}</Notice>}
 
     {plan.phase === 'loaded' && <>
-      <div className="toolbar evaluation-context">
-        <Badge tone="blue">Revision <span className="mono">{revisionId}</span></Badge>
-        <Badge>{project.detail.project.name}</Badge>
-        <Badge>{(project.detail.runs ?? []).length} project run{(project.detail.runs ?? []).length === 1 ? '' : 's'}</Badge>
+      <div className="toolbar toolbar-start evaluation-context">
+        <Badge tone="blue">{readyRows.length} ready</Badge>
+        {blockedRows.length > 0 && <Badge tone="amber">{blockedRows.length} blocked</Badge>}
+        {blockedRows.length > 0 && <span className="muted">{blockedRows.length} of {rows.length} questions are blocked.</span>}
       </div>
-      <div className="table-scroll"><table className="plan-table"><thead><tr><th>Run</th><th>Question</th><th>Backend</th><th>Readiness</th><th>Qualification / model</th></tr></thead><tbody>
+      <div className="table-scroll"><table className="plan-table"><thead><tr><th /><th>Question</th><th>Backend</th><th>Readiness</th><th>Model / basis</th></tr></thead><tbody>
         {rows.map(row => {
           const name = row.question ?? 'unnamed question';
           const selectable = row.readiness === 'READY';
@@ -143,15 +134,12 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
           </tr>;
         })}
       </tbody></table></div>
-      {blockedRows.length > 0 && <p className="meta-line">{blockedRows.length} of {rows.length} questions are blocked.</p>}
       {readyRows.length === 0 && <Empty title="Nothing on this revision is ready to run">The plan reports no READY analysis.</Empty>}
 
-      <label className="check-row"><input type="checkbox" checked={confirmed} disabled={submitting || readyRows.length === 0} onChange={e => setConfirmed(e.target.checked)} />
-        I understand: run real backends and save a new run.
-      </label>
-      <div className="toolbar">
+      <div className="toolbar evaluation-launch">
+        <label className="check-row"><input type="checkbox" checked={confirmed} disabled={submitting || readyRows.length === 0} onChange={e => setConfirmed(e.target.checked)} />I understand: run real backends and save a new run.</label>
+        <span className="muted">{selected.length} of {readyRows.length} ready selected</span>
         <Button primary disabled={!canLaunch} onClick={launch}>{submitting ? 'Submitting…' : `Launch ${selected.length} ${selected.length === 1 ? 'analysis' : 'analyses'}`}</Button>
-        <span className="muted">{selected.length} of {readyRows.length} READY question{readyRows.length === 1 ? '' : 's'} selected</span>
       </div>
     </>}
 
@@ -186,12 +174,7 @@ export function LaunchEvaluation({ project, collapsed = false }: { project: Load
       </Section>
     </div>}
 
-    {(job?.job_id || pendingJobId) && <JobEvents key={job?.job_id ?? pendingJobId!} jobId={job?.job_id ?? pendingJobId!} />}
-    {history.length > 0 && <Section title="Evaluation jobs in this project" actions={<Badge>{history.length}</Badge>}>
-      <div className="table-scroll"><table><thead><tr><th>Job</th><th>Revision</th><th>State</th><th>Submitted</th><th>Run</th></tr></thead><tbody>
-        {history.map(h => <tr key={h.job_id}><th className="mono">{h.job_id}</th><td className="mono">{h.revision_id ?? '—'}</td><td><Badge tone={stateTone(h.state)}>{h.state}</Badge></td><td>{stamp(h.submitted_at)}</td><td className="mono">{h.result?.run_id ?? '—'}</td></tr>)}
-      </tbody></table></div>
-    </Section>}
+    {(job?.job_id || pendingJobId) && <details className="inline-details"><summary>Job diagnostics</summary><JobEvents key={job?.job_id ?? pendingJobId!} jobId={job?.job_id ?? pendingJobId!} /></details>}
   </>;
 
   if (!collapsed) return <Section title="Run a new evaluation on this revision" actions={<Badge tone="amber">Writes a real run</Badge>}>{body}</Section>;

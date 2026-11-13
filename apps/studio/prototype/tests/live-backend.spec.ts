@@ -67,7 +67,7 @@ test('disposable live project: save, compile, evaluate, inspect, delete', async 
       // confirmation a user faces; fall back to the API only if the UI fails.
       try {
         await page.evaluate(() => { location.hash = '/shared/projects'; });
-        await page.getByRole('button', { name: 'Delete project…', exact: true }).click({ timeout: 10000 });
+        await page.getByRole('row').filter({ hasText: name }).getByRole('button', { name: 'Delete…', exact: true }).click({ timeout: 10000 });
         await page.getByLabel('Delete confirmation').fill(id);
         await page.getByRole('button', { name: 'Delete permanently', exact: true }).click();
         await expect(page.getByRole('row').filter({ hasText: name })).toHaveCount(0, { timeout: 15000 });

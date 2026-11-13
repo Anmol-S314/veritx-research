@@ -34,6 +34,16 @@
 .catalog-inspector-pivot td:last-child{color:var(--ink)}
 .catalog-inspector-value{display:block}
 .catalog-inspector-dimensions{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.catalog-metric-groups{display:flex;flex-direction:column;gap:12px;margin:8px 0 14px}
+.catalog-metric-group h4{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 4px}
+.catalog-metric-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(70px,1.1fr) auto;align-items:center;gap:8px;padding:3px 0;font-size:12px}
+.catalog-metric-row.other{grid-template-columns:minmax(0,1fr) auto}
+.catalog-metric-label{color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.catalog-metric-track{height:8px;background:#e9eef3;border-radius:2px;overflow:hidden}
+.catalog-metric-track>i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.catalog-metric-value{text-align:right;color:var(--ink);font-weight:600;white-space:nowrap}
+.catalog-metric-value small{font-weight:400;color:var(--muted)}
+.catalog-metric-note{font-size:12px;color:var(--muted);line-height:1.5}
 .catalog-inspector-body .properties{margin:8px 0;font-size:12px}
 .catalog-inspector-body .properties>div{grid-template-columns:minmax(110px,.8fr) minmax(0,1.2fr);gap:10px;padding:5px 0}
 .catalog-inspector-body .properties dd{overflow-wrap:anywhere;font-size:12px}

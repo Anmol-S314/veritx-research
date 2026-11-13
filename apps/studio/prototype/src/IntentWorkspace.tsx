@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { LoadedProject } from './project';
-import { DraftContext } from './draftSave';
-import { Badge, Button, Notice } from './ui';
+import { ActionBar, Notice } from './ui';
 import { LiveWorkloadPage } from './WorkloadStudio';
 import { LiveRequirementsPage } from './RequirementsStudio';
 import { LiveValidatePage } from './ValidationStudio';
 import { DraftEditor } from './DraftEditor';
-import type { IntentSaveState, IntentTab } from './intent';
+import type { IntentActionState, IntentSaveState, IntentTab } from './intent';
 
 const TABS: { id: IntentTab; label: string }[] = [
   { id: 'workload', label: 'Workload' },
@@ -20,32 +19,24 @@ export function IntentWorkspace({
   notify,
   tab,
   onTabChange,
-  onCompile,
-  compileBusy = false,
+  tabs = TABS.map(item => item.id),
+  actions,
   onDirtyChange,
 }: {
   project: LoadedProject;
   notify: (message: string) => void;
   tab: IntentTab;
   onTabChange: (tab: IntentTab) => void;
-  onCompile: () => void;
-  compileBusy?: boolean;
+  tabs?: IntentTab[];
+  actions: (state: IntentActionState) => React.ReactNode;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [saveState, setSaveState] = useState<IntentSaveState | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const handleSaveState = useCallback((state: IntentSaveState) => setSaveState(state), []);
-  const handleDirty = useCallback((next: boolean) => setDirty(next), []);
-  const activeDirty = saveState?.dirty ?? dirty;
-
-  useEffect(() => {
-    setSaveState(null);
-    setDirty(false);
-    onDirtyChange?.(false);
-    // The parent owns the selected tab; reset the active editor's reported
-    // state when the tab changes so a stale save action cannot be invoked.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  const [saveState, setSaveState] = useState<{ tab: IntentTab; state: IntentSaveState } | null>(null);
+  const [dirty, setDirty] = useState<{ tab: IntentTab; value: boolean } | null>(null);
+  const handleSaveState = useCallback((state: IntentSaveState) => setSaveState({ tab, state }), [tab]);
+  const handleDirty = useCallback((value: boolean) => setDirty({ tab, value }), [tab]);
+  const currentSave = saveState?.tab === tab ? saveState.state : null;
+  const activeDirty = currentSave?.dirty ?? (dirty?.tab === tab ? dirty.value : false);
 
   useEffect(() => {
     onDirtyChange?.(activeDirty);
@@ -58,27 +49,9 @@ export function IntentWorkspace({
     onTabChange(next);
   };
 
-  const savedDirty = project.draftMeta?.dirty === true;
-  const saveBlocked = !saveState
-    ? 'No save action for this tab'
-    : !saveState.dirty
-      ? 'No unsaved changes'
-      : !saveState.valid
-        ? 'Validate the draft before saving'
-        : saveState.busy
-          ? 'Saving'
-          : '';
-  const statusTone = activeDirty || savedDirty ? 'amber' : 'green';
-  const statusText = activeDirty
-    ? 'Unsaved changes in this tab.'
-    : savedDirty
-      ? 'Saved draft differs from the revision.'
-      : 'Draft matches the revision.';
-
   return <div className="intent-workspace">
-    <DraftContext project={project} />
     <div className="intent-tabs" role="tablist" aria-label="Intent sections">
-      {TABS.map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id}
+      {TABS.filter(item => tabs.includes(item.id)).map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id}
         className={tab === item.id ? 'active' : ''} onClick={() => switchTab(item.id)}>{item.label}</button>)}
     </div>
     <div className="intent-body">
@@ -87,19 +60,12 @@ export function IntentWorkspace({
       {tab === 'requirements' && <LiveRequirementsPage project={project} notify={notify} embedded onDirty={handleDirty} onSaveState={handleSaveState} />}
       {tab === 'validate' && <LiveValidatePage project={project} embedded />}
     </div>
-    <div className="intent-status">
-      <div className="intent-status-copy">
-        <Badge tone={statusTone}>{statusText}</Badge>
-        {activeDirty && saveState && !saveState.valid && <span className="muted">Fix the issues above before saving.</span>}
-        {activeDirty && !saveState && tab === 'validate' && <span className="muted">Validation is read-only.</span>}
-        {!activeDirty && savedDirty && <span className="muted">Compile to publish the saved draft as a revision.</span>}
-        {!activeDirty && !savedDirty && <span className="muted">No draft changes to save.</span>}
-        {saveState?.error && <Notice tone="red">{saveState.error}</Notice>}
-      </div>
-      <div className="actions">
-        {saveState?.save && <Button disabled={!saveState.dirty || !saveState.valid || saveState.busy} title={saveBlocked || undefined} onClick={saveState.save}>{saveState.busy ? 'Saving…' : 'Save draft'}</Button>}
-        <Button primary disabled={compileBusy || activeDirty || saveState?.busy || !project.request} onClick={onCompile}>{compileBusy ? 'Compiling…' : 'Compile draft'}</Button>
-      </div>
-    </div>
+    <ActionBar sticky={false} className="intent-action-bar" status={<>
+      {activeDirty && currentSave && !currentSave.valid && <span className="muted">Fix the issues above before saving.</span>}
+      {activeDirty && !currentSave && tab === 'validate' && <span className="muted">Validation is read-only.</span>}
+      {currentSave?.error && <Notice tone="red">{currentSave.error}</Notice>}
+    </>}>
+      {actions({ save: currentSave, dirty: activeDirty })}
+    </ActionBar>
   </div>;
 }

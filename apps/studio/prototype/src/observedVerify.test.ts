@@ -121,3 +121,46 @@ it('verifies a deterministic route artifact that declares no shape policy', () =
   const offRoute = [event(1, 0, 42, 1, 'receive'), event(2, 0, 42, 2, 'send'), event(3, 1, 42, 1, 'receive'), event(4, 1, 42, 2, 'send'), event(5, 2, 42, 1, 'receive')];
   expect(verifyObserved(offRoute, topology, deterministic, config, new Map([['0:2', { wire: 70, taps: [1] }], ['1:2', { wire: 74, taps: [2] }]])).mismatched).toBe(1);
 });
+
+// A rank-policy artifact: decisions carry a hop RANK, and there is no
+// `shape_of_partition`. Two decisions for one pair can share a rank, which is
+// exactly what broke playback: the shape-labelled walk took the first one.
+const rankTable: SharedRouteTable = {
+  artifact_id: 'frozen-rank', routing_class: 'SROTA_O1TURN_RANK',
+  terminal_to_router: [[0, 0], [1, 1], [2, 2], [3, 3]],
+  partition_to_vcs: { '0': [0], '1': [1] },
+  choices: [
+    [0, 3, [decision(1, 0), decision(2, 0)]],
+    [1, 3, [decision(3, 0)]],
+    [2, 3, [decision(3, 1)]],
+  ],
+};
+const rankWires = new Map([['0:3', { wire: 72, taps: [2] }], ['2:2', { wire: 73, taps: [3] }]]);
+const rankRow = (flit: number) => [event(1, 0, flit, 1, 'receive'), event(2, 0, flit, 3, 'send'), event(3, 2, flit, 1, 'receive'), event(4, 2, flit, 2, 'send'), event(5, 3, flit, 1, 'receive')];
+
+it('verifies a recorded hop the rank union admits but no single shape walks', () => {
+  // R0 > R2 is the SECOND rank-0 decision at R0. A shape-labelled walk takes the
+  // first (R0 > R1), so equality against it reported a false mismatch for a path
+  // the certified union admits — "recorded R5 > R9 > R4 ... certified R5 > R0 > R4".
+  const check = verifyObserved(rankRow(520), topology, rankTable, config, rankWires);
+  expect(check.mismatched).toBe(0);
+  expect(check.verified).toBe(1);
+  expect(check.firstMismatch).toBeNull();
+  expect(check.flits[0].shape).toBe('UNION');
+  expect(check.flits[0].observedWires).toEqual([72, 73]);
+  expect(check.flits[0].wireVerified).toBe(true);
+});
+
+it('still refuses a recorded hop the rank union does not admit', () => {
+  // Legally wired (R2 -> R1 exists as a declared wire) but not a certified
+  // decision for terminal 3, so the union is what refuses it — not the wire map.
+  const wiredTopology = { ...topology, shared_links: [...topology.shared_links!, { shared_link_id: 75, src_router: 2, taps: [1], latency_cycles: 1, width_bits: 64 }] } as Topology;
+  const offUnion = [event(1, 0, 521, 1, 'receive'), event(2, 0, 521, 3, 'send'), event(3, 2, 521, 1, 'receive'), event(4, 2, 521, 2, 'send'), event(5, 1, 521, 1, 'receive')];
+  // The retirement record pins the endpoints, so the union is asked the right
+  // question: terminal 0 -> terminal 3. The last hop is still off the union.
+  const fates = new Map([[521, { flit: 521, packet: 5, sourceTerminal: 0, destinationTerminal: 3, hops: 3 }]]);
+  const check = verifyObserved(offUnion, wiredTopology, rankTable, config, new Map([['0:3', { wire: 72, taps: [2] }], ['2:2', { wire: 75, taps: [1] }]]), fates);
+  expect(check.mismatched).toBe(1);
+  expect(check.firstMismatch).toContain('flit 521');
+  expect(check.firstMismatch).toContain('leaves the certified union at R2 > R1');
+});

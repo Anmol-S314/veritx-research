@@ -87,7 +87,6 @@ export function FabricSearch({ navigate, notify, embedded = false, onApplied }: 
   const [phase, setPhase] = useState<'idle' | 'running' | 'complete' | 'failed'>('idle'), [progress, setProgress] = useState(''), [failure, setFailure] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [applying, setApplying] = useState(false);
-  const [showCatalogForUnmatched, setShowCatalogForUnmatched] = useState(false);
   const [applyState, setApplyState] = useState<{ tone: 'blue' | 'red' | 'amber'; text: string } | null>(null);
   const matchedTrace = useMemo(() => exactProjectTrace(catalog?.workloads ?? [], loaded), [catalog, loaded?.detail.project.project_id]);
   useEffect(() => {
@@ -155,32 +154,6 @@ export function FabricSearch({ navigate, notify, embedded = false, onApplied }: 
           ? handoffReason({ topology: selectedRow.topology, family: selectedTopology.family, nodes: selectedTopology.nodes, vcBufSize: selectedRow.request?.vc_buf_size })
           : 'Select a measured fabric.';
   const canApply = !applying && !!selectedDraftTopology && selectedDepth !== null && !applyReason;
-
-  if (loaded && !matchedTrace && !showCatalogForUnmatched) return <div className={`${embedded ? 'flow-embedded' : 'view-main'} explore-page fabric-search`}>
-    <Section title="Choose what to measure" actions={<Badge>{loaded.detail.project.name}</Badge>}>
-      <p className="meta-line">There is no repository trace for <strong>{projectModel || 'this workload'}</strong>. Fabric Search only runs repository reference traces; it cannot measure this project.</p>
-      <div className="fabric-route-choices">
-        <article>
-          <span className="eyebrow">PROJECT-SPECIFIC</span>
-          <h3>Measure design alternatives</h3>
-          <p>Run a bounded study against this project revision, then review measured candidates before adopting one.</p>
-          <Button primary onClick={() => navigate('flow/search')}>Measure this project</Button>
-        </article>
-        <article>
-          <span className="eyebrow">CURRENT REVISION</span>
-          <h3>Evaluate without changing it</h3>
-          <p>Run the analyses the gateway marks READY on the active revision.</p>
-          <Button onClick={() => navigate('flow/run')}>Evaluate active revision</Button>
-        </article>
-        <article>
-          <span className="eyebrow">REPOSITORY REFERENCE</span>
-          <h3>Search another trace</h3>
-          <p>Compare catalog fabrics on a chosen repository workload. These results will not describe this project.</p>
-          <Button onClick={() => setShowCatalogForUnmatched(true)}>Choose a reference trace</Button>
-        </article>
-      </div>
-    </Section>
-  </div>;
 
   function topologyLabel(id: string) { return catalog?.topologies.find(t => t.topology_id === id)?.label ?? id; }
   function addKnob() {

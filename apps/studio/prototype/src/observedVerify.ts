@@ -1,6 +1,6 @@
 import type { Topology } from './gateway';
 import type { ObservedFlitFate, ObservedHopEvent } from './observedHops';
-import { readNativeConfig, walkCertified, type FabricHop, type SharedRouteTable } from './sharedRoutes';
+import { readNativeConfig, walkCertified, type Decision, type FabricHop, type SharedRouteTable } from './sharedRoutes';
 
 // Observed flits are checked against the CERTIFIED route set, never against one
 // projected shape: the runtime chooses the shape, so either certified choice is
@@ -44,6 +44,71 @@ const routeLabel = (hops: FabricHop[], sourceRouter: number) =>
 const wireLabel = (hops: FabricHop[]) =>
   hops.map(hop => hop.wire === undefined ? hop.key : String(hop.wire)).join(' > ');
 
+type UnionMatch =
+  | { ok: true; shape: string }
+  | { ok: false; reason: string };
+
+/** Check a recorded router sequence against the certified decision UNION.
+ *
+ * A rank-policy artifact declares decisions and a rank per decision, but no
+ * shape binding: `shape_of_partition` is absent and the partition is the hop
+ * RANK, not the shape. Two decisions for the same pair can share a partition
+ * (R5 -> R0 and R5 -> R9 are both rank 0), so "walk the artifact under shape
+ * X" describes no legal route — and comparing against it reported a false
+ * mismatch for a path the union admits.
+ *
+ * The obligation is therefore MEMBERSHIP, hop by hop, which is exactly what
+ * the rank differential test asserts against the simulator's own dump. Each
+ * recorded hop must be a certified decision from that router to the
+ * destination terminal, and (on Plane D) must enter the wire the capture
+ * recorded. Nothing here may invent a shape: the realized rank sequence is
+ * reported as-is.
+ */
+function matchUnionRoute({
+  decisionPairs, wireOf, observedRoute, wires, destinations, shapePolicy, partitionCount,
+}: {
+  decisionPairs: Map<string, Decision[]>;
+  wireOf: (from: number, option: Decision) => number | null;
+  observedRoute: number[];
+  wires: (number | null)[];
+  destinations: number[];
+  shapePolicy: Record<string, string> | null;
+  partitionCount: number;
+}): UnionMatch {
+  let failure: { reason: string; depth: number } | null = null;
+  for (const destination of destinations) {
+    const ranks: number[] = [];
+    let problem: string | null = null;
+    for (let index = 0; index < observedRoute.length - 1; index += 1) {
+      const from = observedRoute[index], to = observedRoute[index + 1];
+      const options = (decisionPairs.get(`${from}:${destination}`) ?? []).filter(option => option.next_router === to);
+      if (!options.length) {
+        const declared = [...new Set((decisionPairs.get(`${from}:${destination}`) ?? []).map(option => `R${option.next_router}`))];
+        problem = `recorded ${observedRoute.map(router => `R${router}`).join(' > ')} (wires ${wires.map(wire => wire ?? '?').join(' > ')}) leaves the certified union at R${from} > R${to}; certified next routers from R${from} for terminal ${destination}: ${declared.length ? declared.join(', ') : 'none'}`;
+        break;
+      }
+      const wired = options.find(option => wireOf(from, option) === wires[index]);
+      if (!wired) {
+        const certified = options.map(option => String(wireOf(from, option) ?? '?')).join(', ');
+        problem = `recorded wire ${wires[index] ?? '?'} on R${from} > R${to} is not the wire the certified decision enters (certified: ${certified})`;
+        break;
+      }
+      ranks.push(wired.vc_partition);
+    }
+    if (!problem) {
+      const uniform = ranks.every(rank => rank === ranks[0]);
+      const shape = !uniform ? 'UNION'
+        : shapePolicy?.[String(ranks[0])] ?? (partitionCount > 1 ? `RANK_${ranks[0]}` : 'DETERMINISTIC');
+      return { ok: true, shape };
+    }
+    // Without a retirement record the destination terminal is unknown, so every
+    // terminal on the last router is tried. Report the divergence that got
+    // furthest: it names the hop that actually left the union.
+    if (!failure || ranks.length > failure.depth) failure = { reason: problem, depth: ranks.length };
+  }
+  return { ok: false, reason: failure?.reason ?? 'no certified decision exists for this router pair' };
+}
+
 /** Group observed events per flit and check each executed hop. */
 export function verifyObserved(
   events: ObservedHopEvent[],
@@ -69,6 +134,18 @@ export function verifyObserved(
   // against a route the artifact does certify.
   const declaredShapes = [...new Set(Object.values(table?.shape_of_partition ?? {}))];
   const shapes = declaredShapes.length ? declaredShapes : ['DETERMINISTIC'];
+  // A shape binding is what makes "walk this artifact under shape X" a legal
+  // question. Without one (rank policy), only membership can be checked.
+  const shapePolicy = declaredShapes.length ? (table!.shape_of_partition as Record<string, string>) : null;
+  const partitionCount = Object.keys(table?.partition_to_vcs ?? {}).length;
+  const decisionPairs = new Map<string, Decision[]>();
+  for (const [src, dst, options] of table?.choices ?? []) decisionPairs.set(`${src}:${dst}`, options);
+  for (const [src, dst, option] of table?.decisions ?? []) decisionPairs.set(`${src}:${dst}`, [...(decisionPairs.get(`${src}:${dst}`) ?? []), option]);
+  const wireOf = (from: number, option: Decision): number | null => {
+    if (option.tap === null || option.tap === undefined) return null;
+    const wire = (topology.shared_links ?? []).find(link => link.src_router === from && link.taps[option.tap!] === option.next_router);
+    return wire ? wire.shared_link_id : null;
+  };
   const flits: ObservedFlit[] = [];
   for (const [flit, rows] of [...byFlit].sort((a, b) => a[0] - b[0])) {
     const ordered = [...rows].sort((a, b) => a.cycle - b.cycle);
@@ -140,6 +217,29 @@ export function verifyObserved(
       }
     }
     const observedRoute = visits.map(visit => visit.router);
+    const hopCount = fate ? fate.hops : visits.length;
+    // No shape binding: the runtime may take ANY certified decision at each
+    // router, so the claim is membership, not equality with one shape's walk.
+    if (table && !shapePolicy && plane === 0) {
+      const union = matchUnionRoute({
+        decisionPairs, wireOf, observedRoute, wires,
+        destinations: [...new Set(endpoints.map(([, destination]) => destination))],
+        shapePolicy, partitionCount,
+      });
+      if (union.ok && hopCount === visits.length) {
+        flits.push({ ...base, ...packet, receipts: visits, observedWires: wires, sourceRouter, destinationRouter, verdict: 'verified', wireVerified: true, shape: union.shape });
+        continue;
+      }
+      flits.push({
+        ...base, ...packet, receipts: visits, observedWires: wires, sourceRouter, destinationRouter, verdict: 'mismatch',
+        shape: union.ok ? union.shape : undefined,
+        expected: union.ok ? `${observedRoute.map(router => `R${router}`).join(' > ')} (${hopCount} recorded hops)` : `a certified hop out of R${observedRoute[0]}`,
+        reason: union.ok
+          ? `the native hop counter reports ${hopCount} hops but ${visits.length} router receipts were recorded for a route of ${observedRoute.length - 1}`
+          : union.reason,
+      });
+      continue;
+    }
     const routeMatches = (hops: FabricHop[]) => {
       const route = [sourceRouter, ...hops.map(hop => hop.to)];
       return route.length === observedRoute.length && route.every((router, index) => router === observedRoute[index]);
@@ -150,7 +250,6 @@ export function verifyObserved(
     const matched = candidates.find(candidate => routeMatches(candidate.hops) && wireMatches(candidate.hops));
     // The native hop counter counts the eject as a hop, so a matched route must
     // also agree with it; disagreement is a real inconsistency in the capture.
-    const hopCount = fate ? fate.hops : visits.length;
     if (matched && hopCount === visits.length) {
       flits.push({ ...base, ...packet, receipts: visits, observedWires: wires, sourceRouter, destinationRouter, verdict: 'verified', wireVerified: plane === 0, shape: matched.shape });
       continue;

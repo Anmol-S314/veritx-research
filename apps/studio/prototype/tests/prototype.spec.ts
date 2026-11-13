@@ -8,7 +8,7 @@ const EXPORTS = fileURLToPath(new URL('../../../../docs/design/stitch_veritx_stu
 const PROMPT_ONLY = [
   'flow_start_workload', 'flow_fine_tune', 'flow_fabric_search', 'flow_optimize', 'flow_run_analyze', 'flow_compare_versions',
   'workloads_requirements_project_workflow', 'analysis_curves_pareto', 'analysis_workload_ablations', 'analysis_gr00t_architecture_trace', 'explore_project_fabric', 'explore_fabric_ablations', 'explore_workload_search_recommendations', 'explore_revision_recommendation_study',
-  'design_agent_fabric_map', 'analysis_fabric_static_checks',
+  'design_agent_fabric_map', 'analysis_fabric_static_checks', 'design_workflow_flow',
 ];
 const UNROUTED_EXPORTS = ['explore_versioned_exploration_brief_stu_088'];
 
@@ -100,7 +100,7 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
     topologies: [], selection: { job_id: 'job-stub', candidate_id: 'candidate-stub', topology_id: 'mesh', label: 'Mesh', workload_id: 'wl-stub' }, backends: [],
   } }));
   await page.route('**/gw/api/v1/revisions/p-stub-r01/topology', route => route.fulfill({ json: STUB_TOPOLOGY }));
-  await page.route('**/gw/api/v1/revisions/p-stub-r01/compile-result', route => route.fulfill({ json: { available: true, revision_id: 'p-stub-r01', certificate: { overall: 'PASS' }, stage1_verdicts: [{ module: 'address_permission', ok: true, status: 'PASS', reason: null, findings: [], stopped_at_stage: 'COMPLETE' }] } }));
+  await page.route('**/gw/api/v1/revisions/p-stub-r01/compile-result', route => route.fulfill({ json: { available: true, revision_id: 'p-stub-r01', certificate: { overall: 'PASS' }, stage1_verdicts: [{ module: 'address_permission', ok: true, status: 'PASS', reason: null, findings: [], stopped_at_stage: 'COMPLETE' }], stage1_findings: ["AGENT_PROTOCOL_UNOWNED: group 0 ('AXI') declare legacy Agent.protocol literals with no matching agent_intents entry"] } }));
   await page.route('**/gw/api/v1/projects/p-stub/rtl-readiness', route => route.fulfill({ json: { revision_id: 'p-stub-r01', draft_design_hash: 'stub-hash', final_rtl_available: false, final_rtl_reason: 'General implementation RTL is not available.', preview_available: true, preview_blockers: [], limitations: ['Topology-only preview'], selection: null, preview_support: { supported: true, code: 'SUPPORTED', reason: null, vc_count: 2, emitted_vcs: 2, matches_certified_vc_count: true, shared_wire_links: 0, connected: true, reciprocal: true, router_count: 4 } } }));
 
   await page.goto('/#/shared/projects');
@@ -109,7 +109,7 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   await expect(page.getByText('p-stub-r01 · live store')).toBeVisible();
   await expect(page.locator('.header-revision')).toContainText('live store');
   await expect(page.getByText('Sample project · local browser state', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Address checks not run', { exact: true })).toBeVisible();
+  await expect(page.getByText('Address checks', { exact: true })).toBeVisible();
 
   await page.goto('/#/design/fabric-topology');
   await expect(page.getByText('Live project data · Stubbed 2x2 project', { exact: false })).toHaveCount(0);
@@ -136,6 +136,9 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   await expect(page.locator('.view-main > .toolbar').getByText('Unsaved edits', { exact: true })).toBeVisible();
   await page.getByLabel(/Window name/).first().fill('HBM');
   await expect(page.locator('.view-main > .toolbar').getByText('Saved draft · compile pending', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Agents/ }).click();
+  await expect(page.getByRole('heading', { name: 'Protocol ownership' })).toBeVisible();
+  await expect(page.getByText(/AGENT_PROTOCOL_UNOWNED/)).toBeVisible();
   await page.getByRole('button', { name: 'Control reach' }).click();
   await expect(page.getByRole('columnheader', { name: 'Draft declaration', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Check preview readiness', exact: true }).click();
@@ -148,11 +151,15 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   draftDirty = false;
   await page.reload();
   await expect(page.locator('.header-revision')).toHaveText('p-stub-r01 · live store');
+  await expect(page.getByRole('link', { name: 'Open delivery & RTL preview', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Open delivery & RTL preview', exact: true }).click();
   await expect(page.getByText('Current project preview', { exact: true })).toBeVisible();
   await page.goto('/#/design/agent-map');
   await expect(page.getByText('Matches active revision', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Control reach' }).click();
   await page.getByRole('link', { name: 'Check final RTL handoff', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Open delivery & RTL preview', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Open delivery & RTL preview', exact: true }).click();
   await expect(page.getByText('Current project preview', { exact: true })).toBeVisible();
   await page.goto('/#/design/agent-map');
   await page.getByRole('link', { name: 'Inspect physical fabric topology' }).click();
@@ -160,7 +167,7 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
 
   await page.goto('/#/design/system');
   await expect(page.getByRole('heading', { name: 'Design → compiler → RTL preview', exact: true })).toBeVisible();
-  await expect(page.locator('.design-handoff-track .design-handoff-step').nth(2).getByText('Preview available', { exact: true })).toBeVisible();
+  await expect(page.locator('.design-handoff-track .design-handoff-step').nth(2).getByText('Preview only · final unavailable', { exact: true })).toBeVisible();
   await expect(page.locator('.design-handoff-note')).toContainText('Final implementation RTL: General implementation RTL is not available.');
   await expect(page.getByRole('link', { name: 'Inspect compiler and RTL control reach' })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -172,6 +179,9 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   await expect(page.locator('.design-handoff-track .design-handoff-step').first()).toContainText('Saved draft differs from the active revision');
   await page.goto('/#/design/endpoints');
   await expect(page.getByText('EP-2', { exact: true })).toBeVisible();
+  await expect(page.getByText('Seats are compiled, not attached here.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Declared agents vs materialized seats' })).toBeVisible();
+  await expect(page.getByText('1 kind differs', { exact: true })).toBeVisible();
   await expect(page.getByText('Saved draft differs from active revision p-stub-r01.', { exact: false })).toBeVisible();
   await expect(page.getByText('Agent groups come from the saved draft; endpoint seats come from the active revision.', { exact: false })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -186,7 +196,9 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   await expect(page.getByRole('rowheader', { name: 'HBM' })).toBeVisible();
   await expect(page.getByText('Saved draft differs from active revision p-stub-r01.', { exact: false })).toBeVisible();
   await expect(page.getByText('Declared windows come from the saved draft; resolved rows and endpoint joins come from the active revision.', { exact: false })).toBeVisible();
-  await expect(page.getByText('0x0001_0000_0000')).toBeVisible();
+  await expect(page.getByText('Edit here.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open agent map', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: '0x0001_0000_0000', exact: true }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   await page.goto('/#/design/domains');
@@ -194,10 +206,17 @@ test('a loaded gateway project drives the live Design surfaces without fixture l
   await expect(page.getByText('clk_core', { exact: false }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
+  await page.goto('/#/design/placement');
+  await expect(page.getByRole('heading', { name: 'Logical router-coordinate map', exact: true })).toBeVisible();
+  await expect(page.locator('.logical-placement-canvas')).toBeVisible();
+  await expect(page.locator('.logical-placement-node')).toHaveCount(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  // The live Agent catalog route is a legacy alias for Agents; the fixture-only
+  // add form must not reappear when a gateway project is loaded.
   await page.goto('/#/design/catalog');
-  await expect(page.getByRole('heading', { name: 'Declared agent groups' })).toBeVisible();
-  await expect(page.getByText('Agent groups are saved-draft intent; endpoint seats still come from the active revision.', { exact: false })).toBeVisible();
-  await expect(page.getByText('Add an agent group to the draft', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Address windows/ })).toBeVisible();
+  await expect(page.getByText('Add an agent group to the draft', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(errors).toEqual([]);
 });
@@ -329,6 +348,44 @@ const STUB_THIN = {
   candidate_evidence_note: 'Stub thin evidence lives in the study.',
 };
 
+test('the Design heading compiles only a saved draft', async ({ page }) => {
+  let dirty = false;
+  let token: string | null = 'draft-p-stub-02';
+  let compileBody: Record<string, unknown> | null = null;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/gw/api/v1/health', route => route.fulfill({ json: { status: 'ok', api: 'v1', backends: {} } }));
+  await page.route('**/gw/api/v1/projects', route => route.fulfill({ json: { contract_version: 1, projects: [STUB_PROJECT] } }));
+  await page.route('**/gw/api/v1/projects/p-stub/draft', route => route.fulfill({ json: { contract_version: 1, request: STUB_REQUEST, dirty, design_hash: token } }));
+  await page.route('**/gw/api/v1/projects/p-stub', route => route.fulfill({ json: STUB_PROJECT }));
+  await page.route('**/gw/api/v1/revisions/p-stub-r01/topology', route => route.fulfill({ json: STUB_TOPOLOGY }));
+  await page.route('**/gw/api/v1/revisions/p-stub-r01/compile-result', route => route.fulfill({ json: { available: true, revision_id: 'p-stub-r01', certificate: { overall: 'PASS' }, stage1_verdicts: [] } }));
+  await page.route('**/gw/api/v1/projects/p-stub/compile', async route => {
+    compileBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ json: { revision_id: 'p-stub-r02', design_hash: 'draft-p-stub-03', certificate: { overall: 'PASS' }, compilation: { status: 'COMPILED' } } });
+  });
+
+  await page.goto('/#/shared/projects');
+  await page.getByRole('button', { name: 'Load' }).first().click();
+  await expect(page.getByText('p-stub-r01 · live store')).toBeVisible();
+  await page.goto('/#/design/fabric-topology');
+  const compile = page.getByRole('button', { name: 'Compile draft', exact: true });
+  await expect(compile).toBeEnabled();
+  await compile.click();
+  await expect.poll(() => compileBody).not.toBeNull();
+  expect(compileBody).toEqual({ expected_draft_design_hash: 'draft-p-stub-02' });
+
+  dirty = true;
+  await page.reload();
+  // A saved draft that differs from the active revision is compilable; it is not an unsaved edit.
+  await expect(page.getByRole('button', { name: 'Compile draft', exact: true })).toBeEnabled();
+
+  token = null;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Compile draft', exact: true })).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
 test('a loaded run drives the live Analysis and Verify surfaces', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const errors: string[] = [];
@@ -377,10 +434,6 @@ test('a loaded run drives the live Analysis and Verify surfaces', async ({ page 
   await expect(page.locator('.toolbar select').first()).toHaveValue('run-1');
   await expect(page.getByText('SATISFIED', { exact: true })).toBeVisible();
   await expect(page.getByText('4,200', { exact: true }).first()).toBeVisible();
-  const analysisAssumptions = page.locator('.view-main details.assumptions').first();
-  await analysisAssumptions.locator('> summary').click();
-  await expect(analysisAssumptions.getByText('reports DRAM timing', { exact: false })).toBeVisible();
-  await expect(analysisAssumptions.getByText('stub fidelity warning')).toBeVisible();
   await expect(page.getByText('Authored fixture · not tool output')).toHaveCount(0);
 
   await page.getByRole('tab', { name: 'Memory', exact: true }).click();
@@ -396,9 +449,6 @@ test('a loaded run drives the live Analysis and Verify surfaces', async ({ page 
   await expect(page.locator('.memory-traffic-row')).toHaveCount(2);
   await expect(page.locator('.memory-traffic-row').first()).toContainText('99.992 %');
   await expect(page.locator('.memory-traffic-row').nth(1)).toContainText('64.00 KiB');
-  const memoryAssumptions = page.locator('.view-main details.assumptions').last();
-  await memoryAssumptions.locator('> summary').click();
-  await expect(memoryAssumptions.getByText('cycle counts are never added', { exact: false })).toBeVisible();
 
   await page.locator('.run-bar select').selectOption('run-2');
   await expect(page.getByText('Loading run…', { exact: true })).toBeVisible();
@@ -410,12 +460,8 @@ test('a loaded run drives the live Analysis and Verify surfaces', async ({ page 
   await expect(page.locator('.memory-kpis')).toContainText('107,321,449');
 
   await page.goto('/#/analysis/metrics');
-  const metricsAssumptions = page.locator('.view-main details.assumptions');
-  await metricsAssumptions.locator('> summary').click();
-  await expect(metricsAssumptions.getByText('DRAM timing is reported on the Memory tab', { exact: false })).toBeVisible();
   await expect(page.getByText('completion_cycles', { exact: true })).toBeVisible();
   await expect(page.getByText('12.5', { exact: true })).toBeVisible();
-  await expect(metricsAssumptions.getByText('no percentile or distribution', { exact: false })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Reporting analysis' })).toHaveCount(0);
 
   await page.goto('/#/analysis/matrix');
@@ -592,9 +638,6 @@ test('a loaded draft drives the live workload surfaces without inventing a sched
 
   await page.goto('/#/workloads/library');
   await expect(page.locator('.studio-context')).toContainText('Stubbed 2x2 project');
-  const workloadAssumptions = page.locator('details.assumptions').last();
-  await workloadAssumptions.locator('> summary').click();
-  await expect(workloadAssumptions.getByText('Ramulator HBM timing appears under Analysis → Memory', { exact: false })).toBeVisible();
   await expect(page.getByLabel('Model name')).toHaveValue('stub-model-30b');
   const workloadStats = page.locator('.stat-strip').first();
   await expect(workloadStats.locator('.stat').filter({ hasText: 'Ranks' })).toContainText('4');
@@ -645,10 +688,10 @@ test('the workloads workspace exposes four purposeful views and keeps legacy rou
   await page.getByRole('button', { name: 'Load' }).first().click();
   await expect(page.getByText('p-stub-r01 · live store')).toBeVisible();
   await page.goto('/#/workloads/workflow');
-  const nav = page.locator('.view-sidebar nav');
-  await expect(nav.getByRole('link')).toHaveText(['Project workflow']);
-  await expect(nav.getByText('Endpoint bindings')).toHaveCount(0);
-  await expect(nav.getByText('Assumptions & inputs')).toHaveCount(0);
+  // One live destination does not need a strip; the intent tabs are the sections.
+  await expect(page.getByRole('navigation', { name: 'Workloads & Requirements views' })).toHaveCount(0);
+  await expect(page.getByText('Endpoint bindings')).toHaveCount(0);
+  await expect(page.getByText('Assumptions & inputs')).toHaveCount(0);
   const intentTabs = page.getByRole('tablist', { name: 'Intent sections' });
   await expect(intentTabs.getByRole('tab')).toHaveText(['Workload', 'Requirements', 'Fabric', 'Validate']);
   await intentTabs.getByRole('tab', { name: 'Requirements' }).click();
@@ -855,12 +898,12 @@ test('gateway project panel degrades honestly when the gateway is unreachable', 
 test('catalogue addition is manual, validated, and survives navigation and reload', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/#/design/catalog');
-  await page.getByRole('button', { name: 'Review new instance' }).click();
-  await page.getByLabel('Endpoint identifier').fill('EP_NPU_0');
-  await expect(page.getByRole('button', { name: 'Add to local draft' })).toBeDisabled();
-  await page.getByLabel('Endpoint identifier').fill('EP_TEST_0');
-  await page.getByRole('button', { name: 'Add to local draft' }).click();
-  await page.locator('.view-sidebar').getByRole('link', { name: 'Hardware endpoints', exact: true }).click();
+  await page.getByRole('button', { name: 'Add agent group', exact: true }).click();
+  await page.getByLabel('Agent group identifier').fill('EP_NPU_0');
+  await expect(page.getByRole('button', { name: 'Add group to draft', exact: true })).toBeDisabled();
+  await page.getByLabel('Agent group identifier').fill('EP_TEST_0');
+  await page.getByRole('button', { name: 'Add group to draft', exact: true }).click();
+  await page.getByRole('link', { name: 'Inspect endpoint instances', exact: true }).click();
   await page.getByRole('textbox', { name: 'Filter endpoints' }).fill('EP_TEST_0');
   await expect(page.getByRole('button', { name: 'EP_TEST_0', exact: true })).toBeVisible();
   await page.reload();
@@ -904,7 +947,7 @@ test('selection carries from results to comparison and adoption preserves the ac
   await page.getByRole('button', { name: 'Select candidate C-09', exact: true }).click();
   await page.getByRole('link', { name: 'Compare observations' }).click();
   await expect(page.getByRole('heading', { name: 'Candidate Comparison', exact: true })).toBeVisible();
-  await page.locator('.view-sidebar').getByRole('link', { name: 'Adoption / branch', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Explore views' }).getByRole('link', { name: 'Adoption / branch', exact: true }).click();
   await page.getByRole('button', { name: 'Review local adoption' }).click();
   await page.getByRole('button', { name: 'Confirm local branch', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'System / Block Diagram', exact: true })).toBeVisible();

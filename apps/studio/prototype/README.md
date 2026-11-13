@@ -21,7 +21,7 @@ npm --prefix apps/studio/prototype run dev
 
 Open **http://127.0.0.1:5174/**. The prototype uses its own Vite root and browser-storage key, `srota-stitch-prototype:v1`. Port 5173 remains separate for the existing Studio.
 
-One gateway seam exists: `/gw` is proxied to the repository gateway (`VERITX_GATEWAY`, default `http://127.0.0.1:8099`). Reads cover the project list, project detail, draft, revision topology, runs, evidence, integrity, artifacts and the evaluation plan. Writes are explicit domain operations: saving the draft, project administration, and launching an evaluation (below). Everything not listed there still renders the authored fixture. Start the gateway with:
+One gateway seam exists: `/gw` is proxied to the repository gateway (`VERITX_GATEWAY`, default `http://127.0.0.1:8099`). Reads cover the project list, project detail, draft, revision topology, runs, evidence, integrity, artifacts, the evaluation plan, gateway jobs, gateway health, capabilities, the qualification register and generated reports. Writes are explicit domain operations: saving the draft, project administration, and launching an evaluation (below). Everything not listed there still renders the authored fixture. Start the gateway with:
 
 ```bash
 cd tracks/t3-topology/dse && python3 -m uvicorn veritx_dse.gateway.app:app --host 127.0.0.1 --port 8099
@@ -122,15 +122,15 @@ The supplied exports and prompt-only surfaces are represented by explicit routes
 
 ### Design
 
-- `#/design/fabric-topology` — Fabric Topology
-- `#/design/system` — System / Block Diagram
-- `#/design/catalog` — IP Catalog
-- `#/design/endpoints` — Hardware Endpoints
-- `#/design/mapping` — Initiator–Target Mapping
-- `#/design/agent-map` — Agent Fabric Map (agent groups, address windows, resolved decode)
-- `#/design/addresses` — Address Map
+- `#/design/fabric-topology` — Fabric Topology (landing)
+- `#/design/catalog` — Agent Catalog
+- `#/design/agent-map` — Agent Fabric Map (agent groups, interface fields, window auto-map)
+- `#/design/addresses` — Address Map (system-wide window editor, resolved decode)
 - `#/design/domains` — Clock & Power Domains
 - `#/design/placement` — Placement Constraints
+- `#/design/system` — System / Block Diagram (hidden context route; no gateway write path)
+- `#/design/endpoints` — Hardware Endpoints (hidden context route; seats are compiler-derived)
+- `#/design/mapping` — Initiator–Target Mapping (hidden context route; query only)
 
 ### Workloads & Requirements
 
@@ -219,9 +219,9 @@ Shared wires are part of the canvas, not only a table below it. The tree’s **W
 
 The **Parallelism overlay** joins `compile-result.groups.mapping` to endpoint seats. Selecting TP, DP, EP or PP paints one satellite per attached endpoint, coloured by that endpoint’s declared coordinate, and outlines groups when the degree is small enough to read. The **Parallelism mapping** card lists group→ranks→routers and the declared degrees; endpoints with no mapping row stay grey and are never assigned a rank. Axes with degree 1 are disabled rather than pretending to show partitioning.
 
-The System/Block Diagram surface has a **system composition** diagram: workload on the left, declared agent groups, derived endpoint seats, and the fabric. Its arrows are composition/attachment only; the surface does not derive a floorplan or a traffic path. The Initiator–Target surface has a **connection-incidence matrix** over routers. It can show declared directed channels or MECS driver→tap incidences as separate layers; a filled cell is a declared resource between a router pair, not access permission, reachability, or observed traffic. Because the request carries no initiator/target rules, the surface shows that absence explicitly rather than drawing candidate edges.
+The System/Block Diagram surface has a **system composition** diagram: workload on the left, declared agent groups, derived endpoint seats, and the fabric. Its arrows are composition/attachment only; the surface does not derive a floorplan or a traffic path. The local sample uses a matching composition canvas: endpoints and routers are selectable, and the overlay switches between declared roles, clock domains, and concentrator paths. The live Hardware Endpoints page adds a declared-topology seat-attachment graph. The Initiator–Target surface has a **connection-incidence matrix** over routers. It can show declared directed channels or MECS driver→tap incidences as separate layers; a filled cell is a declared resource between a router pair, not access permission, reachability, or observed traffic. Because the request carries no initiator/target rules, the surface shows that absence explicitly rather than drawing candidate edges. In the local sample, the selected pair also draws its configured X-then-Y route on the logical mesh. The live Address Map and Clock & Power Domains pages draw the same windowed address-space map and domain-lane map from gateway data; a declared floorplan is drawn on Placement.
 
-IP Catalog has no live equivalent and keeps the fixture with a banner naming the loaded project.
+IP Catalog is a local description list in fixture mode, with a coverage table counting draft endpoint instances by source classification; a loaded project shows request agent groups, endpoint seats, and a seat-coverage table with share bars, and can add an agent group to the saved draft.
 
 Geometry is not hardcoded: a 3×3 mesh (9 routers, 24 directed channels) and a 64-router `custom` family render from the same channel list. SROTA renders from its `shared_links` as well: MECS wires are drawn as dashed driver→taps lines and are not flattened into point-to-point channels. Families that supply no router coordinates get a derived layout that is labelled as derived in the caption, and endpoint-count labels are hidden above 40 routers.
 
@@ -268,7 +268,7 @@ The loaded project's **Intent** stage owns the draft inputs. It has four tabs an
 
 Switching tabs with unsaved edits asks before discarding them. The active tab is remembered per project. The Intent bar shows whether the draft matches the revision, whether the current tab has unsaved changes, and whether the current tab is valid enough to save. **Compile draft** is available from the same bar, so workload, fabric, requirements, and compile no longer require a page hop.
 
-Legacy routes `#/workloads/library`, `#/workloads/editor`, `#/workloads/requirements`, and `#/workloads/lowering` still resolve for deep links and fixture mode, but they are hidden from the loaded-project sidebar. Use the Intent tabs instead.
+Legacy routes `#/workloads/library`, `#/workloads/editor`, `#/workloads/requirements`, and `#/workloads/lowering` still resolve for deep links and fixture mode, but they are hidden from the loaded-project section strip. Use the Intent tabs instead.
 
 Observed against the real store:
 

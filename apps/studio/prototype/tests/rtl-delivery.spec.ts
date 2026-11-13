@@ -27,8 +27,18 @@ async function openDelivery(page: Page, mode: 'catalog' | 'offline' | 'stale-pre
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/#/shared/projects');
   await page.getByRole('button', { name: 'Load', exact: true }).click();
-  await page.goto('/#/flow/run');
+  await page.goto('/#/deliver/readiness');
   await expect(page.getByRole('heading', { name: 'Research RTL evidence', exact: true })).toBeVisible();
+  // The catalog read is asynchronous. Wait for the loading state to settle,
+  // then open the inventory fold if the read succeeded. On a read error the
+  // fold is absent and the error notice is the surface under test.
+  await expect(page.getByText('Loading current research RTL evidence…')).toHaveCount(0);
+  const fold = page.locator('details.research-rtl-fold');
+  if (await fold.count()) {
+    if (!(await fold.evaluate(element => (element as HTMLDetailsElement).open))) {
+      await fold.locator(':scope > summary').click();
+    }
+  }
 }
 
 test('delivery renders evidence states, keyboard selection, safe file action and responsive long names', async ({ page }) => {
@@ -43,8 +53,8 @@ test('delivery renders evidence states, keyboard selection, safe file action and
   await page.locator('.delivery-details', { hasText: 'Mesh 8x8 · mesh8x8' }).locator('summary').click();
   await expect(page.getByText('Project match')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Current project preview', exact: true })).toBeVisible();
-  await expect(page.getByText('Final RTL unavailable.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Generate supported RTL preview', exact: true })).toBeDisabled();
+  await expect(page.getByText('Selected-project final RTL is not available.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate topology-only preview', exact: true })).toBeDisabled();
 
   const screenshotRoot = process.env.RTL_SCREENSHOT_DIR ?? join(process.cwd(), 'reports/screenshots/rtl-delivery');
   for (const [width, height] of [[1440, 900], [1280, 800], [390, 844]]) {
@@ -111,13 +121,13 @@ test('failed refresh removes previously current counts, rows and download action
 test('preview status can be retried and catalog refresh preserves active preview tracking', async ({ page }) => {
   await openDelivery(page, 'retry-preview');
   await page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ }).check();
-  await page.getByRole('button', { name: 'Generate supported RTL preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate topology-only preview', exact: true }).click();
   await expect(page.getByText('transient status failure')).toBeVisible();
   await page.getByRole('button', { name: 'Retry preview status' }).click();
   await expect(page.getByText('running', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Refresh evidence' }).click();
   await expect(page.getByText('running', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Generate supported RTL preview', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Generate topology-only preview', exact: true })).toBeDisabled();
 });
 
 test('project-specific preview remains separate and reports stale state', async ({ page }) => {
@@ -125,7 +135,9 @@ test('project-specific preview remains separate and reports stale state', async 
   await page.locator('.delivery-details', { hasText: 'Mesh 8x8 · mesh8x8' }).locator('summary').click();
   await expect(page.getByText('Project match')).toBeVisible();
   await page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ }).check();
-  await page.getByRole('button', { name: 'Generate supported RTL preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate topology-only preview', exact: true }).click();
   await expect(page.getByText(/This preview was generated from a different draft/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Research RTL evidence', exact: true })).toBeVisible();
+  const fold = page.locator('details.research-rtl-fold > summary');
+  if (await fold.count()) await fold.click();
 });

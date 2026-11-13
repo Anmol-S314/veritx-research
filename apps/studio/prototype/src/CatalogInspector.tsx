@@ -1,13 +1,12 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { gateway, type CatalogAnalysis, type CatalogConfiguration, type CatalogRow, type NormalizedMetricValue } from './gateway';
-import { catalogPerClassMetrics, configSummary, metricDimensions, researchRtlVerdict, rtlVerdict } from './catalogMetrics';
-import { Badge, Button, Properties } from './ui';
+import { catalogPerClassMetrics, configSummary, metricDimensions, rtlVerdict } from './catalogMetrics';
+import { Badge, Button, Notice, Properties } from './ui';
 import './catalogInspector.css';
 
 export type CatalogInspectorProps = {
   row: CatalogRow | null;
   configuration: CatalogConfiguration | null;
-  workloadId?: string;
   projectId: string;
   jobId: string;
   busy: string;
@@ -26,18 +25,45 @@ const valueText = (value: unknown): string => value == null ? 'Unavailable' : ty
 const metricValue = (metric: NormalizedMetricValue) => `${valueText(metric.value)}${metric.unit ? ` ${metric.unit}` : ''}`;
 const metricLabel = (key: string) => /^p\d+$/.test(key) ? key.toUpperCase() : key.replaceAll('_', ' ');
 const statusTone = (status: string) => status === 'EVALUATED' || status === 'COMPLETED' ? 'green' : ['FAILED', 'EVIDENCE_INVALID'].includes(status) ? 'red' : 'amber';
+const metricGroup = (key: string) => /^p\d+$/.test(key) ? 'percentile' : /packets|flits|bytes|transfers/.test(key) ? 'volume' : /cycles|latency|time|window|duration/.test(key) ? 'time' : 'other';
+const groupLabel: Record<string, string> = { time: 'Timing', percentile: 'Latency percentiles', volume: 'Volume', other: 'Other recorded values' };
+
+function MetricBars({ metrics, note = true }: { metrics: NormalizedMetricValue[]; note?: boolean }) {
+  const groups = ['time', 'percentile', 'volume', 'other'].map(group => ({
+    group,
+    rows: metrics.filter(metric => metricGroup(metric.key) === group),
+  })).filter(entry => entry.rows.length);
+  return <div className="catalog-metric-groups" aria-label="Aggregate measurements">
+    {groups.map(({ group, rows }) => {
+      const max = Math.max(...rows.map(row => typeof row.value === 'number' ? Math.abs(row.value) : 0), 1);
+      return <section className="catalog-metric-group" key={group}>
+        <h4>{groupLabel[group]}</h4>
+        {rows.map((metric, index) => <div className={`catalog-metric-row ${group}`} key={`${metric.key}:${index}`}>
+          <span className="catalog-metric-label" title={metric.key}>{metricLabel(metric.key)}</span>
+          {group !== 'other' && <span className="catalog-metric-track" aria-hidden="true"><i style={{ width: `${typeof metric.value === 'number' ? Math.max(2, Math.abs(metric.value) / max * 100) : 0}%` }} /></span>}
+          <strong className="catalog-metric-value">{valueText(metric.value)}{metric.unit && metric.unit !== '—' ? <small> {metric.unit}</small> : null}</strong>
+        </div>)}
+      </section>;
+    })}
+    {note && <small className="catalog-metric-note">Bars compare values within this scope only; they are not a cross-scope score.</small>}
+  </div>;
+}
 
 function ScopeMeasurements({ analysis, label }: { analysis?: CatalogAnalysis; label: string }) {
   const groups = catalogPerClassMetrics(analysis).sort((a, b) => a.trafficClass.localeCompare(b.trafficClass));
   const classRows = new Set(groups.flatMap(group => group.metrics));
+  const classKeys = new Set(groups.flatMap(group => group.metrics.map(metric => metric.key)));
   const metrics = analysis?.normalized_metrics ?? [];
-  const aggregate = metrics.filter(metric => !metric.dimensions?.length);
+  const aggregate = metrics.filter(metric => !metric.dimensions?.length && !classRows.has(metric) && !classKeys.has(metric.key));
   const detailed = metrics.filter(metric => !!metric.dimensions?.length && !classRows.has(metric));
   const keys = [...new Set(groups.flatMap(group => group.metrics.map(metric => metric.key)))];
   return <section className="catalog-inspector-scope" aria-label={label}>
     <div className="catalog-inspector-section-heading"><h3 title={analysis?.backend_id ?? undefined}>{label}</h3><Badge tone={analysis ? statusTone(analysis.status) : 'neutral'}>{analysis?.status.replaceAll('_', ' ').toLowerCase() ?? 'Not started'}</Badge></div>
     {analysis?.reason && <p className="catalog-inspector-reason">{analysis.reason}</p>}
-    {groups.length > 0 && <div className="catalog-inspector-table-scroll" tabIndex={0} role="region" aria-label={`${label} per traffic class measurements`}>
+    {groups.length === 1 ? <div className="catalog-class-block">
+      <h4>Per traffic class · {groups[0].trafficClass}</h4>
+      <MetricBars metrics={groups[0].metrics} note={false} />
+    </div> : groups.length > 1 && <div className="catalog-inspector-table-scroll" tabIndex={0} role="region" aria-label={`${label} per traffic class measurements`}>
       <table className="catalog-inspector-table catalog-inspector-pivot"><caption>Per traffic class · recorded values and units</caption><thead><tr><th scope="col">Metric</th>{groups.map(group => <th scope="col" key={group.trafficClass}>{group.trafficClass}</th>)}</tr></thead><tbody>
         {keys.map(key => <tr key={key}><th scope="row" title={key}>{metricLabel(key)}</th>{groups.map(group => {
           const recorded = group.metrics.filter(metric => metric.key === key);
@@ -45,20 +71,18 @@ function ScopeMeasurements({ analysis, label }: { analysis?: CatalogAnalysis; la
         })}</tr>)}
       </tbody></table>
     </div>}
-    {aggregate.length > 0 ? <div className="catalog-inspector-table-scroll" tabIndex={0} role="region" aria-label={`${label} aggregate metrics`}>
-      <table className="catalog-inspector-table"><caption>Aggregate measurements</caption><thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Unit</th></tr></thead><tbody>
-        {aggregate.map((metric, index) => <tr key={`${metric.key}:${index}`}><th scope="row" title={metric.key}>{metricLabel(metric.key)}</th><td>{valueText(metric.value)}</td><td>{metric.unit || '—'}</td></tr>)}
-      </tbody></table>
-    </div> : <p className="catalog-inspector-meta">No aggregate measurements recorded.</p>}
-    {detailed.length > 0 && <div className="catalog-inspector-table-scroll" tabIndex={0} role="region" aria-label={`${label} dimensioned measurements`}>
-      <table className="catalog-inspector-table"><caption>Additional recorded dimensions</caption><thead><tr><th scope="col">Metric / dimensions</th><th scope="col">Value</th><th scope="col">Unit</th></tr></thead><tbody>
-        {detailed.map((metric, index) => <tr key={`${metric.key}:${index}`}><th scope="row" title={metric.key}>{metricLabel(metric.key)}<span className="catalog-inspector-dimensions">{metricDimensions(metric).map(([name, value]) => `${name}: ${value}`).join(' · ') || JSON.stringify(metric.dimensions)}</span></th><td>{valueText(metric.value)}</td><td>{metric.unit || '—'}</td></tr>)}
-      </tbody></table>
-    </div>}
+    {aggregate.length > 0 ? <MetricBars metrics={aggregate} /> : <p className="catalog-inspector-meta">No aggregate measurements recorded.</p>}
+    {detailed.length > 0 && <section className="catalog-metric-group" aria-label={`${label} dimensioned measurements`}>
+      <h4>Additional dimensions</h4>
+      {detailed.map((metric, index) => <div className="catalog-metric-row other" key={`${metric.key}:${index}`}>
+        <span className="catalog-metric-label" title={metric.key}>{metricLabel(metric.key)}<small className="catalog-inspector-dimensions">{metricDimensions(metric).map(([name, value]) => `${name}: ${value}`).join(' · ') || JSON.stringify(metric.dimensions)}</small></span>
+        <strong className="catalog-metric-value">{valueText(metric.value)}{metric.unit && metric.unit !== '—' ? <small> {metric.unit}</small> : null}</strong>
+      </div>)}
+    </section>}
   </section>;
 }
 
-export function CatalogInspector({ row, configuration, workloadId, projectId, jobId, busy, acknowledge, onAcknowledge, onChoose, onClose, chosen, error, onRetry }: CatalogInspectorProps) {
+export function CatalogInspector({ row, configuration, projectId, jobId, busy, acknowledge, onAcknowledge, onChoose, onClose, chosen, error, onRetry }: CatalogInspectorProps) {
   const [tab, setTab] = useState<Tab>('Measurements');
   const heading = useRef<HTMLHeadingElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -89,7 +113,6 @@ export function CatalogInspector({ row, configuration, workloadId, projectId, jo
     tabRefs.current[next]?.focus({ preventScroll: true });
   };
   const rtl = row ? rtlVerdict(row.rtl_support) : null;
-  const research = row ? researchRtlVerdict(row.research_rtl) : null;
   const files = [...new Set(row?.trace_files ?? [])];
   const mismatch = row?.config?.matched === false || !!(row?.config?.controls_id && configuration?.controls_id && row.config.controls_id !== configuration.controls_id);
   const analyses = row?.analyses ?? [];
@@ -109,8 +132,7 @@ export function CatalogInspector({ row, configuration, workloadId, projectId, jo
         {row.reason && <p className="catalog-inspector-reason">{row.reason}</p>}
         {!row.selectable && <p className="catalog-inspector-reason">This fabric is not available for selection.</p>}
         {mismatch && <p className="catalog-inspector-warning">Configuration differs from the frozen catalog controls. These measurements are not directly comparable.</p>}
-        {rtl && <p className="catalog-inspector-rtl" title={rtl.detail}>{rtl.text} · topology only</p>}
-        {research && <p className="catalog-inspector-rtl" title={research.detail}>{research.text}</p>}
+        {rtl && <p className="catalog-inspector-rtl" title={rtl.detail}>{rtl.text}</p>}
         </div>
         <section role="tabpanel" id={`${prefix}-panel-0`} aria-labelledby={`${prefix}-tab-0`} hidden={tab !== 'Measurements'} tabIndex={0}>
           <ScopeMeasurements label="BookSim · network" analysis={analyses.find(analysis => analysis.question === 'NETWORK_COMPLETION')} />
@@ -122,35 +144,21 @@ export function CatalogInspector({ row, configuration, workloadId, projectId, jo
           <Properties rows={[
             ['Configuration match', mismatch ? 'Differs' : row.config?.matched === true ? 'Matched' : 'Not recorded'],
             ['Input buffer depth (flits/VC)', valueText(row.config?.input_buffer_depth_flits_per_vc)],
-            ['Link width', valueText(row.config?.link_width)], ['Arbitration', valueText(row.config?.arbitration)],
-            ['Routing class', valueText(row.fabric?.routing_class)], ['Measured VC count', valueText(row.vc_count ?? row.fabric?.vc_count)],
-            ['Candidate identity', valueText(row.candidate_id)], ['Topology identity', row.topology_id],
-            ['Workload identity', valueText(row.config?.workload_id ?? configuration?.workload_id ?? workloadId)],
-            ['Measured controls identity', valueText(row.config?.controls_id)], ['Frozen controls identity', valueText(configuration?.controls_id)],
-            ['Project identity', projectId], ['Catalog job identity', jobId], ['Attempt', valueText(row.attempt)],
+            ['Link width', valueText(row.config?.link_width)],
+            ['Arbitration', valueText(row.config?.arbitration)],
+            ['Routing class', valueText(row.fabric?.routing_class)],
+            ['Measured VC count', valueText(row.vc_count ?? row.fabric?.vc_count)],
+            ['Attempt', valueText(row.attempt)],
           ]} />
-          <h3 className="catalog-inspector-subheading">Topology definition</h3><pre className="catalog-inspector-json">{JSON.stringify(row.topology, null, 2)}</pre>
-          <h3 className="catalog-inspector-subheading">Recorded controls &amp; provenance</h3><pre className="catalog-inspector-json">{JSON.stringify({ measured: row.config ?? null, frozen: configuration, fabric: row.fabric ?? null }, null, 2)}</pre>
           <h3 className="catalog-inspector-subheading">RTL preview limits</h3><p>{rtl?.detail}</p>
           {row.rtl_support && <Properties rows={[
-            ['Verdict code', row.rtl_support.code], ['Reason', valueText(row.rtl_support.reason)],
-            ['Emitted VCs', valueText(row.rtl_support.emitted_vcs)], ['Matches measured VCs', row.rtl_support.matches_certified_vc_count ? 'Yes' : 'No'],
+            ['Verdict code', row.rtl_support.code],
+            ['Emitted VCs', valueText(row.rtl_support.emitted_vcs)],
+            ['Measured VCs', valueText(row.rtl_support.vc_count)],
+            ['Matches measured VCs', row.rtl_support.matches_certified_vc_count ? 'Yes' : 'No'],
           ]} />}
-          <p className="catalog-inspector-meta">Topology-only preview; not final simulation-equivalent RTL or hardware qualification.</p>
-          <h3 className="catalog-inspector-subheading">Research RTL (M5)</h3>
-          {row.research_rtl ? <>
-            <Properties rows={[
-              ['File presence', valueText(row.research_rtl.file_presence)],
-              ['Verilog file', row.research_rtl.verilog_file ?? 'No Verilog file'],
-              ['Proof status', valueText(row.research_rtl.proof_status)],
-              ['Historical proof', row.research_rtl.historical_snapshot ? `${row.research_rtl.historical_snapshot.reported_verilog}; reported proof: ${row.research_rtl.historical_snapshot.reported_proof}` : 'Unavailable'],
-              ['Generation', valueText(row.research_rtl.generation_completeness)],
-              ['Lint / simulation', `${valueText(row.research_rtl.lint_status)} / ${valueText(row.research_rtl.simulation_status)}`],
-              ['Qualification', valueText(row.research_rtl.qualification_status)],
-              ['Required / optional', row.research_rtl.catalog_family === null ? 'Non-target' : row.research_rtl.required ? 'Required' : 'Optional'],
-            ]} />
-            <p>{research?.detail}</p>
-          </> : <p className="catalog-inspector-meta">No M5 entry recorded for this fabric. Research Verilog only, not product-final RTL.</p>}
+          {row.rtl_support && !row.rtl_support.matches_certified_vc_count && <Notice tone="amber"><strong>VC scheme mismatch.</strong> The preview emits {row.rtl_support.emitted_vcs} VCs; the measured design uses {valueText(row.rtl_support.vc_count)}. The preview is not simulation-equivalent for this fabric.</Notice>}
+          <p className="catalog-inspector-meta">Topology-only preview; not final simulation-equivalent RTL or hardware qualification. Composed-family A1–A10 evidence is a separate tier and does not transfer to this row.</p>
         </section>
         <section role="tabpanel" id={`${prefix}-panel-2`} aria-labelledby={`${prefix}-tab-2`} hidden={tab !== 'Files'} tabIndex={0}>
           <h3>Generated input files</h3>

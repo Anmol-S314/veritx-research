@@ -193,6 +193,7 @@ export function AnalysisWorkbench({
   </>}>
     {notice}
     {summary}
+    {source.text && <p className="meta-line workbench-source">{source.text}</p>}
     {(hasControls || resolvedContext) && <div className="wb-controls">
       {resolvedContext}
       {presets.length > 1 && <div className="segmented wb-presets" role="group" aria-label="Plot view">

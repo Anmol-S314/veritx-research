@@ -1,147 +1,165 @@
 import { useState, type ReactNode } from 'react';
-import { NETWORK_CYCLES, linkObservations } from './analysis';
+import { linkObservations } from './analysis';
 import { BASE_REVISION, ROUTERS, editDraft, queueFlits, rawGBps } from './model';
-import { Assumptions, Badge, Button, Dialog, Field, Inspector, Notice, PageLink, Properties, Section, type ViewProps } from './ui';
+import { Badge, Button, Dialog, Field, Icon, Inspector, Notice, PageLink, Properties, Section, type ViewProps } from './ui';
+import { TopologyGraph } from './TopologyGraph';
+import { localTopology } from './localDesign';
 
-type XY = { row: number; col: number };
-const xy = (router: string): XY => { const [, row, col] = router.split('_').map(Number); return { row, col }; };
-const NODE = { w: 92, h: 52 };
-const position = (router: string) => { const { row, col } = xy(router); return { x: 34 + col * 132, y: 30 + row * 108 }; };
-const NEIGHBOURS: [string, (r: number, c: number) => boolean, (r: number, c: number) => [number, number]][] = [
-  ['north', (r) => r > 0, (r, c) => [r - 1, c]],
-  ['south', (r) => r < 3, (r, c) => [r + 1, c]],
-  ['west', (_r, c) => c > 0, (r, c) => [r, c - 1]],
-  ['east', (_r, c) => c < 3, (r, c) => [r, c + 1]],
-];
+const xy = (routerId: number) => ({ row: Math.floor(routerId / 4), col: routerId % 4 });
+const routerName = (routerId: number) => ROUTERS[routerId] ?? '';
+const routerIdOf = (router: string) => Math.max(0, ROUTERS.indexOf(router));
 
 export function FabricView({ state, setState, notify, navigate, banner }: ViewProps & { banner?: ReactNode }) {
-  const [layer, setLayer] = useState<'derived' | 'attached' | 'none'>('derived');
-  const [selected, setSelected] = useState('R_1_2');
+  const [overlay, setOverlay] = useState<'derived' | 'none'>('derived');
+  const [selected, setSelected] = useState<number | null>(6);
   const [review, setReview] = useState(false);
   const [depth, setDepth] = useState(16);
+  const [filter, setFilter] = useState('');
+  const topology = localTopology(state.draft);
   const links = linkObservations();
-  const link = (from: string, to: string) => links.find(l => l.from === from && l.to === to);
-  const outbound = links.filter(l => l.from === selected);
-  const attached = state.draft.endpoints.filter(e => e.router === selected);
   const capacity = rawGBps(128, 1400);
-  const busiest = links[0];
-  const peak = Math.max(...links.map(l => l.percent));
   const storyDepth = state.draft.depth;
   const before = queueFlits(state.draft);
   const after = queueFlits({ ...state.draft, depth });
   const validDepth = Number.isInteger(depth) && depth >= 2 && depth <= 64;
+  const router = selected === null ? null : topology.routers.find(item => item.router_id === selected) ?? null;
+  const selectedRouter = router ? routerName(router.router_id) : null;
+  const outbound = selectedRouter ? links.filter(link => link.from === selectedRouter) : [];
+  const attached = selected === null ? [] : topology.endpoints.filter(endpoint => endpoint.router_id === selected);
+  const load = new Map(links.map(link => [
+    `${routerIdOf(link.from)}:1->${routerIdOf(link.to)}:1`,
+    link.percent,
+  ]));
+  const query = filter.trim().toLowerCase();
+  const matchingRouters = topology.routers.filter(item => !query || `r${item.router_id} ${ROUTERS[item.router_id] ?? ''}`.toLowerCase().includes(query));
+  const matchingEndpoints = topology.endpoints.filter(item => !query || `${item.kind} ${item.endpoint_id} r${item.router_id}`.toLowerCase().includes(query));
+  const rows = new Map<number, typeof topology.routers>();
+  for (const item of matchingRouters) {
+    const row = xy(item.router_id).row;
+    rows.set(row, [...(rows.get(row) ?? []), item]);
+  }
+  const endpointCount = (routerId: number) => topology.endpoints.filter(item => item.router_id === routerId).length;
 
-  return <div className="view-layout"><div className="view-main">
+  return <div className="view-layout fabric-view"><div className="view-main">
     {banner}
-    <div className="toolbar">
-      <Field label="Overlay layer"><select value={layer} onChange={e => setLayer(e.target.value as typeof layer)}>
-        <option value="derived">Derived link utilization (SIM-402 proxy)</option>
-        <option value="attached">Declared endpoint attachment</option>
-        <option value="none">No overlay</option>
-      </select></Field>
-      <Badge>4×4 orthogonal mesh · 16 routers</Badge>
-      <Badge>128-bit links · 1 flit/cycle</Badge>
-      <Button onClick={() => navigate('analysis/topology')}>Open analysis overlay</Button>
-    </div>
-    <div className="toolbar toolbar-start"><PageLink page="shared/projects">Load a gateway project</PageLink></div>
-    <Section title="Logical mesh" actions={<span className="mono muted">{selected} selected</span>}>
-      <svg className="fabric-canvas" viewBox="0 0 580 466" role="group" aria-label="Logical four by four mesh, select a router">
-        <defs><marker id="fabric-tip" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="currentColor" /></marker></defs>
-        {ROUTERS.flatMap(router => {
-          const { row, col } = xy(router), a = position(router);
-          return NEIGHBOURS.filter(([, ok]) => ok(row, col)).map(([dir, , step]) => {
-            const [nr, nc] = step(row, col), to = `R_${nr}_${nc}`, b = position(to), value = link(router, to);
-            const midY = a.y + NODE.h / 2, midX = a.x + NODE.w / 2;
-            const vertical = dir === 'north' || dir === 'south';
-            const x1 = vertical ? midX : midX + NODE.w / 2, y1 = vertical ? (dir === 'north' ? a.y : a.y + NODE.h) : midY;
-            const x2 = vertical ? b.x + NODE.w / 2 : b.x + (dir === 'east' ? 0 : NODE.w), y2 = vertical ? b.y + (dir === 'north' ? NODE.h : 0) : midY;
-            const emphasis = layer === 'derived' && value ? Math.min(1, value.percent / Math.max(peak, 1)) : 0;
-            const forward = dir === 'south' || dir === 'east';
-            return <g key={`${router}-${dir}`} className="fabric-link">
-              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={emphasis > 0.66 ? '#79540c' : emphasis > 0.33 ? '#8aa6b8' : '#c9d1da'} strokeWidth={layer === 'derived' ? 2 + emphasis * 4 : 2} markerEnd={dir === 'south' ? 'url(#fabric-tip)' : undefined} />
-              {layer === 'derived' && value && emphasis > 0.5 && <text x={vertical ? midX + 7 : (x1 + x2) / 2} y={vertical ? (y1 + y2) / 2 : midY - 7} className="fabric-link-label">{value.percent.toFixed(1)}%</text>}
-              {!forward && null}
-            </g>;
-          });
-        })}
-        {ROUTERS.map(router => {
-          const p = position(router), count = state.draft.endpoints.filter(e => e.router === router).length, on = router === selected;
-          return <g key={router} transform={`translate(${p.x},${p.y})`} className={`fabric-node ${on ? 'fabric-node-on' : ''}`} role="button" tabIndex={0} aria-label={`Router ${router}, ${count} declared endpoints`}
-            onClick={() => setSelected(router)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(router); } }}>
-            <rect width={NODE.w} height={NODE.h} rx="3" />
-            <text x={NODE.w / 2} y="21" textAnchor="middle" className="fabric-node-id">{router}</text>
-            <text x={NODE.w / 2} y="39" textAnchor="middle" className="fabric-node-meta">{layer === 'attached' ? `${count} EP` : layer === 'derived' ? `${state.draft.vcs} VC · ${state.draft.depth} f` : `P:${5}`}</text>
-            {count > 0 && layer !== 'derived' && <circle cx={NODE.w - 9} cy="9" r="3.5" className="fabric-node-dot" />}
-          </g>;
-        })}
-        <text x="290" y="458" textAnchor="middle" className="fabric-canvas-note">Logical adjacency</text>
-      </svg>
-      <div className="legend">
-        <span><i className="legend-dot blue" />Selected router</span>
-        <span><i className="legend-dot" />Declared link</span>
-        <span><i className="legend-dot amber" />Derived proxy above half of peak</span>
-        <span>Peak derived proxy {peak.toFixed(2)}% of {NETWORK_CYCLES.toLocaleString()} cycles</span>
+    <div className="fabric-toolbar">
+      <div className="fabric-toolbar-main">
+        <Badge tone="blue">Local draft</Badge>
+        <span className="mono fabric-counts">4×4 mesh · {topology.routers.length} routers · {topology.channels.length} directed channels · {topology.endpoints.length} endpoints</span>
       </div>
-    </Section>
-    <Section title="Derived link proxy" actions={<Badge>Canonical X-then-Y routes</Badge>}>
-      <div className="table-scroll"><table><thead><tr><th>Directed link</th><th>Routed flits</th><th>Proxy</th><th>Raw capacity</th></tr></thead><tbody>
-        {outbound.length === 0 ? <tr><td colSpan={4}>No pair fixture traffic leaves {selected} under the stated canonical routes.</td></tr> : outbound.map(l => <tr key={`${l.from}:${l.to}`}><th className="mono">{l.from} → {l.to}</th><td className="numeric">{l.flits.toLocaleString()}</td><td className="numeric">{l.percent.toFixed(2)}%</td><td className="numeric">{capacity} GB/s</td></tr>)}
-      </tbody></table></div>
-      <p>Busiest directed link overall: <strong className="mono">{busiest.from} → {busiest.to}</strong> at {busiest.percent.toFixed(2)}% of the window.</p>
-    </Section>
-    <Section title="Open obligations" actions={<Badge tone="amber">4 not established</Badge>}>
-      <div className="table-scroll"><table><thead><tr><th>Obligation</th><th>State</th><th>Why it is open</th></tr></thead><tbody>
-        <tr><th>Deadlock freedom</th><td><Badge tone="amber">Not established</Badge></td><td>Channel dependency order, allocation progress, and credit-return ordering are not proven for this configuration. If wrap-around links are intended, X-then-Y order needs dateline virtual channels before any freedom claim.</td></tr>
-        <tr><th>DRC / LVS / physical</th><td><Badge tone="amber">Not evaluated</Badge></td><td>No floorplan, placement, parasitics, or foundry rule deck is connected. Nothing here is sign-off data.</td></tr>
-        <tr><th>RTL generation</th><td><Badge tone="amber">Partial</Badge></td><td>Product preview emitter covers connected point-to-point, 2-VC topologies only. This local 4×4 mesh draft has no gateway project and was not run. See FinalDelivery / Flow · Finalize & RTL (flow/run) for the current-project preview. M5 research evidence (12 required targets) is separate and is not a qualification of this draft.</td></tr>
-        <tr><th>Area / power</th><td><Badge tone="amber">Not evaluated</Badge></td><td>Queue storage is a flit-count proxy only. No cell area, activity factor, or power number is derived or asserted.</td></tr>
-      </tbody></table></div>
-    </Section>
-    <Assumptions rows={[
-      ['Scope', 'Declared logical topology only. No die coordinate frame, floorplan, wire geometry or observed traffic is connected.'],
-      ['Overlay', 'Derived link utilization is an arithmetic proxy over an authored pair fixture, not measured arbitration or per-link counters.'],
-      ['Structure', 'Logical adjacency is not a permission rule; shared wires are declared, not inferred from traffic.'],
-      ['Not evaluated', 'Area, power, timing, DRC/LVS, physical sign-off and deadlock freedom. Queue storage is a flit-count proxy only.'],
-      ['RTL generation', 'Product preview emitter covers connected point-to-point, 2-VC topologies only. This local 4×4 mesh draft has no gateway project and was not run. See FinalDelivery / Flow · Finalize & RTL (flow/run) for the current-project preview. M5 research evidence (12 required targets) is separate and is not a qualification of this draft.'],
-    ]} />
+      <div className="actions fabric-toolbar-actions">
+        <div className="segmented fabric-plane-tabs" role="group" aria-label="Overlay layer">
+          <button type="button" className={overlay === 'derived' ? 'active' : ''} onClick={() => setOverlay('derived')}>Utilization</button>
+          <button type="button" className={overlay === 'none' ? 'active' : ''} onClick={() => setOverlay('none')}>None</button>
+        </div>
+        <Button onClick={() => navigate('analysis/topology')}>Analysis overlay</Button>
+      </div>
+    </div>
+
+    <div className="fabric-workbench">
+      <aside className="fabric-tree" aria-label="Fabric objects">
+        <div className="fabric-tree-tabs segmented" role="group" aria-label="Fabric tree view">
+          <button type="button" className="active" aria-pressed="true">Routers</button>
+        </div>
+        <div className="fabric-search">
+          <Icon name="search" size={13} />
+          <input aria-label="Filter fabric entities" placeholder="Filter routers, endpoints" value={filter} onChange={event => setFilter(event.target.value)} />
+        </div>
+        <div className="fabric-tree-scroll">
+          {[...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, routers]) => <div key={row} className="tree-group">
+            <div className="tree-row-head"><span>Row {row}</span><span>{routers.length}</span></div>
+            {[...routers].sort((a, b) => xy(a.router_id).col - xy(b.router_id).col).map(item => <button type="button" key={item.router_id} className={`tree-router${selected === item.router_id ? ' selected' : ''}`} onClick={() => setSelected(selected === item.router_id ? null : item.router_id)}>
+              <span className="mono">R{item.router_id}</span><small>{endpointCount(item.router_id)} EP</small>
+            </button>)}
+          </div>)}
+          {matchingRouters.length === 0 && <p className="meta-line">No router matches.</p>}
+          <div className="tree-group">
+            <div className="tree-row-head"><span>Endpoints</span><span>{topology.endpoints.length}</span></div>
+            {matchingEndpoints.map(item => <button type="button" key={item.endpoint_id} className="tree-endpoint" onClick={() => setSelected(item.router_id)}>
+              <span className="mono">{item.kind}#{item.endpoint_id}</span><span>R{item.router_id}</span>
+            </button>)}
+            {matchingEndpoints.length === 0 && <p className="meta-line">No endpoint matches.</p>}
+          </div>
+        </div>
+      </aside>
+
+      <div className="fabric-center">
+        <div className="fabric-canvas-scroll">
+          <div className="fabric-canvas" style={{ width: '100%', height: '100%' }}>
+            <TopologyGraph topology={topology} selected={selected} onSelect={id => setSelected(id === selected ? null : id)} load={overlay === 'derived' ? load : undefined} labels showSharedWires={false} />
+          </div>
+          {selected === null && <div className="fabric-canvas-hint">Select a router or endpoint to inspect</div>}
+        </div>
+      </div>
+    </div>
   </div>
-  <Inspector title={`Router ${selected}`}>
-    <Badge tone="blue">{xy(selected).row}, {xy(selected).col} · logical</Badge>
-    <Properties rows={[
-      ['Declared ports', '5 (N, S, E, W, Local)'],
-      ['Virtual channels', `${state.draft.vcs} per port`],
-      ['Queue depth', `${state.draft.depth} flits per VC`],
-      ['Declared storage, whole fabric', `${before.toLocaleString()} flits`],
-      ['Raw link capacity', `${capacity} GB/s per direction`],
-      ['Packet/flit format', 'Model intent only; no encoder'],
-      ['Deadlock freedom', 'Not established'],
-      ['RTL for this router', 'Not generated or linted'],
-    ]} />
-    <Section title={`Attached endpoints (${attached.length})`}>
-      {attached.length === 0 ? <p className="muted">No declared endpoint attaches here in the current draft.</p> : <div className="stack">{attached.map(ep => <button key={ep.id} className="text-button mono" onClick={() => { setState(s => ({ ...s, selectedEndpoint: ep.id })); navigate('design/endpoints'); }}>{ep.id} · {ep.role} · {ep.width}-bit</button>)}</div>}
-      <PageLink page="design/catalog">Add endpoint intent</PageLink>
-    </Section>
-    <Section title="Reviewed change">
-      <Button primary onClick={() => { setDepth(Math.min(64, Math.max(16, storyDepth * 2))); setReview(true); }}>Review VC depth change</Button>
-    </Section>
+
+  <Inspector title={router ? 'Router' : 'Fabric'}>
+    {router && <>
+      <div className="inspector-title-row"><h3 className="mono">R{router.router_id}</h3><Badge tone="blue">{xy(router.router_id).row}, {xy(router.router_id).col}</Badge></div>
+      <Properties rows={[
+        ['Declared ports', '5 · N, S, E, W, Local'],
+        ['Virtual channels', `${state.draft.vcs} per port`],
+        ['Queue depth', `${state.draft.depth} flits per VC`],
+        ['Declared storage', `${before.toLocaleString()} flits`],
+        ['Raw link capacity', `${capacity} GB/s per direction`],
+        ['Attached endpoints', attached.length ? String(attached.length) : 'None'],
+      ]} />
+      <Section title={`Outbound links · ${outbound.length}`} actions={<Badge tone={overlay === 'derived' ? 'blue' : 'neutral'}>{overlay === 'derived' ? 'derived proxy' : 'overlay off'}</Badge>}>
+        {outbound.length === 0
+          ? <p className="muted">No pair fixture traffic leaves {selectedRouter}.</p>
+          : <table className="compact-table"><tbody>{outbound.map(link => <tr key={`${link.from}:${link.to}`}>
+            <th className="mono">{link.from} → {link.to}</th>
+            <td className="numeric">{link.flits.toLocaleString()}</td>
+            <td className="numeric">{link.percent.toFixed(2)}%</td>
+          </tr>)}</tbody></table>}
+        <p className="quiet-line">Derived from authored pair counts over canonical X-then-Y routes. Not a measured counter.</p>
+      </Section>
+      {attached.length > 0 && <Section title={`Declared endpoints · ${attached.length}`}>
+        <ul className="compact-list">{attached.map(endpoint => {
+          const declared = state.draft.endpoints[endpoint.endpoint_id];
+          return <li key={endpoint.endpoint_id}><span className="mono">{declared?.id ?? `EP-${endpoint.endpoint_id}`}</span><span className="muted">{declared ? `${declared.role} · ${declared.width}-bit` : endpoint.kind}</span></li>;
+        })}</ul>
+      </Section>}
+      <Section title="Fabric control">
+        <Properties rows={[['Scope', 'Every router · every port · every VC']]} />
+        <Button primary onClick={() => { setDepth(Math.min(64, Math.max(16, storyDepth * 2))); setReview(true); }}>Review VC depth change</Button>
+      </Section>
+      <div className="inspector-links">
+        <PageLink page="design/endpoints">Endpoint attachments</PageLink>
+        <PageLink page="design/catalog">Add endpoint intent</PageLink>
+      </div>
+    </>}
+    {!router && <>
+      <Properties rows={[
+        ['Topology', '4×4 orthogonal mesh'],
+        ['Routers / endpoints', `${topology.routers.length} / ${topology.endpoints.length}`],
+        ['Links', '128 bit · 1 cycle'],
+        ['Attached routers', `${new Set(topology.endpoints.map(endpoint => endpoint.router_id)).size} of ${topology.routers.length}`],
+      ]} />
+      <p className="quiet-line">Fixture structure, not a compiled or measured fabric.</p>
+      <div className="inspector-links">
+        <PageLink page="shared/projects" primary>Load a gateway project</PageLink>
+        <PageLink page="workloads/workflow">Open project workflow</PageLink>
+      </div>
+    </>}
   </Inspector>
+
   {review && <Dialog title="Review VC-depth change — local draft only" onClose={() => setReview(false)}>
     <Notice tone="amber">Applies to every VC on every port. Historical results are unchanged; re-evaluation is required.</Notice>
-    <Field label="Queue depth per VC (flits)"><input type="number" min={2} max={64} value={depth} onChange={e => setDepth(e.target.valueAsNumber)} /></Field>
+    <Field label="Queue depth per VC (flits)"><input type="number" min={2} max={64} value={depth} onChange={event => setDepth(event.target.valueAsNumber)} /></Field>
     {!validDepth && <Notice tone="red">Depth must be a whole number between 2 and 64 flits.</Notice>}
     <Properties rows={[
       ['Revision', `${BASE_REVISION} → local draft edit ${state.draft.revision + 1}`],
       ['Depth', `${storyDepth} → ${validDepth ? depth : '—'} flits per VC`],
       ['Declared storage', `${before.toLocaleString()} → ${validDepth ? after.toLocaleString() : '—'} flits`],
-      ['Area / power impact', 'Not estimated'],
-      ['Deadlock freedom', 'Still not established after this change'],
       ['Historical runs', 'Unaffected; re-evaluation required'],
     ]} />
     <div className="dialog-actions">
       <Button onClick={() => setReview(false)}>Cancel</Button>
       <Button primary disabled={!validDepth || depth === storyDepth} onClick={() => {
-        setState(s => editDraft(s, `Changed queue depth to ${depth} flits per VC locally. Observation findings are not resolved by this edit.`, d => ({ ...d, depth })));
-        setReview(false); notify(`Draft depth set to ${depth} flits per VC. Re-evaluation required; no congestion, deadlock, or physical claim follows.`);
+        setState(current => editDraft(current, `Changed queue depth to ${depth} flits per VC locally. Observation findings are not resolved by this edit.`, draft => ({ ...draft, depth })));
+        setReview(false); notify(`Draft depth set to ${depth} flits per VC. Re-evaluation required.`);
       }}>Apply local depth change</Button>
     </div>
   </Dialog>}

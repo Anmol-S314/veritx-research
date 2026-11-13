@@ -8,7 +8,7 @@ import { revisionLabel, runVersionLabels, runVersionOrder } from './runLabel';
 import { resolveRoutes } from './routeResolution';
 import { aggregateRouterLoad, type RouterLoad } from './routerLoad';
 import { buildChannelIndex, channelMatchLabel, matchMeasuredChannel } from './channelTopology';
-import { attributionSummary, channelCosts, median, utilizationInRange, type UtilizationRange } from './channelAnalysis';
+import { attributionSummary, channelCosts, loadChannelInRange, median, type UtilizationRange } from './channelAnalysis';
 import { useSimLoad, useSimSeries } from './measuredData';
 import { useRunTopology } from './runTopology';
 import { contextTarget } from './contextSelection';
@@ -185,7 +185,8 @@ export function RouteSweep({ project, run }: { project: LoadedProject; run: Load
   </>}>
     {!matrix && <Empty title="No traffic matrix in this run">Pair counts are required to attribute flits to channels; nothing is invented.</Empty>}
     {matrix && !topology && <Notice tone="amber"><strong>No topology for this revision.</strong> Pair counts alone cannot be placed on channels.</Notice>}
-    {matrix && topology && <>
+    {matrix && topology && groups.length === 0 && <Notice tone="amber"><strong>No routable pair in this revision.</strong> The top {resolvable.unresolvable} pair{resolvable.unresolvable === 1 ? '' : 's'} have no endpoint-to-router mapping, or both ends land on the same router, so no route can be swept. This is an attachment or topology gap, not a zero-load result.</Notice>}
+    {matrix && topology && groups.length > 0 && <>
       <div className="toolbar toolbar-start">
         <Button primary disabled={phase === 'running' || !groups.length} onClick={sweep}>{phase === 'running' ? `Resolving ${progress}%` : `Sweep ${groups.length} router pair${groups.length === 1 ? '' : 's'}`}</Button>
         <span className="muted">{candidates.length} of {pairs.length} pairs (top by flits, max {SWEEP_LIMIT}) · {resolvable.unresolvable} unresolved</span>
@@ -410,7 +411,7 @@ export function MeasuredLinks({ run, topology, utilizationRange, onClearRange }:
   // A search deliberately looks at every channel, including idle ones. With no
   // search, the default is the active set so 400 zero rows do not bury the signal.
   const source = query ? channels : showIdle ? channels : activeChannels;
-  const inRange = (entry: NonNullable<SimLoad['channels']>[number]) => utilizationInRange(entry.utilization, utilizationRange ?? null);
+  const inRange = (entry: NonNullable<SimLoad['channels']>[number]) => loadChannelInRange(entry, utilizationRange ?? null);
   const visible = source.filter(inRange).filter(entry => !query || `ch-${entry.logical_channel_id} ${entry.logical_channel_id}`.includes(query));
   const contexts = useMemo(() => new Map(channels.map(entry => [entry.logical_channel_id, matchMeasuredChannel(channelIndex, Number(entry.logical_channel_id))])), [channels, channelIndex]);
   // A pick from the list or the matrix must bring the detail panel into view
@@ -464,17 +465,18 @@ export function MeasuredLinks({ run, topology, utilizationRange, onClearRange }:
             <Button aria-pressed={showIdle} onClick={() => setShowIdle(current => !current)}>{showIdle ? 'Active only' : `Show idle (${channels.length - activeChannels.length})`}</Button>
           </div>
           {utilizationRange && <div className="active-filter" data-testid="utilization-filter">
-            <Badge tone="blue">Utilization {(100 * utilizationRange.low).toFixed(1)}–{(100 * utilizationRange.high).toFixed(1)} %</Badge>
+            <Badge tone="blue">Utilization{utilizationRange.series === 'peak' ? ' (peak window)' : ''} {(100 * utilizationRange.low).toFixed(1)}–{(100 * utilizationRange.high).toFixed(1)} %</Badge>
             <span>{visible.length.toLocaleString()} channel{visible.length === 1 ? '' : 's'} shown in this bin</span>
             {onClearRange && <button type="button" className="text-button" onClick={onClearRange}>Clear filter</button>}
           </div>}
           {visible.length ? <div className="table-scroll measured-channels">
-            <table aria-label="Measured channels"><thead><tr><th>Channel</th><th>Link</th><th>Flits</th><th>Utilization</th></tr></thead><tbody>
+            <table aria-label="Measured channels"><thead><tr><th>Channel</th><th>Link</th><th>Flits</th><th>Utilization</th><th>Peak window</th></tr></thead><tbody>
               {visible.map(entry => <tr key={entry.logical_channel_id} {...contextTarget('channel', entry.logical_channel_id, `Measured channel CH-${entry.logical_channel_id}`, `${entry.flits_total.toLocaleString()} flits · ${(100 * entry.utilization).toFixed(1)} % utilization · ${linkLabel(entry)}`)} className={String(entry.logical_channel_id) === selected ? 'selected' : ''} tabIndex={0} role="button" aria-pressed={String(entry.logical_channel_id) === selected} onClick={() => pickChannel(String(entry.logical_channel_id))} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pickChannel(String(entry.logical_channel_id)); } }}>
                 <th className="mono">CH-{entry.logical_channel_id}</th>
                 <td className="mono muted">{linkLabel(entry)}</td>
                 <td className="numeric">{entry.flits_total.toLocaleString()}</td>
                 <td className="numeric"><span className="mini-meter"><span style={{ width: `${Math.min(100, 100 * entry.utilization)}%` }} /></span>{(100 * entry.utilization).toFixed(1)} %</td>
+                <td className="numeric">{(100 * entry.peak_window_utilization).toFixed(1)} %</td>
               </tr>)}
             </tbody></table>
           </div> : <Empty title={utilizationRange ? 'No channel in this utilization bin' : query ? 'No channel matches' : 'No active channels'}>

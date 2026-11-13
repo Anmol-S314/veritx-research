@@ -36,11 +36,9 @@ async function setup(page: Page, verified = true) {
 
 test('sparse coverage and effective payload are visible; every candidate can be hidden', async ({ page }) => {
   await setup(page);
-  const assumptions = page.locator('details.assumptions');
-  await assumptions.locator('> summary').click();
-  await expect(assumptions.getByText('2 active / 64 available · sparse placement, not full-fabric coverage', { exact: false })).toBeVisible();
-  await expect(assumptions.getByText('8 flits', { exact: true }).first()).toBeVisible();
-  await expect(assumptions.getByText('not applicable / 1', { exact: true })).toBeVisible();
+  const facts = page.locator('.abl-facts');
+  await expect(facts.getByText('active / 64 endpoints', { exact: true })).toBeVisible();
+  await expect(facts.getByText('8 flits', { exact: true })).toBeVisible();
   const candidates = page.getByRole('group', { name: 'Candidate topologies', exact: true });
   await candidates.getByRole('button').nth(0).click();
   await candidates.getByRole('button').nth(1).click();

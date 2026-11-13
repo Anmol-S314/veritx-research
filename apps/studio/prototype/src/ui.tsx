@@ -30,19 +30,24 @@ const paths: Record<string, string> = {
 export function Icon({ name = 'file', size = 16 }: { name?: string; size?: number }) { return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[name] ?? paths.file} /></svg>; }
 export function Badge({ children, tone = 'neutral', title }: { children: ReactNode; tone?: 'neutral' | 'blue' | 'green' | 'amber' | 'red'; title?: string }) { return <span className={`badge ${tone}`} title={title}>{children}</span>; }
 export function Outcome({ value }: { value: string }) { const tone = /Violated|Failed|Invalid|Conflict/.test(value) ? 'red' : /Not evaluated|Partial|Unknown|Inconclusive|Not established/.test(value) ? 'amber' : /Met|Pass|Complete/.test(value) ? 'green' : 'neutral'; return <Badge tone={tone}>{value}</Badge>; }
-export function Button({ children, onClick, primary = false, disabled = false, title, type = 'button', danger = false }: { children: ReactNode; onClick?: () => void; primary?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; danger?: boolean }) { return <button type={type} className={`button ${primary ? 'primary' : ''} ${danger ? 'danger' : ''}`} onClick={onClick} disabled={disabled} title={title}>{children}</button>; }
+export function Button({ children, onClick, primary = false, disabled = false, title, type = 'button', danger = false, className = '' }: { children: ReactNode; onClick?: () => void; primary?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; danger?: boolean; className?: string }) { return <button type={type} className={`button ${primary ? 'primary' : ''} ${danger ? 'danger' : ''}${className ? ` ${className}` : ''}`} onClick={onClick} disabled={disabled} title={title}>{children}</button>; }
 export function PageLink({ page, children, primary = false }: { page: PageId; children: ReactNode; primary?: boolean }) { return <a className={`button ${primary ? 'primary' : ''}`} href={`#/${page}`}>{children}</a>; }
 export function Section({ title, children, actions, id }: { title: string; children: ReactNode; actions?: ReactNode; id?: string }) { return <section className="section" id={id} data-context-kind="section" data-context-id={id ?? `section:${title}`} data-context-label={title}><div className="section-heading"><h2>{title}</h2>{actions && <div className="actions">{actions}</div>}</div>{children}</section>; }
-/** The single, page-level disclosure every view ends with. Scope, provenance
- *  and method notes live here instead of interleaved with the work. */
-export function Assumptions({ rows, children, title = 'Assumptions & scope' }: { rows?: [string, ReactNode][]; children?: ReactNode; title?: string }) {
-  return <details className="assumptions" data-context-kind="section" data-context-label={title}>
-    <summary>{title}</summary>
-    <div className="assumptions-body">{rows && rows.length > 0 && <Properties rows={rows} />}{children}</div>
-  </details>;
+/** Scope, provenance and method notes stay at the call sites for reference but
+ *  are intentionally not rendered in this prototype build. */
+export function Assumptions(_props: { rows?: [string, ReactNode][]; children?: ReactNode; title?: string }) {
+  return null;
 }
 export const Caveats = Assumptions;
 export function Notice({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'amber' | 'red' | 'blue' }) { return <div className={`notice ${tone}`}><Icon name={tone === 'red' || tone === 'amber' ? 'warning' : 'info'} /><div>{children}</div></div>; }
+/** One sticky action bar for every draft surface: status and errors on the left,
+ *  the primary action on the right. Callers pass only the state they must show. */
+export function ActionBar({ status, children, className = '', sticky = true }: { status?: ReactNode; children: ReactNode; className?: string; sticky?: boolean }) {
+  return <div className={`action-bar${sticky ? '' : ' action-bar-static'}${className ? ` ${className}` : ''}`}>
+    <div className="action-bar-status">{status}</div>
+    <div className="actions">{children}</div>
+  </div>;
+}
 export function Properties({ rows }: { rows: [string, ReactNode][] }) { return <dl className="properties">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>; }
 export function Inspector({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -54,7 +59,79 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
   return <dialog ref={ref} className="dialog" aria-labelledby="dialog-title" onCancel={e => { e.preventDefault(); onClose(); }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}><div className="dialog-heading"><h2 id="dialog-title">{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={onClose}><Icon name="close" /></button></div><div className="dialog-content">{children}</div></dialog>;
 }
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
-export function Empty({ title, children }: { title: string; children: ReactNode }) { return <div className="empty"><Icon name="info" size={28} /><h2>{title}</h2><p>{children}</p></div>; }
+/** A connection or verdict light. The text beside it always carries the same
+ *  state, so colour is never the only signal. */
+export function StatusDot({ tone = 'neutral', pulse = false }: { tone?: 'neutral' | 'blue' | 'green' | 'amber' | 'red'; pulse?: boolean }) {
+  return <span className={`status-dot ${tone}${pulse ? ' pulse' : ''}`} aria-hidden="true" />;
+}
+export function Empty({ title, children, icon = 'info', action }: { title: string; children: ReactNode; icon?: string; action?: ReactNode }) {
+  return <div className="empty"><span className="empty-icon"><Icon name={icon} size={22} /></span><div className="empty-copy"><h2>{title}</h2><div className="empty-body">{children}</div></div>{action && <div className="empty-action">{action}</div>}</div>;
+}
+/** A code surface with its own identity bar. Used for evidence documents and
+ *  generated JSON so the path, size and copy action stay attached to the data. */
+export function CodePanel({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+  return <div className="code-panel"><div className="code-panel-head"><span className="code-panel-title">{title}</span>{actions && <div className="actions">{actions}</div>}</div><pre className="code-preview">{children}</pre></div>;
+}
+export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+      document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+    }
+    setCopied(true); window.setTimeout(() => setCopied(false), 1500);
+  };
+  return <button type="button" className="button" onClick={copy} aria-live="polite"><Icon name="file" size={13} />{copied ? 'Copied' : label}</button>;
+}
+const jsonScalarClass = (value: unknown) => typeof value === 'string' ? 'json-string' : typeof value === 'number' ? 'json-number' : typeof value === 'boolean' ? 'json-boolean' : 'json-null';
+const jsonScalarText = (value: unknown) => typeof value === 'string' ? JSON.stringify(value) : value === null ? 'null' : String(value);
+
+function JsonNode({ name, value, depth }: { name?: string; value: unknown; depth: number }) {
+  if (value !== null && typeof value === 'object') {
+    const isArray = Array.isArray(value);
+    const entries: [string, unknown][] = isArray
+      ? (value as unknown[]).map((item, index) => [String(index), item])
+      : Object.entries(value as Record<string, unknown>);
+    // A closed branch renders no descendants. With 21 workload cards on the
+    // start page this is the difference between ~1.5k and ~15k DOM nodes.
+    const [open, setOpen] = useState(depth < 1);
+    return <details className="json-branch" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+      <summary>
+        {name !== undefined && <span className="json-key">{name}</span>}
+        <span className="json-punct">{isArray ? '[' : '{'}</span>
+        <span className="json-count">{entries.length} {isArray ? (entries.length === 1 ? 'item' : 'items') : (entries.length === 1 ? 'key' : 'keys')}</span>
+        <span className="json-punct">{isArray ? ']' : '}'}</span>
+      </summary>
+      {open && entries.length > 0 && <div className="json-children">{entries.map(([key, child]) => <JsonNode key={key} name={key} value={child} depth={depth + 1} />)}</div>}
+    </details>;
+  }
+  return <div className="json-leaf">
+    {name !== undefined && <span className="json-key">{name}</span>}
+    <span className={`json-value ${jsonScalarClass(value)}`}>{jsonScalarText(value)}</span>
+  </div>;
+}
+
+/** A definition is read as structure, not as one wall of JSON: top-level keys
+ *  stay expanded, long branches fold, and the raw document remains copyable. */
+export function JsonView({ value, name = 'JSON', hint }: { value: unknown; name?: string; hint?: ReactNode }) {
+  const text = JSON.stringify(value, null, 2) ?? '';
+  const root = value !== null && typeof value === 'object';
+  const entries: [string, unknown][] = !root ? [['value', value]]
+    : Array.isArray(value) ? (value as unknown[]).map((item, index) => [String(index), item])
+      : Object.entries(value as Record<string, unknown>);
+  return <div className="json-view">
+    <div className="json-view-head">
+      <span className="json-view-title">{name}</span>
+      <span className="json-view-meta">{root ? `${entries.length} top-level ${Array.isArray(value) ? (entries.length === 1 ? 'item' : 'items') : (entries.length === 1 ? 'key' : 'keys')} · ` : ''}{text.length.toLocaleString()} B</span>
+      <div className="actions"><CopyButton text={text} label="Copy JSON" /></div>
+    </div>
+    {hint && <p className="json-view-hint meta-line">{hint}</p>}
+    <div className="json-view-body">
+      {entries.length ? entries.map(([key, child]) => <JsonNode key={key} name={root ? key : undefined} value={child} depth={0} />) : <span className="muted">No keys</span>}
+    </div>
+  </div>;
+}
 export function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

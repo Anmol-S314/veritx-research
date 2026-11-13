@@ -45,13 +45,15 @@ export const STUDY_QUEUE_LIMIT = 5120;
 export const PAGES = [
   { id: 'flow/start', title: 'Start from a workload template', short: '1 · Workload', group: 'Flow', source: 'flow_start_workload' },
   { id: 'flow/tune', title: 'Workload intent', short: '2 · Workload intent', group: 'Flow', source: 'flow_fine_tune' },
-  { id: 'flow/search', title: 'Evaluate & choose fabric', short: '3 · Evaluate & choose fabric', group: 'Flow', source: 'flow_fabric_search' },
+  { id: 'flow/search', title: 'Evaluate & choose fabric', short: '3 · Choose fabric', group: 'Flow', source: 'flow_fabric_search' },
   { id: 'flow/compare', title: 'Choose a measured fabric', short: '4 · Choose fabric', group: 'Flow', source: 'flow_compare_versions' },
   { id: 'flow/optimize', title: 'Refine fabric parameters', short: '4 · Refine parameters', group: 'Flow', source: 'flow_optimize' },
   { id: 'flow/run', title: 'Finalize topology & RTL', short: '5 · Finalize & RTL', group: 'Flow', source: 'flow_run_analyze' },
+  { id: 'design/editor', title: 'Design Editor', short: 'Editor', group: 'Design', source: 'design_editor' },
+  { id: 'design/flow', title: 'Design Workflow', short: 'Design workflow', group: 'Design', source: 'design_workflow_flow' },
   { id: 'design/fabric-topology', title: 'Fabric Topology', short: 'Fabric topology', group: 'Design', source: 'design_fabric_topology' },
   { id: 'design/system', title: 'System / Block Diagram', short: 'System diagram', group: 'Design', source: 'design_system_block_diagram' },
-  { id: 'design/catalog', title: 'IP Catalog', short: 'IP catalog', group: 'Design', source: 'design_ip_catalog' },
+  { id: 'design/catalog', title: 'Agent Catalog', short: 'Agent catalog', group: 'Design', source: 'design_ip_catalog' },
   { id: 'design/endpoints', title: 'Hardware Endpoints', short: 'Hardware endpoints', group: 'Design', source: 'design_hardware_endpoints' },
   { id: 'design/mapping', title: 'Initiator–Target Mapping', short: 'Initiator–target mapping', group: 'Design', source: 'design_initiator_target_mapping' },
   { id: 'design/agent-map', title: 'Agent Fabric Map', short: 'Agent fabric map', group: 'Design', source: 'design_agent_fabric_map' },
@@ -105,7 +107,7 @@ export const PAGES = [
 export type PageId = typeof PAGES[number]['id'];
 // Routes kept for old links and direct authoring, but no longer separate navigation
 // entries: the same intent is now covered by Workload, Requirements, or Validate.
-export const HIDDEN_PAGES = new Set<string>(['flow/compare', 'workloads/editor', 'workloads/bindings', 'workloads/assumptions']);
+export const HIDDEN_PAGES = new Set<string>(['design/flow', 'design/system', 'design/endpoints', 'design/mapping', 'flow/compare', 'workloads/editor', 'workloads/bindings', 'workloads/assumptions', 'analysis/gr00t', 'analysis/fabric', 'explore/fabric', 'explore/fabric-search', 'explore/brief', 'verify/overview', 'verify/support', 'verify/checks', 'verify/obligations']);
 // Verify and Deliver have live gateway surfaces; keep them in navigation.
 // The fixture-era aliases inside each workspace are still filtered by LIVE_ALIASES.
 export const HIDDEN_GROUPS = new Set<string>();
@@ -118,10 +120,10 @@ export const PAGE_ALIASES: Record<string, PageId> = {
 // or #/design to that workspace's landing view instead of the generic not-found state.
 export const WORKSPACE_HOME: Record<string, PageId> = {
   flow: 'flow/start',
-  design: 'design/system',
+  design: 'design/fabric-topology',
   workloads: 'workloads/workflow',
   analysis: 'analysis/summary',
-  explore: 'explore/fabric',
+  explore: 'explore/ablations',
   verify: 'verify/overview',
   deliver: 'deliver/readiness',
 };

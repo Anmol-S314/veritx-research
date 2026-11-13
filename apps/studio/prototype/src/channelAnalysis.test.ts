@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attributionSummary, channelCosts, directionShares, flitShares, median, utilizationBins, windowMetricRows, windowRows, windowSummary } from './channelAnalysis';
+import { attributionSummary, channelCosts, directionShares, flitShares, loadChannelInRange, median, utilizationBins, utilizationRangeFor, windowMetricRows, windowRows, windowSummary } from './channelAnalysis';
 import type { SimLoad, SimSeries, Topology } from './gateway';
 
 type LoadChannel = NonNullable<SimLoad['channels']>[number];
@@ -165,5 +165,31 @@ describe('measured channel analysis helpers', () => {
     expect(matrix.rows.every(row => row.total === 0)).toBe(true);
     expect(matrix.activeChannels).toBe(0);
     expect(windowSummary(input, 'arb')).toMatchObject({ busiestWindow: -1, busiestFlits: 0, totalFlits: 0 });
+  });
+});
+
+describe('utilization bin selection', () => {
+  const channels = [
+    loadChannel(0, 100, { utilization: 0.08, peak_window_utilization: 0.85 }),
+    loadChannel(1, 50, { utilization: 0.42, peak_window_utilization: 0.42 }),
+  ];
+  const { bins, step } = utilizationBins(channels);
+
+  it('carries the bar that was clicked, not just the bin', () => {
+    const peakBin = bins.findIndex(bin => bin.peak > 0 && bin.sustained === 0);
+    expect(peakBin).toBeGreaterThanOrEqual(0);
+    const peakRange = utilizationRangeFor(bins[peakBin], peakBin, bins, step, 'peak');
+    const sustainedRange = utilizationRangeFor(bins[peakBin], peakBin, bins, step, 'sustained');
+    expect(peakRange.series).toBe('peak');
+    expect(channels.filter(channel => loadChannelInRange(channel, peakRange))).toHaveLength(bins[peakBin].peak);
+    expect(channels.filter(channel => loadChannelInRange(channel, sustainedRange))).toHaveLength(0);
+  });
+
+  it('defaults to sustained when no bar is named', () => {
+    expect(utilizationRangeFor(bins[0], 0, bins, step).series).toBe('sustained');
+  });
+
+  it('filters an unfiltered list to everything', () => {
+    expect(channels.filter(channel => loadChannelInRange(channel, null))).toHaveLength(2);
   });
 });

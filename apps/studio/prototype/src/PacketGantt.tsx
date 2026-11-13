@@ -26,7 +26,10 @@ export function PacketGantt({ capture, subnet }: { capture: ObservedPacketCaptur
   const span = Math.max(1, end - start);
   const plot = WIDTH - LEFT - RIGHT;
   const xOf = (cycle: number) => LEFT + Math.max(0, Math.min(1, (cycle - start) / span)) * plot;
-  const focus = rows.find(row => row.packet === (hover ?? selected)) ?? budget.longest ?? rows[0] ?? null;
+  // A click pins one row: once selected, hovering another packet previews
+  // nothing and the detail panel keeps the chosen packet. Without a pinned
+  // row, hover is a temporary preview over the longest row.
+  const focus = rows.find(row => row.packet === (selected ?? hover)) ?? budget.longest ?? rows[0] ?? null;
   const focusTotals = focus ? packetGroupTotals(focus) : null;
   const height = TOP + rows.length * ROW + AXIS;
   const tickCount = 6;
@@ -67,9 +70,11 @@ export function PacketGantt({ capture, subnet }: { capture: ObservedPacketCaptur
     <div className="gantt-readout" aria-live="polite">
       {focus && focusTotals ? <>
         <strong className="mono">P{focus.packet} · {node(focus.source)} → {node(focus.destination)}</strong>
+        {selected === focus.packet && <Badge tone="blue">pinned</Badge>}
         <span>{cycles(focus.total)} · {focus.hops} hops · {focus.flits} flits</span>
         {(['source', 'queue', 'arbitration', 'transmission', 'drain'] as ObservedPhaseGroup[]).filter(group => includeSource || group !== 'source').map(group =>
           <span key={group}><i className={`gantt-key ${GROUP_CLASS[group]}`} aria-hidden="true" />{GROUP_LABELS[group]} <strong>{cycles(focusTotals[group])}</strong></span>)}
+        {selected !== null && <button type="button" className="text-button" onClick={() => setSelected(null)}>Unpin</button>}
       </> : <span>Hover or select a row to inspect its phase budget.</span>}
     </div>
     <div className="gantt-scroll">
@@ -83,7 +88,7 @@ export function PacketGantt({ capture, subnet }: { capture: ObservedPacketCaptur
         <line x1={LEFT} x2={LEFT + plot} y1={height - AXIS} y2={height - AXIS} className="gantt-axis" />
         {rows.map((path, index) => {
           const y = TOP + index * ROW;
-          const active = path.packet === (hover ?? selected);
+          const active = path.packet === (selected ?? hover);
           return <g key={path.packet} role="button" tabIndex={0} aria-pressed={selected === path.packet}
             aria-label={`Packet ${path.packet}, ${node(path.source)} to ${node(path.destination)}, ${cycles(path.total)}`}
             className={`gantt-row${active ? ' active' : ''}`}
@@ -107,7 +112,7 @@ export function PacketGantt({ capture, subnet }: { capture: ObservedPacketCaptur
         })}
       </svg>
     </div>
-    <figcaption className="meta-line">Rows cover the watched stride sample only; scroll the panel for all {rows.length}. Colour is the phase group; the thin tick is the packet retire. Network only starts each row at injection and omits the request-to-injection source wait. Hover a segment for the exact router, port and cycle range.</figcaption>
+    <figcaption className="meta-line">Rows cover the watched stride sample only; scroll the panel for all {rows.length}. Colour is the phase group; the thin tick is the packet retire. Network only starts each row at injection and omits the request-to-injection source wait. Click a row or any phase segment to pin it, then inspect the pinned packet below; hover shows the exact router, port and cycle range.</figcaption>
     {focus && <div className="gantt-detail">
       <div className="gantt-detail-head"><h3 className="mono">P{focus.packet}</h3><Badge tone={focus.complete ? 'green' : 'amber'}>{focus.complete ? 'complete path' : 'incomplete path'}</Badge></div>
       <div className="table-scroll capped"><table aria-label={`Packet ${focus.packet} phase detail`}>

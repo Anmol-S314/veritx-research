@@ -123,7 +123,7 @@ test('the full fabric editor explicitly migrates v3 before editing v4 router con
   expect(puts[1].expected_draft_design_hash).toBe('sha256:v4');
 });
 
-test('an unmatched project workload gets a choice before the reference catalog controls', async ({ page }) => {
+test('an unmatched project workload goes straight to the reference trace controls with an explicit boundary', async ({ page }) => {
   await mock(page);
   await page.route('**/gw/api/v1/projects/p-v3/draft', route => route.fulfill({ json: {
     contract_version: 1,
@@ -134,9 +134,12 @@ test('an unmatched project workload gets a choice before the reference catalog c
   await page.goto('/#/shared/projects');
   await page.getByRole('button', { name: 'Load', exact: true }).first().click();
   await page.goto('/#/explore/fabric-search');
-  await expect(page.getByRole('heading', { name: 'Choose what to measure', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Find fabrics', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Measure this project', exact: true }).click();
-  await expect(page).toHaveURL(/#\/flow\/search$/);
-  await expect(page.getByRole('heading', { name: 'Evaluate & choose fabric', exact: true })).toBeVisible();
+  // The reference search is the page, not an interstitial route choice: an
+  // unmatched project has no project trace, so the reference trace selector
+  // and the reference-only boundary are shown directly.
+  await expect(page.getByRole('heading', { name: 'Choose what to measure', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Find fabrics', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Find fabrics', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Reference trace')).toBeVisible();
+  await expect(page.getByText('Reference search only.', { exact: false })).toBeVisible();
 });

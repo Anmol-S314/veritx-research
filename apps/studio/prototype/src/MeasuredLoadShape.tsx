@@ -4,7 +4,7 @@ import type { LoadedRun } from './project';
 import type { Topology } from './gateway';
 import { useSimLoad } from './measuredData';
 import { portWiresUsable, usePortWires } from './portWires';
-import { attributionSummary, flitShares, median, utilizationBins, utilizationRangeFor, type LoadChannel, type UtilizationBin, type UtilizationRange } from './channelAnalysis';
+import { attributionSummary, flitShares, median, utilizationBins, utilizationRangeFor, type LoadChannel, type UtilizationBin, type UtilizationRange, type UtilizationSeries } from './channelAnalysis';
 import { contextTarget } from './contextSelection';
 
 const percent = (value: number | null | undefined, digits = 1) => value == null || !Number.isFinite(value) ? '—' : `${(100 * value).toFixed(digits)} %`;
@@ -24,6 +24,7 @@ function UtilizationHistogram({ bins, step, total, active, sustainedMedian, acti
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const selectedIndex = selectedRange ? bins.findIndex(bin => bin.low === selectedRange.low && bin.high === selectedRange.high) : -1;
+  const selectedSeries: UtilizationSeries | null = selectedIndex >= 0 ? selectedRange!.series : null;
   const readBin = hovered !== null ? bins[hovered] : selectedIndex >= 0 ? bins[selectedIndex] : null;
   const width = 570, height = 220, left = 38, right = 12, top = 18, bottom = 34;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
@@ -40,10 +41,10 @@ function UtilizationHistogram({ bins, step, total, active, sustainedMedian, acti
     ? <>
       <strong className="mono">{label(readBin.low)}–{label(readBin.high)}</strong>
       <span>{readBin.sustained.toLocaleString()} sustained · {readBin.peak.toLocaleString()} peak-window channels</span>
-      {selectedIndex >= 0 && <span>Filtering the measured-channel list below</span>}
+      {selectedIndex >= 0 && <span>Filtering the measured-channel list below by {selectedSeries === 'peak' ? 'peak-window' : 'sustained'} utilization</span>}
       {selectedIndex >= 0 && <button type="button" className="text-button" onClick={() => onSelectRange(null)}>Clear filter</button>}
     </>
-    : <span>Hover a bin for counts. Click a bar pair to filter the measured-channel list by sustained utilization.</span>;
+    : <span>Hover a bin for counts. Click the sustained or the peak-window bar to filter the measured-channel list by that measure.</span>;
 
   return <figure className="load-histogram">
     <div className="load-histogram-head">
@@ -62,17 +63,21 @@ function UtilizationHistogram({ bins, step, total, active, sustainedMedian, acti
         const sustainedHeight = top + plotHeight - yOf(bin.sustained);
         const peakHeight = top + plotHeight - yOf(bin.peak);
         const isSelected = index === selectedIndex;
-        const pick = () => onSelectRange(isSelected ? null : utilizationRangeFor(bin, index, bins, step));
+        const pick = (series: UtilizationSeries) => onSelectRange(index === selectedIndex && selectedSeries === series ? null : utilizationRangeFor(bin, index, bins, step, series));
+        // A click on the bin's empty space has no bar to speak for it. Prefer the
+        // measure that actually has channels in this bin, so a reader who clicks
+        // where they saw a count never lands on an empty list.
+        const pickFromBackground = () => pick(bin.sustained > 0 || bin.peak === 0 ? 'sustained' : 'peak');
         return <g key={index} role="button" tabIndex={0} aria-pressed={isSelected}
           aria-label={`${label(bin.low)} to ${label(bin.high)} sustained utilization: ${bin.sustained} channels, ${bin.peak} peak-window channels`}
           {...contextTarget('utilization-bin', `${bin.low}-${bin.high}`, `Utilization bin ${label(bin.low)}–${label(bin.high)}`, `sustained: ${bin.sustained} channels · peak window: ${bin.peak} channels`)}
           onMouseEnter={() => setHovered(index)} onFocus={() => setHovered(index)} onBlur={() => setHovered(null)}
-          onClick={pick}
-          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pick(); } }}>
+          onClick={pickFromBackground}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pickFromBackground(); } }}>
           <title>{label(bin.low)}–{label(bin.high)} sustained: {bin.sustained} channels · peak window: {bin.peak} channels</title>
           <rect x={left + index * groupWidth} y={top} width={groupWidth} height={plotHeight} className="load-bin-hit" />
-          <rect x={center - barWidth - 1} y={yOf(bin.sustained)} width={barWidth} height={sustainedHeight} className={`load-bar sustained${isSelected ? ' selected' : ''}`} />
-          <rect x={center + 1} y={yOf(bin.peak)} width={barWidth} height={peakHeight} className={`load-bar peak${isSelected ? ' selected' : ''}`} />
+          <rect x={center - barWidth - 1} y={yOf(bin.sustained)} width={barWidth} height={sustainedHeight} className={`load-bar sustained${isSelected && selectedSeries === 'sustained' ? ' selected' : ''}`} onClick={event => { event.stopPropagation(); pick('sustained'); }} />
+          <rect x={center + 1} y={yOf(bin.peak)} width={barWidth} height={peakHeight} className={`load-bar peak${isSelected && selectedSeries === 'peak' ? ' selected' : ''}`} onClick={event => { event.stopPropagation(); pick('peak'); }} />
           {bin.sustained > 0 && <text x={center - barWidth / 2 - 1} y={yOf(bin.sustained) - 3} textAnchor="middle" className="chart-count">{bin.sustained}</text>}
           {bin.peak > 0 && <text x={center + barWidth / 2 + 1} y={yOf(bin.peak) - 3} textAnchor="middle" className="chart-count">{bin.peak}</text>}
           <text x={left + index * groupWidth} y={height - 13} textAnchor="middle" className="chart-tick">{label(bin.low)}</text>

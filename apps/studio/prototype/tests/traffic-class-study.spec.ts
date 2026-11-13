@@ -167,6 +167,7 @@ test('catalog inspector immediately shows every aggregate and pivoted class metr
   await backend(page);
   await page.evaluate(() => { location.hash = '/flow/compare'; });
   await expect(page.getByRole('heading', { name: 'Fabric comparison', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
   const table = page.locator('table.catalog-results-table');
   await expect(table.locator('details, pre, a')).toHaveCount(0);
   await expect(table).not.toContainText(/Per traffic class|tp_collective|ep_dispatch|flits injected/);
@@ -193,11 +194,10 @@ test('catalog inspector immediately shows every aggregate and pivoted class metr
     await expect(row).toBeVisible();
     await expect(row.locator('th, td')).toHaveText([metric, ep, tp]);
   }
-  const aggregate = review.getByRole('table').filter({ has: page.getByRole('columnheader', { name: 'Value', exact: true }) });
-  for (const [metric, value] of [['completion cycles', '900'], ['packet latency avg', '12'], ['system makespan cycles', '1,500'], ['compute cycles', '600']]) {
-    const row = aggregate.getByRole('row').filter({ has: page.getByRole('rowheader', { name: metric, exact: true }) });
-    await expect(row).toBeVisible();
-    await expect(row.locator('th, td')).toHaveText([metric, value, 'cycles']);
+  const aggregate = review.locator('.catalog-metric-groups');
+  for (const [metric, value] of [['completion cycles', '900'], ['system makespan cycles', '1,500'], ['compute cycles', '600']]) {
+    const row = aggregate.locator('.catalog-metric-row').filter({ hasText: metric });
+    await expect(row).toContainText(value);
   }
   await expect(table.getByText('900', { exact: true })).toBeVisible();
   await expect(table.locator('td.numeric').first()).toContainText('cycles');

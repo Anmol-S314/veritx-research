@@ -134,6 +134,11 @@ export function AgentFabricMap({ data, notify }: { data: LoadedProject; notify?:
   const attachedSeats = (agent: AgentGroup, index: number): number =>
     data.topology?.endpoints.filter(endpoint => endpoint.kind === agent.kind
       && (endpoint.group_index === undefined || endpoint.group_index === index)).length ?? 0;
+  const protocolFindings = [...new Set([
+    ...(data.compileResult?.stage1_findings ?? []),
+    ...((data.compileResult?.stage1_verdicts ?? []).flatMap(verdict => verdict.findings ?? [])),
+  ])].filter(finding => finding.includes('AGENT_PROTOCOL_UNOWNED'));
+  const hasProtocolFinding = (index: number) => protocolFindings.some(finding => new RegExp(`\\bgroup ${index}\\b`).test(finding));
   const topologyIntent = (data.request?.topology ?? {}) as Record<string, any>;
   const controls = (data.request?.noc_controls ?? data.request?.noc_config ?? {}) as Record<string, any>;
 
@@ -214,7 +219,8 @@ export function AgentFabricMap({ data, notify }: { data: LoadedProject; notify?:
   if (!data.request) return <Empty title="No draft request">Load a gateway project with an editable draft to map its agents.</Empty>;
   const schemaVersion = Number(data.request.schema_version ?? 4);
   if (schemaVersion >= 5) return <Empty title="Schema-v5 draft">
-    This page edits the v4 <code>agents</code> and <code>address_map</code> blocks. This draft nests the design under <code>base_v4</code>; editing it here would write fields the v5 parser refuses. Open the schema-v5 authoring surface instead. The Fabric Analysis page reads <code>base_v4</code> read-only.
+    This page edits the v4 <code>agents</code> and <code>address_map</code> blocks. This draft nests the design under <code>base_v4</code>; editing it here would write fields the v5 parser refuses. The Fabric Analysis page reads <code>base_v4</code> read-only.
+    <PageLink page="workloads/workflow">Open the Project workflow draft editor</PageLink>
   </Empty>;
 
   const tabButton = (id: Tab, label: string) => <button type="button" className={tab === id ? 'active' : ''} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>;
@@ -229,9 +235,10 @@ export function AgentFabricMap({ data, notify }: { data: LoadedProject; notify?:
       </div>
       <div className="actions">
         <Badge tone={dirty || savedDraftPendingCompile ? 'amber' : 'green'}>{dirty ? 'Unsaved edits' : savedDraftPendingCompile ? 'Saved draft · compile pending' : data.draftMeta?.dirty === false ? 'Matches active revision' : 'Draft loaded'}</Badge>
-        <Button onClick={() => setAutoOpen(true)} disabled={!!busy || !autoAvailable} title={autoAvailable ? undefined : 'No declared agent group is a target kind (hbm_controller, ucie_port, peripheral, nic).'}><Icon name="plus" />Auto-map targets</Button>
+        <Button primary={windows.length === 0} onClick={() => setAutoOpen(true)} disabled={!!busy || !autoAvailable} title={autoAvailable ? undefined : 'No declared agent group is a target kind (hbm_controller, ucie_port, peripheral, nic).'}><Icon name="plus" />Auto-map targets</Button>
         <Button onClick={() => save(false)} disabled={!!busy || !dirty || blocking.length > 0}>{busy === 'save' || busy === 'validate' ? 'Saving…' : 'Save draft'}</Button>
         <Button primary onClick={() => save(true)} disabled={!!busy || blocking.length > 0}>{busy === 'compile' ? 'Compiling…' : 'Save & compile'}</Button>
+        <PageLink page="design/addresses">System address map</PageLink>
       </div>
     </div>
     {error && <Notice tone="red">{error}</Notice>}
@@ -244,7 +251,8 @@ export function AgentFabricMap({ data, notify }: { data: LoadedProject; notify?:
     {tab === 'windows' && <>
       <Section title="System address windows" actions={<><Badge tone={blocking.length ? 'red' : 'green'}>{blocking.length ? `${blocking.length} blocking` : 'Schema-clean'}</Badge><Badge>{formatBytes(coverage.mappedBytes)} mapped</Badge><Button onClick={addWindow} disabled={!agents.length} title={agents.length ? undefined : 'Declare at least one agent group before adding a window.'}><Icon name="plus" />Add window</Button></>}>
         {windows.length === 0 ? <Empty title="No address window is declared">
-          Target agents have no system address. Use <strong>Auto-map targets</strong> to place one fixed window per target instance, then review every base and size before compiling. No size is inferred from a model name.
+          Target agents have no system address. Use <strong>Auto-map targets</strong> to place one fixed window per target instance, or <strong>Add window</strong> to place one by hand; review every base and size before compiling. No size is inferred from a model name.
+          {!autoAvailable && <p className="meta-line">Auto-map is unavailable because no declared agent group is a target kind (hbm_controller, ucie_port, peripheral, nic).</p>}
         </Empty> : <>
           <div className="table-scroll"><table className="address-table"><thead><tr><th>Name</th><th>Base</th><th>Size</th><th>Target agent</th><th>Selection &amp; instance</th></tr></thead><tbody>
             {windows.map(window => {
@@ -331,12 +339,18 @@ export function AgentFabricMap({ data, notify }: { data: LoadedProject; notify?:
                 <td><Badge tone={attached < agent.count ? 'red' : attached > agent.count ? 'amber' : 'green'}>{attached} / {agent.count}</Badge></td>
                 <td><input aria-label={`${agent.kind} data width`} type="number" min={8} value={agent.data_width ?? ''} onChange={event => updateAgent(index, { data_width: event.target.value === '' ? undefined : Number(event.target.value) })} /></td>
                 <td><input aria-label={`${agent.kind} address width`} type="number" min={8} value={agent.addr_width ?? ''} onChange={event => updateAgent(index, { addr_width: event.target.value === '' ? undefined : Number(event.target.value) })} /></td>
-                <td><select aria-label={`${agent.kind} protocol`} value={agent.protocol ?? 'AXI'} onChange={event => updateAgent(index, { protocol: event.target.value })}>{PROTOCOLS.map(protocol => <option key={protocol}>{protocol}</option>)}{agent.protocol && !PROTOCOLS.includes(agent.protocol) && <option>{agent.protocol}</option>}</select></td>
+                <td><select aria-label={`${agent.kind} protocol`} value={agent.protocol ?? 'AXI'} onChange={event => updateAgent(index, { protocol: event.target.value })}>{PROTOCOLS.map(protocol => <option key={protocol}>{protocol}</option>)}{agent.protocol && !PROTOCOLS.includes(agent.protocol) && <option>{agent.protocol}</option>}</select>{hasProtocolFinding(index) && <><br /><Badge tone="amber">No adapter</Badge></>}</td>
                 <td><input aria-label={`${agent.kind} clock domain`} value={agent.clock_domain ?? ''} placeholder="not declared" onChange={event => updateAgent(index, { clock_domain: event.target.value || null })} /></td>
                 <td><input aria-label={`${agent.kind} power domain`} value={agent.power_domain ?? ''} placeholder="not declared" onChange={event => updateAgent(index, { power_domain: event.target.value || null })} /></td>
               </tr>;
             })}
           </tbody></table></div>}
+      </Section>
+      <Section title="Protocol ownership" actions={<Badge tone={protocolFindings.length ? 'amber' : data.compileResult ? 'green' : 'neutral'}>{protocolFindings.length ? `${protocolFindings.length} unowned` : data.compileResult ? 'no unowned literals' : 'not compiled'}</Badge>}>
+        {protocolFindings.length
+          ? protocolFindings.map((finding, index) => <Notice key={`${index}-${finding}`} tone="amber">{finding}</Notice>)
+          : <p className="meta-line">{data.compileResult ? 'No unowned protocol literal is reported by the active revision.' : 'Compile the saved draft to read protocol-ownership findings.'}</p>}
+        <p className="meta-line">A protocol literal preserved for identity and reports does not generate an adapter. Adapter support is not established by this page.</p>
       </Section>
       <Notice tone="amber">Count is the agent universe, not a per-page control. Change it in the workload parallelism intent; a count the topology cannot seat is refused by the compiler rather than silently trimmed.</Notice>
       <Section title="Agent interface coverage">

@@ -3,12 +3,13 @@ import { desktopGatewayBase } from './desktop';
 import { GATEWAY_START, GatewayHttpError, gateway, gatewayReason, type ProjectEntry } from './gateway';
 import { useProject } from './project';
 import { CreateProject } from './ProjectAdmin';
-import { Badge, Button, Dialog, Empty, Field, Notice, Properties, Section } from './ui';
+import { Button, Dialog, Empty, Field, Icon, Notice, Properties, Section } from './ui';
 
 
 export function GatewayProjects() {
-  const { health, projects, listError, listPhase, project, refreshList, load, clear } = useProject();
+  const { projects, listError, listPhase, project, refreshList, load, clear } = useProject();
   const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<ProjectEntry | null>(null);
   const [confirmId, setConfirmId] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -51,21 +52,24 @@ export function GatewayProjects() {
     <Notice tone="amber"><strong>Gateway not reachable at <code>{gateway.base}</code>.</strong> {listError} {desktopGatewayBase ? 'Restart Srota Studio to restart its managed backend, then retry.' : <>Start it with <code>{GATEWAY_START}</code>.</>}</Notice>
   </Section>;
 
-  const connectedBackends = health ? Object.entries(health.backends).filter(([, v]) => v.binary_present).map(([k]) => k) : [];
+  const needle = query.trim().toLowerCase();
+  const visibleProjects = projects.filter(entry => !needle || `${entry.project.name} ${entry.project.project_id}`.toLowerCase().includes(needle));
   const open = (id: string) => { setSelected(id); load(id); };
   const projectsList = (
-    <Section title="Repository gateway projects" actions={<><Badge tone="green">Connected</Badge><Button onClick={refreshList}>Refresh</Button></>}>
-      <Properties rows={[[ 'Gateway', `${health?.status ?? 'connected'} · ${gateway.base}` ], ['Backends present', connectedBackends.length ? connectedBackends.join(', ') : 'None' ], ['Projects', String(projects.length) ]]}/>
-      {projects.length ? <div className="table-scroll"><table><thead><tr><th>Project</th><th>Project id</th><th>Active revision</th><th>Runs</th><th>Updated</th><th>Action</th></tr></thead><tbody>
-        {projects.map(entry => <tr key={entry.project.project_id} className={entry.project.project_id === selectedId ? 'selected' : ''}>
+    <Section title="Repository gateway projects" actions={<Button onClick={refreshList}>Refresh</Button>}>
+      <div className="toolbar project-toolbar">
+        <label className="search-field"><Icon name="search" /><input aria-label="Filter projects" placeholder="Filter projects by name or id…" value={query} onChange={event => setQuery(event.target.value)} /></label>
+      </div>
+      {visibleProjects.length ? <div className="table-scroll"><table><thead><tr><th>Project</th><th>Project id</th><th>Active revision</th><th>Runs</th><th>Updated</th><th>Action</th></tr></thead><tbody>
+        {visibleProjects.map(entry => <tr key={entry.project.project_id} className={entry.project.project_id === selectedId ? 'selected' : ''}>
           <th>{entry.project.name}</th>
           <td className="mono">{entry.project.project_id}</td>
           <td className="mono">{entry.active_revision_id ?? <span className="muted">no revision</span>}</td>
           <td className="numeric">{entry.runs?.length ?? 0}</td>
           <td className="mono">{entry.project.updated_at.slice(0, 19).replace('T', ' ')}</td>
-          <td><Button onClick={() => open(entry.project.project_id)}>{entry.project.project_id === selectedId ? 'Reload' : 'Load'}</Button></td>
+          <td><div className="actions"><Button onClick={() => open(entry.project.project_id)}>{entry.project.project_id === selectedId ? 'Reload' : 'Load'}</Button>{entry.project.project_id === selectedId && <Button danger onClick={() => requestDelete(entry)}>Delete…</Button>}</div></td>
         </tr>)}
-      </tbody></table></div> : <Empty title="The store holds no projects">Create one below.</Empty>}
+      </tbody></table></div> : needle ? <Empty icon="search" title="No project matches this filter">Clear the filter to see every project in the gateway store.</Empty> : <Empty icon="folder" title="The store holds no projects">Create one below.</Empty>}
       {project.phase === 'loading' && <p>Loading {project.projectId} …</p>}
       {project.phase === 'error' && <Notice tone="red">Could not load {project.projectId}: {project.reason}</Notice>}
     </Section>
@@ -73,16 +77,6 @@ export function GatewayProjects() {
 
   return <>
     {projectsList}
-    {active && <Section title="Selected project" actions={<Badge tone="green">loaded</Badge>}>
-      <Properties rows={[
-        ['Project', active.detail.project.name],
-        ['Project id', <span className="mono">{active.detail.project.project_id}</span>],
-        ['Active revision', <span className="mono">{active.detail.active_revision_id ?? 'none'}</span>],
-        ['Runs', String(active.detail.runs?.length ?? 0)],
-        ['Updated', active.detail.project.updated_at.slice(0, 19).replace('T', ' ')],
-      ]} />
-      <div className="toolbar toolbar-start"><Button danger onClick={() => requestDelete(active.detail)}>Delete project…</Button><span className="muted">Removes the project directory, its revisions and runs.</span></div>
-    </Section>}
     <CreateProject onCreated={id => { refreshList(); setTimeout(() => { open(id); window.location.hash = '/workloads/workflow'; }, 600); }} />
     {deleting && <Dialog title="Delete a gateway project?" onClose={() => { if (!deleteBusy) setDeleting(null); }}>
       <Notice tone="red"><strong>This removes the project directory, its revisions and runs.</strong> It cannot be undone from this page.</Notice>

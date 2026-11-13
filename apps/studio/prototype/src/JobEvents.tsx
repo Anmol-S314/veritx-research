@@ -48,10 +48,10 @@ function LogTail({ jobId }: { jobId: string }) {
   </Section>;
 }
 
-export function JobEvents({ jobId, state = '' }: { jobId: string; state?: string }) {
+export function JobEvents({ jobId, state = '', defaultOpen = false }: { jobId: string; state?: string; defaultOpen?: boolean }) {
   const { health } = useProject();
   const enabled = health?.features?.job_events === true;
-  const [events, setEvents] = useState<StateEvent[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0), [open, setOpen] = useState(!TERMINAL.includes(state));
+  const [events, setEvents] = useState<StateEvent[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0), [open, setOpen] = useState(defaultOpen || !TERMINAL.includes(state));
   useEffect(() => {
     if (!enabled || !jobId) return;
     setEvents([]); setError('');

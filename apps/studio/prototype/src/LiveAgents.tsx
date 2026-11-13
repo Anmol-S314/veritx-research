@@ -3,7 +3,7 @@ import { JobEvents } from './JobEvents';
 import { gateway, gatewayReason } from './gateway';
 import { useGatewayDocument, useGatewayJob } from './LiveOperations';
 import { useProject, type LoadedProject } from './project';
-import { Assumptions, Button, Field, Notice, Properties, Section, downloadJson } from './ui';
+import { Assumptions, Badge, Button, Field, Notice, Properties, Section, downloadJson } from './ui';
 
 export function LiveAgents({ project, embedded = false, topologyOnly = false, parametersOnly = false, showAssumptions = true }: {
   project: LoadedProject;
@@ -51,7 +51,7 @@ export function LiveAgents({ project, embedded = false, topologyOnly = false, pa
   };
   const active = status.job && !['COMPLETED', 'FAILED', 'REFUSED', 'CANCELLED'].includes(status.job.state);
   const body = <>{!topologyOnly && <Section title="General agent connection"><Properties rows={[[ 'Transport', runtime.data?.transport ?? 'Checking' ], ['Configured', runtime.data ? runtime.data.configured ? 'Yes' : 'No' : 'Checking' ], ['Connection', runtime.error ?? runtime.data?.reason ?? 'Server-managed' ], ['Client tools', 'None; file and terminal requests denied' ]]} /></Section>}
-    <Section title={parametersOnly ? 'AI-assisted parameter refinement' : 'Topology search connection'}>
+    <Section title={parametersOnly ? 'Model connection' : 'Topology search connection'}>
       {capability.error && <Notice tone="red">Model capability could not be read: {capability.error}</Notice>}
       {!capability.error && capability.data && !capability.data.configured && capability.data.reason && <Notice tone="amber">{capability.data.reason}</Notice>}
       {capability.data?.configured && <div className="toolbar"><span>Model · {capability.data.model}</span><Button onClick={() => setShowSettings(open => !open)}>Model settings</Button></div>}
@@ -67,13 +67,18 @@ export function LiveAgents({ project, embedded = false, topologyOnly = false, pa
       <label className="check-row"><input type="checkbox" checked={consent} disabled={!capability.data?.configured} onChange={e => setConsent(e.target.checked)} />{parametersOnly ? "Send this selected fabric's draft to the configured model for parameter proposals and real backend evaluation." : 'Allow this draft snapshot to be sent to the server-configured model for bounded topology proposals and backend evaluation.'}</label>
       <Button primary disabled={busy || !consent || !revisionToken || !capability.data?.configured || (!!jobId && (!status.job || !!active))} onClick={start}>{busy ? 'Working…' : parametersOnly ? 'Propose & evaluate parameter changes' : 'Request topology proposals'}</Button>
     </Section>
-    {status.job && <Section title="Proposal job"><Properties rows={[[ 'Job', jobId ], ['State', status.job.state ], ['Error', status.job.error_message ?? 'None reported' ]]} />{active && <Button disabled={!status.job.cancellable} onClick={status.cancel}>Cancel proposal job</Button>}</Section>}
-    {jobId && <JobEvents key={jobId} jobId={jobId} />}
-    {jobId && result.data && <Section title="Review proposal and evidence"><Button onClick={() => downloadJson('topology-proposals.json', result.data)}>Download proposal record</Button><details><summary>Proposal changes & measured evidence</summary><pre className="code-preview">{JSON.stringify(result.data, null, 2)}</pre></details>{parametersOnly ? <Field label="Evaluated parameter proposal"><select value={candidate} onChange={e => { setCandidate(e.target.value); setReviewed(false); }}><option value="">Choose a measured proposal…</option>{(result.data.attempts ?? []).map((row: any) => <option key={row.attempt} value={row.candidate_id ?? ''} disabled={!row.adoptable}>Proposal {row.attempt} · {row.status}{row.objective_values?.completion_cycles != null ? ` · ${row.objective_values.completion_cycles} network cycles` : ''}{row.reason ? ` · ${row.reason}` : ''}</option>)}</select></Field> : <Field label="Reviewed candidate identifier"><input value={candidate} onChange={e => { setCandidate(e.target.value); setReviewed(false); }} /></Field>}
+    {(error || status.error || result.error) && <Notice tone="red">{error || status.error || result.error}{status.error && <Button onClick={status.retry}>Retry status</Button>}</Notice>}
+    {status.job && <div className="agent-job-strip">
+      <Badge tone={status.job.state === 'COMPLETED' ? 'green' : status.job.state === 'FAILED' || status.job.state === 'REFUSED' ? 'red' : 'amber'}>{status.job.state.toLowerCase()}</Badge>
+      <span className="mono">{jobId.slice(0, 14)}…</span>
+      {status.job.error_message && <span className="muted">{status.job.error_message}</span>}
+      {active && <Button disabled={!status.job.cancellable} onClick={status.cancel}>Cancel job</Button>}
+      <details className="agent-job-diagnostics"><summary>Diagnostics</summary><JobEvents key={jobId} jobId={jobId} /></details>
+    </div>}
+    {jobId && result.data && <Section title="Reviewed proposal"><div className="toolbar"><Button onClick={() => downloadJson('topology-proposals.json', result.data)}>Download record</Button><details><summary>Proposal changes &amp; evidence</summary><pre className="code-preview">{JSON.stringify(result.data, null, 2)}</pre></details></div>{parametersOnly ? <Field label="Evaluated parameter proposal"><select value={candidate} onChange={e => { setCandidate(e.target.value); setReviewed(false); }}><option value="">Choose a measured proposal…</option>{(result.data.attempts ?? []).map((row: any) => <option key={row.attempt} value={row.candidate_id ?? ''} disabled={!row.adoptable}>Proposal {row.attempt} · {row.status}{row.objective_values?.completion_cycles != null ? ` · ${row.objective_values.completion_cycles} network cycles` : ''}{row.reason ? ` · ${row.reason}` : ''}</option>)}</select></Field> : <Field label="Reviewed candidate identifier"><input value={candidate} onChange={e => { setCandidate(e.target.value); setReviewed(false); }} /></Field>}
       <label className="check-row"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />I reviewed this candidate's changes and evidence. Apply it to the pinned draft.</label>
       <Button primary disabled={busy || !reviewed || !candidate.trim() || !revisionToken || status.job?.state !== 'COMPLETED'} onClick={adopt}>Adopt reviewed proposal</Button>
     </Section>}
-    {(error || status.error || result.error) && <Notice tone="red">{error || status.error || result.error}</Notice>}{status.error && <Button onClick={status.retry}>Retry proposal job status</Button>}
     {showAssumptions && <Assumptions rows={[
       ['Authority', 'The server manages the model and transport. Client tools are denied; no file or terminal request is granted to the agent.'],
       ['Data sent', 'Only the pinned draft snapshot, and only after the explicit consent checkbox.'],

@@ -16,16 +16,15 @@ describe('typography contract', () => {
       for (const match of text.matchAll(/font-size:\s*([^;}]+)/g)) sizes.add(match[1].trim());
     }
     expect([...sizes].sort()).toEqual([
-      '13px', // root body size
-      '15px', // section headings and embedded titles
-      '17px', // in-page studio title
-      '22px', // page title
+      '16px', // section headings and embedded titles
+      '20px', // emphasized measures and the in-page studio title
+      '23px', // page title
       'calc(var(--text-lg) * 6.4)', // SVG user units, not a screen size
       'var(--text-lg)',
       'var(--text-md)',
       'var(--text-sm)',
     ]);
-    expect(styles).toContain('--text-sm:11px;--text-md:13px;--text-lg:19px;');
+    expect(styles).toContain('--text-sm:12px;--text-md:14px;--text-lg:20px;');
   });
 
   it('uses one font family and no uppercased labels', () => {

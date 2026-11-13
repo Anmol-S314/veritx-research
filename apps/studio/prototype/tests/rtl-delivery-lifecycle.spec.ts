@@ -34,7 +34,7 @@ for (const control of ['Switch project', 'Switch revision']) {
     const blocked = new Promise<void>(resolve => { release = resolve; });
     const requests = await bindGateway(page, () => blocked);
     await page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ }).check();
-    await page.getByRole('button', { name: 'Generate supported RTL preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Generate topology-only preview', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Download preview archive & manifest' })).toBeVisible();
     await page.getByRole('button', { name: control, exact: true }).click();
     await expect(page.getByText('Loading delivery state for the selected project revision…')).toBeVisible();
@@ -53,14 +53,14 @@ test('a late launch response cannot attach its job to a newer revision', async (
   const blocked = new Promise<void>(resolve => { release = resolve; });
   const requests = await bindGateway(page, async () => {}, () => blocked);
   await page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ }).check();
-  await page.getByRole('button', { name: 'Generate supported RTL preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate topology-only preview', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Submitting…', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Switch revision', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ })).not.toBeChecked();
   const response = page.waitForResponse(res => res.url().endsWith('/rtl-previews') && res.request().method() === 'POST');
   release();
   await response;
-  await expect(page.getByRole('button', { name: 'Generate supported RTL preview', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Generate topology-only preview', exact: true })).toBeDisabled();
   await expect(page.getByRole('link', { name: 'Download preview archive & manifest' })).toHaveCount(0);
   await expect(page.getByTestId('scope-leaks')).toHaveText('[]');
   expect(requests.filter(path => path.endsWith('/rtl-previews/job-old'))).toHaveLength(0);

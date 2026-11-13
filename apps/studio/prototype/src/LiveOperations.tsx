@@ -4,6 +4,9 @@ import { JobEvents } from './JobEvents';
 import { CandidateEvidence } from './CandidateEvidence';
 import { CONVERTIBLE_FAMILIES, candidateNames, discoverFabricDomain, fabricComparisonFamilies, fabricGrid, type FabricDomain } from './recommendation';
 import { StudyAdoption } from './StudyAdoption';
+import { ResearchRtlEvidence } from './ResearchRtlEvidence';
+import { FinalDelivery } from './FinalDelivery';
+import { RtlStack } from './RtlStack';
 import { StudyWorkbench } from './LiveStudyResults';
 import { gateway, gatewayReason, type FederatedMetricDescriptor, type GeneratedReport, type Job, type LoomOrigin, type OptimizationConstraint, type OptimizationObjective, type OptimizationView } from './gateway';
 import { useProject, type LoadedProject } from './project';
@@ -341,7 +344,12 @@ export function LiveDelivery({ project }: { project: LoadedProject }) {
       .catch(caught => { if (live) setCompare({ phase: 'error', reason: gatewayReason(caught) }); });
     return () => { live = false; };
   }, [compareId]);
-  if (!data) return <div className="view-main"><DocumentState error={error} /><Assumptions rows={[['Source', 'Revision artifact manifest from the project gateway; no nodes are shown while it is unavailable.']]} /></div>;
+  if (!data) return <div className="view-main">
+    <DocumentState error={error} />
+    <FinalDelivery project={project} />
+    <RtlStack project={project} />
+    <ResearchRtlEvidence />
+  </div>;
   const nodes = (data.nodes ?? []) as { artifact: string; label?: string; hash: string; parents?: string[]; proved_by?: string[]; revalidated_by?: string }[];
   const proved = nodes.filter(node => (node.proved_by ?? []).length > 0).length;
   const revalidatedOnly = nodes.filter(node => !(node.proved_by ?? []).length && node.revalidated_by).length;
@@ -366,7 +374,7 @@ export function LiveDelivery({ project }: { project: LoadedProject }) {
         <Button primary onClick={() => downloadJson(`${revision}-manifest.json`, data)}>Download manifest JSON</Button>
         {run.phase === 'loaded' && <Button onClick={() => downloadJson(`${run.data.detail.run_id}-evidence-index.json`, { run: run.data.detail, artifacts: run.data.artifacts, integrity: run.data.integrity })}>Download run evidence index</Button>}
       </div>
-      <p className="meta-line">This page lists what the revision produced and how each artifact is proved. It does not generate RTL: the topology-only RTL preview lives in <PageLink page="flow/run">Flow · Finalize &amp; RTL</PageLink>.</p>
+      <p className="meta-line">Revision manifest and proof chain. The current project preview and research RTL evidence follow below.</p>
     </Section>
     <Section title="Artifact graph" actions={<><Badge>{nodes.length} nodes</Badge><Badge>{proved} named proofs</Badge>{revalidatedOnly > 0 && <Badge tone="amber">{revalidatedOnly} revalidation only</Badge>}</>}>
       <div className={`table-scroll${cappedClass(nodes.length)}`}><table><thead><tr><th>Artifact</th><th>Derived from</th><th>Proof</th></tr></thead><tbody>
@@ -397,8 +405,10 @@ export function LiveDelivery({ project }: { project: LoadedProject }) {
         {Object.entries(scopes).map(([name, value]) => <tr key={name}><th className="mono">{name}</th><td><Badge tone={/NOT_|LEGACY|DECLARED/.test(value) ? 'amber' : 'green'}>{value}</Badge></td><td>{scopeMeaning[name] ?? 'No plain-language reading registered.'}</td></tr>)}
       </tbody></table></div>
     </Section>
-    <OriginVocabulary />
     <GeneratedReports />
+    <FinalDelivery project={project} />
+    <RtlStack project={project} />
+    <ResearchRtlEvidence />
     <Assumptions rows={[
       ['Source', 'Revision artifact manifest from the project gateway; revision comparison reads the same manifest for another revision.'],
       ['Scope', 'Compiled artifact references and the certificate record only. Not generated RTL, a bitstream, a timing or power result, or physical signoff.'],

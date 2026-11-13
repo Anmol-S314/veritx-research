@@ -2,11 +2,14 @@ import type { CatalogAnalysis, CatalogRow, NormalizedMetricValue } from './gatew
 
 export function rtlVerdict(support: CatalogRow['rtl_support']): { tone: 'green' | 'red' | 'amber'; text: string; detail: string } {
   if (!support) return { tone: 'amber', text: 'RTL not recorded', detail: 'This catalog job ran before RTL feasibility was recorded. Run the catalog again to predict it.' };
-  if (support.supported) return {
-    tone: 'green',
-    text: support.matches_certified_vc_count ? 'RTL preview · 2 VC' : 'RTL preview · 1 VC',
-    detail: 'Inside the one product emitter’s slice: topology-only preview RTL, not a simulation-equivalent implementation.',
-  };
+  if (support.supported) {
+    const mismatch = support.vc_count != null && support.vc_count !== support.emitted_vcs;
+    return {
+      tone: 'amber',
+      text: `Preview · ${support.emitted_vcs} VC${support.emitted_vcs === 1 ? '' : 's'}${mismatch ? ` (measured ${support.vc_count})` : ''}`,
+      detail: `Topology-only preview from the product emitter; not final RTL, simulation equivalence or hardware qualification.${mismatch ? ` The preview emits ${support.emitted_vcs} VCs while the measured design uses ${support.vc_count}; the VC scheme is not equivalent.` : ''}`,
+    };
+  }
   return { tone: 'red', text: 'No RTL preview', detail: support.reason ?? 'The product RTL emitter cannot serve this fabric.' };
 }
 

@@ -52,5 +52,5 @@ test('Analysis inspects the recorded GR00T architecture bundle without launching
     '../../../runs/gr00t-model/staticpick-v1-observation/observation.rgb24',
   ]);
   await expect(page.getByText('Imported bundle')).toBeVisible();
-  await expect(page.getByText('0 tracked evaluations')).toBeVisible();
+  await expect(page.getByText('Jobs & activity', { exact: true })).toBeVisible();
 });

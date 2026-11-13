@@ -6,6 +6,10 @@ export type SharedRouteTable = {
   artifact_id: string; routing_class: string;
   choices?: [number, number, Decision[]][]; decisions?: [number, number, Decision][];
   shape_of_partition?: Record<string, string>;
+  /** Rank/union artifacts declare partitions but no shape binding. The
+   *  partition is the hop RANK there, never the shape, so it is only used to
+   *  count how many ranks exist and to label a realized rank honestly. */
+  partition_to_vcs?: Record<string, number[]>;
   terminal_to_router: [number, number][];
 };
 export type FabricHop = { key: string; from: number; to: number; latency: number; tap: number | null; wire?: number; plane: number };

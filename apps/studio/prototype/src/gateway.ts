@@ -3,7 +3,12 @@ import { desktopGatewayBase } from './desktop';
 const BASE = desktopGatewayBase ?? (import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? '/gw';
 const API = `${BASE}/api/v1`;
 
-export type GatewayHealth = { status: string; api: string; features?: Record<string, boolean>; backends: Record<string, { state: string; binary_present: boolean }> };
+export type GatewayHealth = {
+  status: string; api: string;
+  code?: { stale?: boolean; pid?: number; loaded_at?: number; newest_source_mtime?: number; source_age_s?: number };
+  features?: Record<string, boolean>;
+  backends: Record<string, { state: string; binary_present: boolean; manifest_present?: boolean }>;
+};
 export type ProjectSummary = { project_id: string; name: string; created_at: string; updated_at: string };
 /** One registry-defined workload template. The definition is read from the
  *  catalog so the flow can show what is about to become a project. */
@@ -684,6 +689,7 @@ export type AblationRunResult = {
 export const gateway = {
   base: API,
   health: () => getJson<GatewayHealth>('/health'),
+  qualification: () => getJson<Record<string, any>>('/qualification', 20000),
   projects: () => getJson<{ projects: ProjectEntry[] }>('/projects').then(d => d.projects),
   project: (id: string) => getJson<ProjectDetail>(`/projects/${id}`),
   projectDraft: async (id: string) => {
@@ -727,7 +733,7 @@ export const gateway = {
   jobLogEventsUrl: (jobId: string) => `${API}/jobs/${encodeURIComponent(jobId)}/log/events`,
   obligations: (projectId: string) => getJson<Obligations>(`/projects/${encodeURIComponent(projectId)}/obligations`),
   compare: (a: string, b: string) => getJson<Comparison>(`/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, 30000),
-  projectJobs: (projectId: string, kind: string) => getJson<{ jobs?: Job[] }>(`/projects/${projectId}/jobs?kind=${encodeURIComponent(kind)}`),
+  projectJobs: (projectId: string, kind?: string) => getJson<{ jobs?: Job[] }>(`/projects/${projectId}/jobs${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   createProject: (name: string, workloadId?: string | null) => postJson<ProjectDetail>('/projects', { name, workload_id: workloadId ?? null }),
   createProjectFromPreset: (presetId: string, name?: string | null) => postJson<ProjectDetail>('/projects/from-preset', { preset_id: presetId, name: name ?? null }),
   renameProject: (id: string, name: string) => sendJson<ProjectDetail>('PATCH', `/projects/${id}`, { name }),
@@ -759,20 +765,30 @@ export const gateway = {
   workloads: () => getJson<{ workloads?: WorkloadCatalogEntry[] }>('/catalog/workloads', 30000).then(d => d.workloads ?? []),
   capabilities: () => getJson<Record<string, any>>('/capabilities'),
   capabilityGaps: () => getJson<Record<string, any>>('/catalog/capability-gaps'),
-  revisionArtifacts: (id: string) => getJson<Record<string, any>>(`/revisions/${encodeURIComponent(id)}/artifacts`),
+  revisionArtifacts: (id: string) => getJson<Record<string, any>>(`/revisions/${encodeURIComponent(id)}/artifacts`, 20000),
   runEvidence: (id: string) => getJson<Record<string, any>>(`/runs/${encodeURIComponent(id)}/evidence`),
   optimizationCapabilities: () => getJson<OptimizationCapabilities>('/optimization/capabilities', 30000),
   optimize: (revisionId: string, body: Record<string, unknown>) => postJson<Record<string, any>>(`/revisions/${encodeURIComponent(revisionId)}/optimize`, body),
   optimization: (id: string) => getJson<OptimizationView>(`/optimizations/${encodeURIComponent(id)}`),
   rtlSourcesArchiveUrl: () => `${API}/catalog/rtl-sources/archive`,
   revisionChipyardSourceArchiveUrl: (revisionId: string) => `${API}/revisions/${encodeURIComponent(revisionId)}/chipyard-source/archive`,
-  rtlReadiness: (id: string) => getJson<RtlReadiness>(`/projects/${encodeURIComponent(id)}/rtl-readiness`),
+  rtlReadiness: (id: string) => getJson<RtlReadiness>(`/projects/${encodeURIComponent(id)}/rtl-readiness`, 20000),
+  /** The delivery gates the backend will enforce for a run of this revision. */
+  preflight: (revisionId: string) => getJson<PreflightView>(`/revisions/${encodeURIComponent(revisionId)}/preflight`, 20000),
+  /** Native UVM collateral derived from the compiled bundle, not from UI parameters. */
+  generateUvm: (revisionId: string) => postJson<UvmCollateral>(`/revisions/${encodeURIComponent(revisionId)}/uvm`, {}, 60000),
+  /** Chipyard/Constellation source inventory the gateway can actually deliver. */
+  rtlSources: () => getJson<RtlSourcesView>('/catalog/rtl-sources', 15000),
   rtlPrototypes: () => getJson<M5RtlPrototypesResponse>('/catalog/rtl-prototypes', 15000),
+  finalImplementation: () => getJson<FinalImplementationEvidence>('/catalog/final-implementation', 20000),
   rtlPrototypeArtifactUrl: (artifact: ResearchArtifact) => `${API}${artifact.download_url}`,
   launchRtlPreview: (id: string, revisionToken: string) => postJson<Job>(`/projects/${encodeURIComponent(id)}/rtl-previews`, { expected_draft_design_hash: revisionToken, acknowledge_preview: true }),
   rtlPreview: (id: string, jobId: string) => getJson<RtlPreview>(`/projects/${encodeURIComponent(id)}/rtl-previews/${encodeURIComponent(jobId)}`),
   rtlPreviewArchiveUrl: (id: string, jobId: string) => `${API}/projects/${encodeURIComponent(id)}/rtl-previews/${encodeURIComponent(jobId)}/archive`,
-  catalogPlan: (id: string) => getJson<CatalogPlan>(`/projects/${encodeURIComponent(id)}/catalog-evaluation-plan`),
+  // Cold catalog planning can compile every registered workload; the default
+  // 8s read budget made the finalize page report a timeout while the gateway
+  // was still working. Give this read the same room as the catalog job reads.
+  catalogPlan: (id: string) => getJson<CatalogPlan>(`/projects/${encodeURIComponent(id)}/catalog-evaluation-plan`, 30000),
   launchCatalog: (id: string, revisionToken: string, topologyIds: string[]) => postJson<Job>(`/projects/${encodeURIComponent(id)}/catalog-evaluations`, { expected_draft_design_hash: revisionToken, topology_ids: topologyIds }),
   catalogEvaluation: (id: string, jobId: string) => getJson<CatalogEvaluation>(`/projects/${encodeURIComponent(id)}/catalog-evaluations/${encodeURIComponent(jobId)}`),
   selectCatalogFabric: (id: string, jobId: string, candidateId: string, revisionToken: string, acknowledge: boolean) => postJson<Record<string, any>>(`/projects/${encodeURIComponent(id)}/catalog-evaluations/${encodeURIComponent(jobId)}/candidates/${encodeURIComponent(candidateId)}/select`, { expected_draft_design_hash: revisionToken, acknowledge_incomplete_backends: acknowledge }),
@@ -807,7 +823,59 @@ export type M5RtlPrototypesResponse = {
   counts: { required_total: number; required_present: number; required_missing_or_unknown: number; optional_total: number; non_target_total: number };
   prototypes: M5RtlPrototype[]; artifacts: ResearchArtifact[];
 };
-export type RtlReadiness = { revision_id: string | null; draft_design_hash: string; final_rtl_available: boolean; final_rtl_reason: string; parameterized_source_available?: boolean; parameterized_source_blocker?: string | null; preview_available: boolean; preview_blockers: string[]; limitations: string[]; selection: CatalogSelection | null; preview_support?: CatalogRtlSupport | null; research_rtl?: M5RtlPrototype | null };
+/** Recorded composed-family (A1-A10) evidence. Keyed to a design hash, not a
+ *  selected project; a different design never inherits the verdict. */
+export type FinalFamilyEvidence = {
+  family: string; design_hash: string | null; final_implementation: boolean;
+  open_rows: string[]; scoped_out_rows: string[]; reason: string;
+  rows: { row: string; status: string; reason?: string | null }[];
+  measured: Record<string, unknown>; source: string;
+};
+export type FinalImplementationEvidence = {
+  contract_version: number; scope: string; families: FinalFamilyEvidence[];
+  errors: string[]; note?: string;
+};
+export type ComposedFamilyPreflight = {
+  feasible: boolean; flit_width_bits: number; data_width_bits: number;
+  required_flit_width_bits: number; memory_endpoints?: number;
+  blockers?: string[]; blocker: string | null; note: string;
+};
+export type RtlReadiness = { revision_id: string | null; draft_design_hash: string; final_rtl_available: boolean; final_rtl_reason: string; composed_family_preflight?: ComposedFamilyPreflight | null; parameterized_source_available?: boolean; parameterized_source_blocker?: string | null; preview_available: boolean; preview_blockers: string[]; limitations: string[]; selection: CatalogSelection | null; preview_support?: CatalogRtlSupport | null; research_rtl?: M5RtlPrototype | null };
+/** One delivery gate from `GET /revisions/{id}/preflight`. A REFUSED gate is a
+ *  backend decision, not a UI warning: it names why a run may not start. */
+export type PreflightGate = {
+  gate: string; state: string; reason?: string | null;
+  obligations_passed?: number; obligations_total?: number;
+};
+export type PreflightView = {
+  contract_version: number; revision_id: string; display_name?: string | null;
+  backend: string; backend_profile?: string | null; expected_evidence_tier?: string | null;
+  route_observation_required?: boolean; conservation_required?: boolean;
+  gates: PreflightGate[]; ready: boolean; reason?: string | null;
+};
+/** `POST /revisions/{id}/uvm` — collateral generated from the compiled bundle.
+ *  `files[i]` names the file whose body is the i-th entry below. */
+export type UvmCollateral = {
+  contract_version: number; revision_id: string;
+  files: string[]; dut_binding: string; tb_top: string; sequences: string;
+  assertions: string; coverage: string;
+  identity: Record<string, unknown>;
+  fabric: { n_nodes: number; k: number; family: string; vc_count: number;
+    routing_classes: string[]; dut_binding_scope: string; dut_payload_bits: number;
+    derived_from: string[] };
+};
+/** `GET /catalog/rtl-sources` — exactly what source the gateway can deliver. */
+export type RtlSourcesView = {
+  scope: string; available: boolean; reason?: string | null; target_count: number;
+  source_file_count: number; parameterized_core_present: boolean;
+  generation: string; simulation: string; qualification: string;
+  matches_selected_project?: boolean; final_implementation?: boolean;
+  integration_present?: boolean; integration_files?: Record<string, boolean>; repository_exporters?: string[];
+  external_source_root?: string; external_tree_present?: boolean; external_missing?: string[];
+  license_present?: boolean; missing_exporters?: string[];
+  exporters_present?: number; exporters_total?: number;
+  targets: { topology_id: string; entry_point: string; source_present: boolean }[];
+};
 export type RtlPreview = { job: Job; stale: boolean; manifest: { scope: string; final_implementation: boolean; limitations: string[]; lint: { status: string; reason?: string; warning_count?: number; clean?: boolean }; address_decode?: { status: string; module: string; entry_count: number; address_decode_hash?: string | null; endpoints?: { endpoint_id: number; router_id: number; port_id: number; agent_kind: string; agent_instance_index: number }[]; lint: { status: string; reason?: string; warning_count?: number; clean?: boolean } }; emitted_packet_width_bits: number; emitted_vcs: number } | null };
 export type CatalogSelection = { job_id: string; candidate_id: string; topology_id: string; label: string; workload_id: string; incomplete_backends_acknowledged?: boolean };
 /** The NoC controls every row of one catalog run was measured with. Two rows

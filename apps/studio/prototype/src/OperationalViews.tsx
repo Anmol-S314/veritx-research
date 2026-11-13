@@ -1,12 +1,15 @@
-import { useState, type ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { architecturePackage, localChecks } from './checks';
 import { BASE_REVISION, candidateById, criteria, event, initialState, restoreState, type Draft, type PageId } from './model';
-import { Assumptions, Badge, Button, Dialog, Empty, Field, Icon, Inspector, Notice, Outcome, PageLink, Properties, Section, downloadJson, type ViewProps } from './ui';
+import { Assumptions, Badge, Button, Dialog, Empty, Field, Icon, Inspector, Notice, Outcome, PageLink, Properties, Section, StatusDot, downloadJson, type ViewProps } from './ui';
 import { GatewayProjects } from './GatewayProjects';
 import { desktopGatewayBase } from './desktop';
+import { GATEWAY_START, gateway, type Job } from './gateway';
+import { bytes as formatBytes, stamp } from './format';
 import { LiveChecks, LiveEvidence, LiveGate } from './LiveAnalysis';
+import { JobEvents } from './JobEvents';
 import { useLoadedProject, useProject } from './project';
-import { LiveCapabilities, LiveDelivery, LiveObligations } from './LiveOperations';
+import { LiveCapabilities, LiveDelivery, LiveObligations, useGatewayDocument } from './LiveOperations';
 
 export function OperationalViews(props: ViewProps & { page: PageId }) {
   const project = useLoadedProject();
@@ -384,27 +387,137 @@ function ProjectsView({ state, setState, notify }: ViewProps) {
     </Dialog>}
   </div>;
 }
+const BACKEND_META: Record<string, { label: string; scope: string }> = {
+  BOOKSIM_STANDALONE: { label: 'BookSim standalone', scope: 'Network execution and differential parity' },
+  ASTRA2_EMBEDDED_BOOKSIM: { label: 'ASTRA-SIM 2 · embedded BookSim', scope: 'Execution graph and system makespan' },
+  RAMULATOR2_HBM3_V1: { label: 'Ramulator 2 · HBM3', scope: 'DRAM timing for declared memory demand' },
+};
+const FEATURE_LABEL: Record<string, string> = {
+  draft_preconditions: 'Draft preconditions',
+  optimization_adoption_preconditions: 'Adoption preconditions',
+  artifact_bytes: 'Artifact bytes',
+  job_events: 'Job events',
+  job_logs: 'Job logs',
+  agent_runtime: 'Agent runtime',
+};
+const valueText = (value: unknown) => typeof value === 'string' ? value : value === undefined || value === null ? '—' : JSON.stringify(value);
+/** A register value is positive only when it is not negated. `NOT_ESTABLISHED`
+ *  contains the substring `ESTABLISHED`, so a plain regex test would paint it
+ *  green. */
+const qualificationTone = (value?: string): 'green' | 'amber' => value && !/NOT|UNSUPPORTED|BLOCKED|UNKNOWN|UNMEASURED/i.test(value) && /QUALIFIED|ESTABLISHED/i.test(value) ? 'green' : 'amber';
+const jobTone = (state?: string): 'neutral' | 'green' | 'red' | 'blue' | 'amber' => !state ? 'neutral' : /COMPLETED/i.test(state) ? 'green' : /FAILED|REFUSED|CANCELLED/i.test(state) ? 'red' : /RUNNING|QUEUED|PREPARING|SUBMITTED/i.test(state) ? 'blue' : 'amber';
+
 function EnvironmentView() {
+  const { health, listPhase, listError, refreshList } = useProject();
+  const [refresh, setRefresh] = useState(0);
+  const [compact, setCompact] = useState(() => { try { return localStorage.getItem('srota-compact-tables') === '1'; } catch { return false; } });
+  const [reduced, setReduced] = useState(() => { try { return localStorage.getItem('srota-reduce-motion') === '1'; } catch { return false; } });
+  useEffect(() => { document.documentElement.classList.toggle('compact-tables', compact); try { localStorage.setItem('srota-compact-tables', compact ? '1' : '0'); } catch { /* Optional preference. */ } }, [compact]);
+  useEffect(() => { document.documentElement.classList.toggle('reduce-motion', reduced); try { localStorage.setItem('srota-reduce-motion', reduced ? '1' : '0'); } catch { /* Optional preference. */ } }, [reduced]);
+  const capabilities = useGatewayDocument(`environment:capabilities:${refresh}`, () => gateway.capabilities());
+  const qualification = useGatewayDocument(`environment:qualification:${refresh}`, () => gateway.qualification());
+  const reports = useGatewayDocument(`environment:reports:${refresh}`, () => gateway.reports());
+  const online = listPhase === 'ready' && !!health;
+  const stale = !!health?.code?.stale;
+  const connectionTone = online ? (stale ? 'amber' as const : 'green' as const) : listPhase === 'offline' ? 'red' as const : 'amber' as const;
+  const backends = Object.entries(health?.backends ?? {});
+  const present = backends.filter(([, value]) => value.binary_present);
+  const features = Object.entries(health?.features ?? {});
+  const engines = Object.entries((qualification.data?.engines ?? {}) as Record<string, { role?: string; integration?: string; numerical?: string; limitations?: string[] }>);
+  const deferred = Object.entries((qualification.data?.deferred ?? capabilities.data?.deferred ?? {}) as Record<string, unknown>);
+  const deferredByKey: Record<string, unknown> = Object.fromEntries(deferred);
+  const reportRows = reports.data?.reports ?? [];
+  const sourceAge = health?.code?.source_age_s;
+  const sourceAgeLabel = sourceAge == null ? 'Not reported' : sourceAge >= 3600 ? `${(sourceAge / 3600).toFixed(1)} h` : sourceAge >= 60 ? `${Math.round(sourceAge / 60)} min` : `${sourceAge.toFixed(1)} s`;
+  const refreshAll = () => { refreshList(); setRefresh(value => value + 1); };
   return <div className="view-layout">
     <div className="view-main">
+      <Section title="Gateway connection" actions={<><Badge tone={connectionTone}>{online ? (stale ? 'Connected · stale' : 'Connected') : listPhase === 'offline' ? 'Offline' : 'Checking'}</Badge><Button onClick={refreshAll}>Refresh</Button><Button onClick={() => downloadJson('srota-environment-diagnostics.json', { gateway: gateway.base, health, capabilities: capabilities.data, qualification: qualification.data, reports: reports.data })}><Icon name="download" />Download diagnostics</Button></>}>
+        <div className="stat-strip">
+          <div className="stat"><span>Gateway status</span><strong className="status-line"><StatusDot tone={connectionTone} pulse={online && !stale} />{health?.status ? health.status.toUpperCase() : listPhase === 'offline' ? 'OFFLINE' : 'CHECKING'}</strong><small>{gateway.base}</small></div>
+          <div className="stat"><span>API contract</span><strong>{health?.api ? `api/${health.api}` : '—'}</strong><small>Health, projects, revisions, runs, evidence</small></div>
+          <div className="stat"><span>Backends present</span><strong>{present.length} / {backends.length}</strong><small>{present.length ? present.map(([key]) => BACKEND_META[key]?.label ?? key).join(' · ') : 'No binary reported'}</small></div>
+          <div className="stat"><span>Gateway source</span><strong>{sourceAgeLabel}</strong><small>{health?.code?.stale ? 'Stale code loaded; restart the gateway' : health?.code?.pid ? `PID ${health.code.pid} · loaded source age` : 'Code age not reported'}</small></div>
+        </div>
+        {listPhase === 'offline' && <Notice tone="amber"><strong>The project gateway is not reachable.</strong> {listError} Start it with <code>{GATEWAY_START}</code> and retry.</Notice>}
+        {health?.code?.stale && <Notice tone="amber">The gateway reports that its loaded code is older than the checkout. Restart it before trusting the result below.</Notice>}
+        <p className="meta-line">Health and backend availability are host facts reported by the gateway. They do not qualify a design, approve a flow, or establish numerical fidelity.</p>
+      </Section>
+
+      <Section title="Execution backends" actions={<Badge>{present.length} of {backends.length} available</Badge>}>
+        {backends.length ? <div className="table-scroll"><table className="backend-table"><thead><tr><th>Backend</th><th>Scope</th><th>Binary</th><th>Manifest</th><th>State</th></tr></thead><tbody>
+          {backends.map(([key, value]) => <tr key={key}>
+            <th><span className="mono">{key}</span><small>{BACKEND_META[key]?.label ?? 'Unmapped gateway backend'}</small></th>
+            <td>{BACKEND_META[key]?.scope ?? 'Scope not described by this prototype'}</td>
+            <td><Badge tone={value.binary_present ? 'green' : 'red'}>{value.binary_present ? 'Present' : 'Absent'}</Badge></td>
+            <td>{value.manifest_present === undefined ? <span className="muted">Not reported</span> : <Badge tone={value.manifest_present ? 'green' : 'red'}>{value.manifest_present ? 'Present' : 'Absent'}</Badge>}</td>
+            <td><span className={value.state === 'PRESENT' ? 'status-text green' : 'status-text amber'}>{value.state}</span></td>
+          </tr>)}
+        </tbody></table></div> : <Empty title="No backend list returned">The health endpoint reports no execution backends. Nothing is substituted here.</Empty>}
+      </Section>
+
+      <Section title="Gateway features" actions={<Badge>{features.filter(([, enabled]) => enabled).length} enabled</Badge>}>
+        {features.length ? <div className="feature-grid">{features.map(([key, enabled]) => <div className="feature-cell" key={key}><StatusDot tone={enabled ? 'green' : 'neutral'} /><span>{FEATURE_LABEL[key] ?? key.replaceAll('_', ' ')}</span><Badge tone={enabled ? 'green' : 'neutral'}>{enabled ? 'On' : 'Off'}</Badge></div>)}</div> : <p className="meta-line">The gateway reports no optional feature flags.</p>}
+      </Section>
+
+      <Section title="Engine qualification" actions={<Badge>Gateway register</Badge>}>
+        {qualification.error ? (listPhase === 'offline' ? <p className="meta-line">The qualification register requires the gateway connection above.</p> : <Notice tone="red">{qualification.error}</Notice>) : !qualification.data ? <p role="status">Reading the qualification register…</p> : <>
+          {engines.length ? <div className="table-scroll"><table><thead><tr><th>Engine</th><th>Role</th><th>Integration</th><th>Numerical</th><th>Limitations</th></tr></thead><tbody>
+            {engines.map(([key, engine]) => <tr key={key}>
+              <th className="mono">{key}</th>
+              <td>{engine.role ?? '—'}</td>
+              <td><Badge tone={qualificationTone(engine.integration)}>{engine.integration ?? 'Not declared'}</Badge></td>
+              <td><Badge tone={qualificationTone(engine.numerical)}>{engine.numerical ?? 'Not declared'}</Badge></td>
+              <td>{engine.limitations?.length ? <ul className="compact-list">{engine.limitations.map(limit => <li key={limit}>{limit}</li>)}</ul> : <span className="muted">None declared</span>}</td>
+            </tr>)}
+          </tbody></table></div> : <Empty title="No engine register returned">The qualification endpoint returned no engines.</Empty>}
+          {deferred.length > 0 && <div className="deferred-grid">{deferred.map(([key, value]) => <div className="deferred-cell" key={key}><span>{key.replaceAll('_', ' ')}</span><Badge tone={/NOT_RUN|UNSUPPORTED|NOT_ESTABLISHED/i.test(valueText(value)) ? 'amber' : 'neutral'}>{valueText(value)}</Badge></div>)}</div>}
+          <p className="meta-line">The register describes the gateway's own integration and numerical evidence. It does not qualify this project, its configuration, or hardware.</p>
+        </>}
+      </Section>
+
+      <Section title="Generated reports" actions={<Badge>{reportRows.length} files</Badge>}>
+        {reports.error ? (listPhase === 'offline' ? <p className="meta-line">The report index requires the gateway connection above.</p> : <Notice tone="red">{reports.error}</Notice>) : !reports.data ? <p role="status">Reading the report index…</p> : reportRows.length ? <div className="table-scroll"><table><thead><tr><th>Report</th><th>Kind</th><th>Size</th><th>Modified</th><th /></tr></thead><tbody>
+          {reportRows.map((report: { report_id: string; title: string; kind: string; size_bytes: number; modified_at?: string; media_type?: string }) => <tr key={report.report_id}>
+            <th>{report.title}<small className="mono">{report.media_type ?? 'type not reported'}</small></th>
+            <td><Badge>{report.kind}</Badge></td>
+            <td className="numeric">{formatBytes(report.size_bytes)}</td>
+            <td className="mono">{stamp(report.modified_at)}</td>
+            <td><a className="button" href={gateway.reportUrl(report.report_id)} target="_blank" rel="noreferrer">Open<Icon name="arrow" size={13} /></a></td>
+          </tr>)}
+        </tbody></table></div> : <Empty title="No reports generated">The repository report directory is empty. Reports are files produced by earlier runs, not this page.</Empty>}
+      </Section>
+
+      <Section title="Local settings" actions={<Badge>Stored in this browser</Badge>}>
+        <label className="check-row"><input type="checkbox" checked={compact} onChange={event => setCompact(event.target.checked)} />Compact table rows</label>
+        <label className="check-row"><input type="checkbox" checked={reduced} onChange={event => setReduced(event.target.checked)} />Reduce motion</label>
+        <p className="meta-line">These preferences apply immediately and are stored locally; they do not change the gateway or the project.</p>
+      </Section>
       <Section title="Actual prototype environment">
         <Properties rows={[
           ['Frontend', 'React · separate Vite entry point'],
           ['Assets', 'Local fonts and CSS; no CDN dependency'],
           ['Persistence', 'Browser localStorage, if available'],
-          ['Execution backend', 'Not connected'],
-          ['Agent runtime / ACP', 'Not connected'],
+          ['Execution backend', online ? `Gateway-managed · ${present.length} of ${backends.length} reported binaries` : 'Not connected'],
+          ['Agent runtime / ACP', health?.features?.agent_runtime ? 'Gateway feature reported' : 'Not connected'],
           ['Remote AI', 'Not configured'],
           ['Local inference', 'Not bundled or required'],
         ]} />
       </Section>
+
       <Section title="Backend and target discovery">
         <div className="table-scroll"><table><thead><tr><th>Capability</th><th>Host availability</th><th>Integration here</th><th>Qualification</th></tr></thead><tbody>
-          {['Network simulator', 'RTL emitter / linter', 'Formal solver', 'ASIC toolchain', 'FPGA toolchain'].map(t => <tr key={t}><th>{t}</th><td>Not inspected</td><td>Not connected</td><td>Not established</td></tr>)}
+          <tr><th>Network simulator</th><td>{online ? 'Reported by gateway health' : 'Not inspected'}</td><td>{online ? 'BookSim standalone / embedded' : 'Not connected'}</td><td>Not established for this project</td></tr>
+          <tr><th>RTL emitter / linter</th><td>Preview emitter only</td><td>Flow · Finalize &amp; RTL</td><td>{valueText(deferredByKey.rtl_verification ?? 'Not established')}</td></tr>
+          <tr><th>Formal solver</th><td>Not inspected</td><td>Not connected</td><td>{valueText(deferredByKey.formal_verification ?? 'Not established')}</td></tr>
+          <tr><th>ASIC toolchain</th><td>Not inspected</td><td>Not connected</td><td>Not established</td></tr>
+          <tr><th>FPGA toolchain</th><td>Not inspected</td><td>Not connected</td><td>Not established</td></tr>
         </tbody></table></div>
       </Section>
+
       <Assumptions rows={[
-        ['Gateway', 'Configured separately; host credentials and network policy are not managed here.'],
+        ['Gateway', 'Configured separately; host credentials and network policy are not managed here. The connection chip and this page read health, capabilities, qualification and reports only.'],
+        ['Qualification', 'Engine and backend declarations are the gateway\'s own claims about its integration and numerical evidence. They do not qualify the loaded project.'],
         ['Privacy', 'No remote AI or telemetry implementation. Local asset loading is not a claim of certified air-gap isolation, encrypted storage, host firewall enforcement, or secret scrubbing.'],
         ['Downloads', 'Browser downloads contain only the selected local illustrative state.'],
         ['Import caution', 'Do not import confidential artifacts into a prototype without an appropriate policy and implementation review.'],
@@ -412,21 +525,55 @@ function EnvironmentView() {
       ]} />
     </div>
     <Inspector title="Integration boundary">
-      <h3>Manual-first local preview</h3>
+      <h3>{online ? 'Gateway-backed engineering workspace' : 'Manual-first local preview'}</h3>
+      <Properties rows={[
+        ['Gateway', online ? `${health?.status ?? 'connected'} · ${gateway.base}` : gateway.base],
+        ['Source of truth', online ? 'Gateway project, revision and run records' : 'Browser local illustrative state'],
+        ['Live reads', online ? 'Health · capabilities · qualification · reports' : 'None'],
+        ['Qualification', 'Separate from backend availability'],
+      ]} />
       <PageLink page="shared/projects">Export or recover local drafts</PageLink>
+      <PageLink page="shared/jobs">Open jobs, problems &amp; logs</PageLink>
       <PageLink page="verify/support">Inspect capability distinctions</PageLink>
     </Inspector>
   </div>;
 }
 function JobsView({ state, navigate }: ViewProps) {
-  const [tab, setTab] = useState('Jobs'); const findings = localChecks(state.draft);
+  const [tab, setTab] = useState('Jobs');
+  const [refresh, setRefresh] = useState(0);
+  const [logJobId, setLogJobId] = useState('');
+  const { listPhase, listError, project, health, refreshList } = useProject();
+  const loaded = project.phase === 'loaded' ? project.data : null;
+  const findings = localChecks(state.draft);
+  const jobsDocument = useGatewayDocument(`desktop-jobs:${loaded?.detail.project.project_id ?? 'none'}:${refresh}`, () =>
+    loaded ? gateway.projectJobs(loaded.detail.project.project_id) : Promise.resolve({ jobs: [] as Job[] }));
+  const jobs = (jobsDocument.data?.jobs ?? []) as Job[];
+  const active = jobs.filter(job => !['COMPLETED', 'FAILED', 'REFUSED', 'CANCELLED'].includes(job.state));
+  const failed = jobs.filter(job => ['FAILED', 'REFUSED', 'CANCELLED'].includes(job.state));
+  const selectedLogJob = jobs.find(job => job.job_id === logJobId) ?? active[0] ?? jobs[0] ?? null;
+  const refreshJobs = () => { refreshList(); setRefresh(value => value + 1); };
   return <div className="view-main">
     <div className="toolbar">
       <div className="segmented">{['Jobs', 'Problems', 'Logs'].map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</div>
-      <Badge>0 live backend jobs</Badge>
+      {listPhase === 'offline' ? <Badge tone="amber">Gateway unreachable</Badge>
+        : loaded ? <Badge tone={active.length ? 'blue' : 'green'}>{jobs.length} gateway job{jobs.length === 1 ? '' : 's'}{active.length ? ` · ${active.length} active` : ''}</Badge>
+          : <Badge>No project loaded</Badge>}
     </div>
     {tab === 'Jobs' ? <>
-      <Empty title="No execution backend connected">There are no live simulations, formal checks, generation workers, or cancellation controls.</Empty>
+      {listPhase === 'offline'
+        ? <Empty icon="terminal" title="No execution backend connected" action={<Button onClick={refreshJobs}>Retry gateway</Button>}>The gateway is unreachable, so no job record can be read. Local preview operations remain available below.</Empty>
+        : loaded ? <Section title="Gateway jobs" actions={<><Badge>{jobs.length} recorded</Badge><Button onClick={refreshJobs}>Refresh</Button></>}>
+          {jobsDocument.error ? <Notice tone="red">{jobsDocument.error}</Notice> : !jobsDocument.data ? <p role="status">Reading gateway jobs…</p> : jobs.length ? <div className="table-scroll"><table><thead><tr><th>Job</th><th>Kind</th><th>State</th><th>Revision</th><th>Submitted</th><th>Error</th></tr></thead><tbody>
+            {jobs.map(job => <tr key={job.job_id}>
+              <th className="mono job-id">{job.job_id}</th>
+              <td>{job.kind.replaceAll('_', ' ')}</td>
+              <td><Badge tone={jobTone(job.state)}>{job.state}</Badge></td>
+              <td className="mono">{job.revision_id ?? 'draft-scoped'}</td>
+              <td className="mono">{stamp(job.submitted_at)}</td>
+              <td>{job.error_message ?? '—'}</td>
+            </tr>)}
+          </tbody></table></div> : <Empty icon="terminal" title="No gateway jobs recorded">This project has no evaluation, catalog, compile, RTL or agent jobs in the gateway store.</Empty>}
+        </Section> : <Empty icon="folder" title="No project loaded" action={<PageLink page="shared/projects" primary>Open projects &amp; revisions</PageLink>}>Gateway jobs are scoped to a project. Load one to inspect its recorded jobs; no job list is invented for the local sample.</Empty>}
       <Section title="Actual local operations">
         <Properties rows={[
           ['Declaration check', state.checks ? `Recorded at edit ${state.checks.revision}` : 'Not run'],
@@ -434,15 +581,44 @@ function JobsView({ state, navigate }: ViewProps) {
           ['Local scope approval', state.approvedBrief ? 'Preview recorded; no jobs authorized on a backend' : 'Not recorded'],
         ]} />
       </Section>
-    </> : tab === 'Problems' ? <Section title="Current declaration findings">
-      <div className="table-scroll"><table><thead><tr><th>Finding</th><th>Outcome</th><th>Scope</th><th>Action</th></tr></thead><tbody>
-        {findings.map(f => <tr key={f.id}><th className="mono">{f.id}</th><td><Outcome value={f.outcome} /></td><td>{f.detail}</td><td><Button onClick={() => navigate(f.page)}>Inspect</Button></td></tr>)}
-      </tbody></table></div>
-    </Section> : <Section title="Local activity log" actions={<Button onClick={() => downloadJson('srota-local-activity.json', { illustrative: true, events: state.events })}><Icon name="download" />Export activity</Button>}>
-      <ol className="activity-list">{state.events.map((e, i) => <li key={`${i}-${e}`}>{e}</li>)}</ol>
-    </Section>}
+    </> : tab === 'Problems' ? <>
+      <Section title="Gateway health" actions={<Badge tone={listPhase === 'offline' ? 'red' : health?.code?.stale ? 'amber' : 'green'}>{listPhase === 'offline' ? 'Offline' : health?.code?.stale ? 'Stale code' : 'Connected'}</Badge>}>
+        <Properties rows={[
+          ['Connection', listPhase === 'offline' ? 'Gateway unreachable' : listPhase === 'ready' ? 'Gateway reachable' : 'Checking'],
+          ['Gateway status', health?.status ?? 'Not reported'],
+          ['Loaded source', health?.code?.stale ? 'Older than the checkout; restart before trusting results' : health ? 'Current' : 'Not reported'],
+          ['Absent backends', health ? Object.entries(health.backends).filter(([, value]) => !value.binary_present).map(([key]) => key).join(', ') || 'None' : 'Not reported'],
+        ]} />
+        {listPhase === 'offline' && <Notice tone="red">{listError} Start the gateway with <code>{GATEWAY_START}</code>.</Notice>}
+      </Section>
+      <Section title="Local declaration findings">
+        <div className="table-scroll"><table><thead><tr><th>Finding</th><th>Outcome</th><th>Scope</th><th>Action</th></tr></thead><tbody>
+          {findings.map(f => <tr key={f.id}><th className="mono">{f.id}</th><td><Outcome value={f.outcome} /></td><td>{f.detail}</td><td><Button onClick={() => navigate(f.page)}>Inspect</Button></td></tr>)}
+        </tbody></table></div>
+      </Section>
+      {loaded && failed.length > 0 && <Section title="Gateway job failures" actions={<Badge tone="red">{failed.length}</Badge>}>
+        <div className="table-scroll"><table><thead><tr><th>Job</th><th>Kind</th><th>State</th><th>Reason</th></tr></thead><tbody>
+          {failed.map(job => <tr key={job.job_id}><th className="mono job-id">{job.job_id}</th><td>{job.kind.replaceAll('_', ' ')}</td><td><Badge tone={jobTone(job.state)}>{job.state}</Badge></td><td>{job.error_message ?? 'No reason reported'}</td></tr>)}
+        </tbody></table></div>
+      </Section>}
+    </> : <>
+      {loaded ? (jobs.length ? <>
+        <Section title="Gateway job logs" actions={<Badge>{jobs.length} job{jobs.length === 1 ? '' : 's'}</Badge>}>
+          <div className="toolbar toolbar-start">
+            <Field label="Gateway job"><select value={selectedLogJob?.job_id ?? ''} onChange={event => setLogJobId(event.target.value)}>{jobs.map(job => <option key={job.job_id} value={job.job_id}>{job.job_id.slice(0, 12)} · {job.kind.replaceAll('_', ' ')} · {job.state}</option>)}</select></Field>
+            <Button onClick={refreshJobs}>Refresh jobs</Button>
+          </div>
+          {selectedLogJob && <JobEvents jobId={selectedLogJob.job_id} state={selectedLogJob.state} defaultOpen />}
+        </Section>
+      </> : <Notice tone="amber">This project has no gateway job, so there is no worker log to stream.</Notice>)
+        : <Notice tone="amber">Load a project from <a href="#/shared/projects">Projects &amp; revisions</a> to stream gateway job events and worker logs.</Notice>}
+      <Section title="Local prototype activity" actions={<Button onClick={() => downloadJson('srota-local-activity.json', { illustrative: true, events: state.events })}><Icon name="download" />Export activity</Button>}>
+        <p className="meta-line">Prototype events from this browser session, not gateway worker logs.</p>
+        <ol className="activity-list">{state.events.map((e, i) => <li key={`${i}-${e}`}>{e}</li>)}</ol>
+      </Section>
+    </>}
     <Assumptions rows={[
-      ['Backend', 'No execution backend is connected.'],
+      ['Backend', loaded ? `Gateway jobs are read from the project record; health currently reports ${health?.status ?? 'an unread state'}. Job state is the gateway's own state, not a percentage or client timer.` : listPhase === 'offline' ? 'The gateway is unreachable; no backend job is shown or inferred.' : 'No project is loaded; no backend job is shown or inferred.'],
       ['Fixtures', 'Captured candidate fixtures are historical illustrative objects, not running jobs.'],
       ['Activity log', 'Local prototype events, not backend logs.'],
     ]} />

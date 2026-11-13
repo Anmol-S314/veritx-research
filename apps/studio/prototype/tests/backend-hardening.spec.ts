@@ -211,9 +211,6 @@ test('live capability, obligation, delivery and bounded study panels use backend
   await go(page, 'verify/support'); await expect(page.getByText('TEST_BACKEND', { exact: true })).toBeVisible();
   await expect(page.getByText('power_isolation', { exact: true })).toBeVisible();
   await go(page, 'verify/obligations'); await expect(page.getByText('OBL-TXN-01', { exact: true })).toBeVisible();
-  const obligationAssumptions = page.locator('.view-main details.assumptions').last();
-  await obligationAssumptions.locator('> summary').click();
-  await expect(obligationAssumptions.getByText('Design obligations, not capability gaps.', { exact: true })).toBeVisible();
   await go(page, 'deliver/readiness'); await expect(page.getByText('Compiled topology', { exact: false }).first()).toBeVisible();
   await go(page, 'explore/brief'); await openStudy(page);
   await page.getByRole('checkbox', { name: /Approve this revision/ }).check();
@@ -340,7 +337,7 @@ test('typed-id project deletion is available from the project list', async ({ pa
     return route.fulfill({ json: { projects: [{ project: { project_id: 'b', name: 'Project b', updated_at: '2026-01-01', created_at: '2026-01-01' }, active_revision_id: 'b-r01', active_revision: { revision_id: 'b-r01', design: {} }, runs: [] }] } });
   });
   await load(page, 'a');
-  await page.getByRole('button', { name: 'Delete project…', exact: true }).click();
+  await page.getByRole('row').filter({ hasText: 'Project a' }).getByRole('button', { name: 'Delete…', exact: true }).click();
   await page.getByLabel('Delete confirmation').fill('a');
   await page.getByRole('button', { name: 'Delete permanently', exact: true }).click();
   await expect(page.getByRole('row').filter({ hasText: 'Project a' })).toHaveCount(0);

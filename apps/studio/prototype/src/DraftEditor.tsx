@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { gateway, gatewayReason } from './gateway';
 import type { LoadedProject } from './project';
 import { useProject } from './project';
-import { Badge, Button, Notice, Properties } from './ui';
+import { ActionBar, Badge, Button, Notice } from './ui';
 import { FabricCanvas, parseFabricLinks, toggleFabricLink } from './FabricCanvas';
 import { familyStatus, statusTone, useTopologyFamilies } from './capabilities';
 import type { IntentSaveState } from './intent';
@@ -11,7 +11,7 @@ import { exactWireValue, parseAddressBigInt } from './agentMap';
 import './draftWorkspace.css';
 
 type Draft = Record<string, any>;
-type DraftSectionId = 'topology' | 'physical' | 'srota' | 'router';
+export type DraftSectionId = 'topology' | 'physical' | 'srota' | 'router';
 
 
 const FAMILIES: Record<string, { fields: string[]; enums?: Record<string, string[]>; defaults?: Record<string, any>; custom?: boolean }> = {
@@ -102,7 +102,7 @@ const textRow = (label: string, value: string, onChange: (next: string) => void)
   <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} /></label>
 );
 
-export function DraftEditor({ project, onDirty, embedded = false, onSaveState, tuning = false, onCompiled, onContinue }: {
+export function DraftEditor({ project, onDirty, embedded = false, onSaveState, tuning = false, onCompiled, onContinue, openSection }: {
   project: LoadedProject;
   onDirty?: (dirty: boolean) => void;
   embedded?: boolean;
@@ -110,6 +110,8 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
   tuning?: boolean;
   onCompiled?: () => void;
   onContinue?: () => void;
+  /** Lets a host surface jump to a section; `n` makes repeat requests for the same section fire again. */
+  openSection?: { id: DraftSectionId; n: number };
 }) {
   const { reload } = useProject();
   const draft = useMemo(() => (project.request as Draft | null) ?? null, [project.request]);
@@ -210,6 +212,7 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
 
   const canValidate = topology.kind === 'explicit' || !!FAMILIES[topology.kind as string];
   const [section, setSection] = useState<DraftSectionId>('topology');
+  useEffect(() => { if (openSection) setSection(openSection.id); }, [openSection]);
   const sectionPane = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   useEffect(() => {
@@ -376,11 +379,13 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
 
   return <div className={`draft-panel${embedded ? ' embedded' : ''}${tuning ? ' tuning' : ''}`} onChange={() => { setCanonical(null); setPreview(null); setTouched(true); }}>
     <fieldset className="draft-controls" disabled={busy !== null}>
-    {!tuning && <div className="toolbar" style={{ marginBottom: 10 }}>
-      <span className="muted">{canonical ? (dirty || seeded ? 'Validated; review and save' : 'Validated; nothing to save') : 'Validate the fabric before saving'}{embedded ? ' · save in the Intent bar' : ' · compile in step 3'}</span>
-      <Button disabled={busy !== null || !canValidate} title={canValidate ? undefined : 'Choose an authorable topology family first'} onClick={previewTopology}>{busy === 'preview' ? 'Validating…' : 'Validate topology'}</Button>
-      {!embedded && <Button primary disabled={busy !== null || !canonical || !canValidate} title={!canValidate ? 'Choose an authorable topology family first' : canonical ? undefined : 'Validate the fabric first'} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save draft'}</Button>}
-    </div>}
+    {!tuning && <>
+      {preview && <Notice tone="blue"><strong>Topology accepted</strong> by the gateway's canonicalizer.</Notice>}
+      <div className="toolbar">
+        <Button disabled={busy !== null || !canValidate} title={canValidate ? undefined : 'Choose an authorable topology family first'} onClick={previewTopology}>{busy === 'preview' ? 'Validating…' : 'Validate topology'}</Button>
+        {!embedded && <Button primary disabled={busy !== null || !canonical || !canValidate} title={!canValidate ? 'Choose an authorable topology family first' : canonical ? undefined : 'Validate the fabric first'} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save draft'}</Button>}
+      </div>
+    </>}
 
     {legacy && <Notice tone="blue"><strong>Schema v{draft.schema_version ?? 2} draft:</strong> {project.topology
       ? <>no fabric block is stored; the form is seeded from compiled revision <span className="mono">{project.detail.active_revision_id}</span> ({topology.kind}).</>
@@ -432,14 +437,13 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
           {numberField('process_node_nm', physical.process_node_nm, value => setPhysical(p => ({ ...p, process_node_nm: value })), undefined, false, revealSection)}
         </div>}
         {section === 'srota' && topology.kind === 'srota' && <>
-          <div className="section-heading"><h2>Srota intent</h2><Badge tone="blue">typed fabric</Badge></div>
           <div className="form-grid">
             {numberField('side_length', topology.side_length, value => setTopology(t => ({ ...t, side_length: value })), 'Router grid side k (k × k)', false, revealSection)}
             {numberField('concentration', topology.concentration, value => setTopology(t => ({ ...t, concentration: value })), 'Endpoints per router; minimum 1', false, revealSection)}
             {numberField('drop_latency', topology.drop_latency, value => setTopology(t => ({ ...t, drop_latency: value })), 'Cycles', false, revealSection)}
             {numberField('sidebuf_watermark', topology.sidebuf_watermark, value => setTopology(t => ({ ...t, sidebuf_watermark: value })), 'Flits', false, revealSection)}
-            {numberField('tel_period', topology.tel_period, value => setTopology(t => ({ ...t, tel_period: value })), 'Telemetry window (cycles)', false, revealSection)}
-            {numberField('tel_latency', topology.tel_latency, value => setTopology(t => ({ ...t, tel_latency: value })), 'Telemetry staleness (cycles)', false, revealSection)}
+            {numberField('tel_period', topology.tel_period, value => setTopology(t => ({ ...t, tel_period: value })), undefined, false, revealSection)}
+            {numberField('tel_latency', topology.tel_latency, value => setTopology(t => ({ ...t, tel_latency: value })), undefined, false, revealSection)}
           </div>
           <div className="dimension-row"><span>Express layer and router</span><div className="actions">
             <label className="check-chip"><input type="checkbox" checked={!!topology.mecs_row} onChange={e => setTopology(t => ({ ...t, mecs_row: e.target.checked }))} />Row MECS</label>
@@ -491,13 +495,11 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
     </div>
 
     {!tuning && <p className="probe-line">
-      <Badge tone={derivedVc ? 'blue' : 'neutral'}>{derivedVc ? `${derivedVc} VC${derivedVc === 1 ? '' : 's'} derived` : 'VC count not derived yet'}</Badge>
-      <span className="muted">VC count and deadlock rules are compiler-derived; recompile after changes.</span>
-    </p>}
-
-    {!tuning && selectedFamily && <p className="probe-line">
-      <Badge tone={statusTone(selectedFamily.status)}>{selectedFamily.status}</Badge>
-      {selectedFamily.status !== 'READY' && <span className="muted">Stopped at {selectedFamily.stopped_at ?? 'an undeclared stage'}. {selectedFamily.reason ?? ''}</span>}
+      <Badge tone={derivedVc ? 'blue' : 'neutral'} title="VC count and deadlock rules are compiler-derived from traffic-class dependencies.">{derivedVc ? `${derivedVc} VC${derivedVc === 1 ? '' : 's'} derived` : 'VC count not derived yet'}</Badge>
+      {selectedFamily && selectedFamily.status !== 'READY' && <>
+        <Badge tone={statusTone(selectedFamily.status)}>{selectedFamily.status}</Badge>
+        <span className="muted">Stopped at {selectedFamily.stopped_at ?? 'an undeclared stage'}. {selectedFamily.reason ?? ''}</span>
+      </>}
     </p>}
 
     {isExplicit && <div className="section"><div className="section-heading"><h2>Explicit topology graph</h2></div>
@@ -511,18 +513,6 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
       <FabricCanvas nodes={canvasCount} links={canvasLinks} onToggleLink={canvasToggle} />
       <label className="field"><span>Links (src dst per line)</span><textarea aria-label="explicit graph links" className="code-preview" rows={6} spellCheck={false} value={graph.links} onChange={e => setGraph(g => ({ ...g, links: e.target.value }))} /></label>
     </div>}
-
-    {familyProbe.phase === 'ready' && familyProbe.families.length > 0 && <details className="probe-table">
-      <summary><strong>Backend topology families</strong> <span className="muted">· {familyProbe.families.length} probed by GET /api/v1/loom/capabilities</span></summary>
-      <div className="table-scroll capped"><table><thead><tr><th>Family</th><th>Status</th><th>Stopped at</th><th>Probe reason</th></tr></thead><tbody>
-        {familyProbe.families.map(row => <tr key={row.family}>
-          <th className="mono">{row.family}</th>
-          <td><Badge tone={statusTone(row.status)}>{row.status}</Badge></td>
-          <td>{row.stopped_at ?? '—'}</td>
-          <td className="probe-reason">{row.reason ?? '—'}</td>
-        </tr>)}
-      </tbody></table></div>
-    </details>}
 
     {!tuning && <details open>
     <summary>Endpoint agents, address ranges & traffic dependencies</summary>
@@ -550,7 +540,7 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
     </div>
 
     <h3>Address ranges · {ranges.length}</h3>
-    <div className="table-scroll"><table><thead><tr><th>Name</th><th>Base (decimal or 0x hex)</th><th>Size (bytes)</th><th>Target agent index</th><th>Actions</th></tr></thead><tbody>
+    {ranges.length > 0 && <div className="table-scroll"><table><thead><tr><th>Name</th><th>Base (decimal or 0x hex)</th><th>Size (bytes)</th><th>Target agent index</th><th>Actions</th></tr></thead><tbody>
       {ranges.map((range, index) => <tr key={index}>
         <th><input aria-label={`address range ${index + 1} name`} value={range.name} onChange={e => setRanges(list => list.map((r, i) => i === index ? { ...r, name: e.target.value } : r))} /></th>
         <td><input aria-label={`address range ${index + 1} base`} value={range.base} onChange={e => setRanges(list => list.map((r, i) => i === index ? { ...r, base: e.target.value } : r))} /></td>
@@ -558,36 +548,28 @@ export function DraftEditor({ project, onDirty, embedded = false, onSaveState, t
         <td><input aria-label={`address range ${index + 1} target`} value={range.target} onChange={e => setRanges(list => list.map((r, i) => i === index ? { ...r, target: e.target.value } : r))} /></td>
         <td><Button onClick={() => { invalidate(); setRanges(list => list.filter((_, i) => i !== index)); }}>Remove</Button></td>
       </tr>)}
-    </tbody></table></div>
+    </tbody></table></div>}
     <div className="toolbar"><Button onClick={() => { invalidate(); setRanges(list => [...list, { name: '', base: '', size: '', target: '0' }]); }}>Add address range</Button></div>
 
     <h3>Traffic-class dependencies · {dependencies.length}</h3>
-    <div className="table-scroll"><table><thead><tr><th>Source traffic class</th><th>Target traffic class</th><th>Kind</th><th>Actions</th></tr></thead><tbody>
+    {dependencies.length > 0 && <div className="table-scroll"><table><thead><tr><th>Source traffic class</th><th>Target traffic class</th><th>Kind</th><th>Actions</th></tr></thead><tbody>
       {dependencies.map((dependency, index) => <tr key={index}>
         <th><input aria-label={`dependency ${index + 1} source`} value={dependency.source} onChange={e => setDependencies(list => list.map((d, i) => i === index ? { ...d, source: e.target.value } : d))} /></th>
         <td><input aria-label={`dependency ${index + 1} target`} value={dependency.target} onChange={e => setDependencies(list => list.map((d, i) => i === index ? { ...d, target: e.target.value } : d))} /></td>
         <td><select aria-label={`dependency ${index + 1} kind`} value={dependency.kind} onChange={e => setDependencies(list => list.map((d, i) => i === index ? { ...d, kind: e.target.value } : d))}>{DEP_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}</select></td>
         <td><Button onClick={() => { invalidate(); setDependencies(list => list.filter((_, i) => i !== index)); }}>Remove</Button></td>
       </tr>)}
-    </tbody></table></div>
+    </tbody></table></div>}
     <div className="toolbar"><Button onClick={() => { invalidate(); setDependencies(list => [...list, { source: '', target: '', kind: 'blocking' }]); }}>Add dependency</Button></div>
     </details>}
     </fieldset>
-    {preview && <Notice tone="blue"><strong>Topology accepted</strong> by the gateway's canonicalizer.</Notice>}
-    {tuning && <div className="draft-save-bar">
-      <div className="draft-save-status">
-        <Badge tone={ready ? 'green' : 'amber'}>{ready ? 'Revision compiled' : dirty ? 'Unsaved changes' : 'Needs compile'}</Badge>
-        <Badge tone={derivedVc ? 'blue' : 'neutral'}>{derivedVc ? `${derivedVc} VC${derivedVc === 1 ? '' : 's'} derived` : 'VCs not derived'}</Badge>
-        {selectedFamily && <Badge tone={statusTone(selectedFamily.status)}>{selectedFamily.status}</Badge>}
-        <small>{ready ? 'Next can validate the compiled revision.' : canValidate ? 'Save the form, then compile it before final validation.' : 'This topology family is not authorable in the form.'}</small>
-        {error && <span className="error-text">{error}</span>}
-      </div>
-      <div className="draft-save-actions">
-        <Button primary={!ready} disabled={busy !== null || !canValidate || ready} onClick={saveAndCompile}>{busy === 'preview' ? 'Validating…' : busy === 'save' ? 'Saving…' : busy === 'compile' ? 'Compiling…' : 'Save & compile'}</Button>
-        <Button primary={ready} disabled={!ready} onClick={onContinue}>Next · Final validation & RTL</Button>
-      </div>
-    </div>}
+    {tuning && <ActionBar className="draft-save-bar" sticky={false} status={<>
+      <Badge tone={ready ? 'green' : 'amber'}>{ready ? 'Revision compiled' : dirty ? 'Unsaved changes' : 'Needs compile'}</Badge>
+      {error && <span className="error-text">{error}</span>}
+    </>}>
+      <Button primary={!ready} disabled={busy !== null || !canValidate || ready} onClick={saveAndCompile}>{busy === 'preview' ? 'Validating…' : busy === 'save' ? 'Saving…' : busy === 'compile' ? 'Compiling…' : 'Save & compile'}</Button>
+      <Button primary={ready} disabled={!ready} onClick={onContinue}>Next · Final validation &amp; RTL</Button>
+    </ActionBar>}
     {!embedded && error && <Notice tone="red">{error}</Notice>}
-    {!tuning && <Properties rows={[[ 'Save', 'PUT /api/v1/projects/{id}/draft' ], ['Validate', 'POST /api/v1/projects/{id}/topology-preview' ]]} />}
   </div>;
 }

@@ -86,18 +86,16 @@ test('workload -> full catalog -> explicit choice -> full parameter editor -> fi
   const state = await fixture(page);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await open(page, 'tune');
-  await expect(page.getByRole('tablist', { name: 'Workload intent sections' }).getByRole('tab')).toHaveText(['Workload', 'Requirements']);
+  await expect(page.getByRole('tablist', { name: 'Intent sections' }).getByRole('tab')).toHaveText(['Workload', 'Requirements']);
   await page.getByLabel('Model name').fill('my custom workload');
-  const proceed = page.getByRole('button', { name: 'Next · Generate traffic & evaluate catalog', exact: true });
+  const proceed = page.getByRole('button', { name: 'Next · Evaluate catalog', exact: true });
   await expect(proceed).toBeDisabled();
   await page.getByRole('button', { name: 'Save workload intent', exact: true }).click();
   await expect(proceed).toBeEnabled(); await proceed.click();
-  await expect(page.getByRole('heading', { name: 'Choose fabrics to evaluate', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evaluation setup', exact: true })).toBeVisible();
   for (const key of keys) await expect(page.getByRole('checkbox', { name: key === 'mesh' ? 'Mesh' : key, exact: true })).toBeChecked();
   const launch = page.getByRole('button', { name: 'Generate trace & run catalog', exact: true });
-  await expect(launch).toBeDisabled();
-  await expect(page.getByText('No fabric is ranked yet.', { exact: false })).toBeVisible();
-  await page.getByRole('checkbox', { name: 'Generate traffic from this saved workload and run BookSim + ASTRA-SIM for the selected fabrics.', exact: true }).check();
+  await expect(launch).toBeEnabled();
   await launch.click();
   await expect(page.getByRole('heading', { name: 'Recommended fabrics', exact: true })).toHaveCount(0);
   await expect(page.getByRole('group', { name: 'Recommended fabrics', exact: true })).toBeVisible();
@@ -109,10 +107,6 @@ test('workload -> full catalog -> explicit choice -> full parameter editor -> fi
   await expect(summary.getByText('Selectable', { exact: true })).toBeVisible();
   const setup = page.locator('.catalog-setup');
   await expect(setup).not.toHaveAttribute('open', '');
-  await expect(page.getByRole('heading', { name: 'Deeper analysis', exact: true })).toHaveCount(0);
-  await page.locator('summary').filter({ hasText: /^Related analysis & downloads$/ }).click();
-  await expect(page.getByRole('link', { name: 'Analysis · Curves & Pareto', exact: true })).toHaveAttribute('href', '#/analysis/curves');
-  await expect(page.getByRole('link', { name: 'Flow · Finalize & RTL', exact: true })).toHaveAttribute('href', '#/flow/run');
   expect(state.writes.find(write => write.path.endsWith('/catalog-evaluations'))?.body.topology_ids).toEqual(keys);
   await expect(page).toHaveURL(/#\/flow\/search$/);
   await expect(page.getByRole('link', { name: 'Compare results & choose fabric', exact: true })).toHaveCount(0);
@@ -122,11 +116,12 @@ test('workload -> full catalog -> explicit choice -> full parameter editor -> fi
   await expect(page.getByRole('button', { name: /^Network\b/ })).toContainText('No decisive fabric');
   await page.getByRole('button', { name: /^Balanced\b/ }).click();
   await page.getByRole('button', { name: 'Choose Mesh', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Selected fabric · Mesh', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Parameter refinement · Mesh', exact: true })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Refinement method' })).toBeVisible();
-  await expect(page.getByText('Network baseline', { exact: true })).toBeVisible();
-  await expect(page.getByText('System baseline', { exact: true })).toBeVisible();
-  await expect(page.locator('.draft-save-bar')).toHaveCSS('position', 'sticky');
+  const baseline = page.locator('.flow-baseline');
+  await expect(baseline.getByText('Network', { exact: true })).toBeVisible();
+  await expect(baseline.getByText('System', { exact: true })).toBeVisible();
+  await expect(page.locator('.draft-save-bar')).toHaveCSS('position', 'static');
   await page.getByRole('tab', { name: 'Topology & sizing', exact: true }).click();
   await expect(page.getByLabel('Topology family')).toBeDisabled();
   await page.getByRole('tab', { name: 'Router & pipeline', exact: true }).click();
@@ -142,11 +137,8 @@ test('workload -> full catalog -> explicit choice -> full parameter editor -> fi
   const stored = state.writes.filter(write => write.method === 'PUT').at(-1)!;
   expect(state.writes.find(write => write.path.endsWith('/compile'))?.body.expected_draft_design_hash).not.toBe(stored.body.expected_draft_design_hash);
   await next(page).click();
-  await expect(page.getByRole('heading', { name: 'Final fabric evaluation', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Run a new evaluation on this revision', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Launch 2 analyses', exact: true })).toBeDisabled();
-  await expect(page.getByText('Final RTL unavailable.', { exact: true })).toBeVisible();
-  await page.getByText('Why / preview limits').click();
-  await expect(page.getByText(/General router RTL realization is not connected\./)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -154,7 +146,7 @@ test('old choose-fabric links open the merged catalog step', async ({ page }) =>
   await fixture(page);
   await open(page, 'compare');
   await expect(page.getByRole('heading', { name: 'Evaluate & choose fabric', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Choose fabrics to evaluate', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evaluation setup', exact: true })).toBeVisible();
   const navigation = page.getByRole('navigation', { name: 'Flow views' });
   await expect(navigation.getByRole('link')).toHaveCount(5);
   await expect(navigation.locator('[aria-current="page"]')).toHaveAttribute('href', '#/flow/search');
@@ -166,6 +158,7 @@ test('compact comparison and adjacent inspector expose measurements, configurati
   await fixture(page);
   await page.addInitScript(() => sessionStorage.setItem('srota-catalog:p-flow', 'job-catalog'));
   await open(page, 'search');
+  await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
   const table = page.locator('table.catalog-results-table');
   const review = page.locator('.catalog-inspector');
   await expect(page.locator('.catalog-review')).toHaveCount(0);
@@ -195,10 +188,10 @@ test('compact comparison and adjacent inspector expose measurements, configurati
   await expect(review.getByRole('tab')).toHaveText(['Measurements', 'Configuration', 'Files (3)']);
   await expect(review.getByRole('tab', { name: 'Measurements', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(review.locator('details')).toHaveCount(0);
-  for (const [scope, metric, value] of [['mesh_network', 'flits injected', '10 flits'], ['mesh_system', 'completion cycles', '50 cycles']]) {
-    const metrics = review.getByRole('table').filter({ has: page.getByRole('columnheader', { name: scope, exact: true }) });
-    await expect(metrics).toBeVisible();
-    await expect(metrics.getByRole('row').filter({ has: page.getByRole('rowheader', { name: metric, exact: true }) }).locator('th, td')).toHaveText([metric, value]);
+  for (const [scope, metric, value] of [['BookSim · network', 'flits injected', '10'], ['ASTRA-SIM · system', 'completion cycles', '50']]) {
+    const region = review.getByRole('region', { name: scope, exact: true });
+    await expect(region).toBeVisible();
+    await expect(region.locator('.catalog-metric-row').filter({ hasText: metric })).toContainText(value);
   }
   const comparison = await page.locator('.catalog-comparison').boundingBox();
   const inspector = await review.boundingBox();
@@ -206,8 +199,7 @@ test('compact comparison and adjacent inspector expose measurements, configurati
   expect(inspector!.x).toBeGreaterThanOrEqual(comparison!.x + comparison!.width - 1);
   expect(Math.abs(inspector!.y - comparison!.y)).toBeLessThan(2);
   await review.getByRole('tab', { name: 'Configuration', exact: true }).click();
-  await expect(review.locator('pre').filter({ hasText: '"kind": "mesh"' })).toBeVisible();
-  await expect(review.getByRole('heading', { name: 'Recorded controls & provenance', exact: true })).toBeVisible();
+  await expect(review.getByRole('heading', { name: 'Measured configuration', exact: true })).toBeVisible();
   await expect(review.getByRole('heading', { name: 'RTL preview limits', exact: true })).toBeVisible();
   await review.getByRole('tab', { name: 'Files (3)', exact: true }).click();
   await expect(review.getByRole('link')).toHaveCount(3);
@@ -248,6 +240,7 @@ for (const width of [1280, 760]) test(`catalog and inspector fit a ${width}px vi
   await fixture(page);
   await page.addInitScript(() => sessionStorage.setItem('srota-catalog:p-flow', 'job-catalog'));
   await open(page, 'search');
+  await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
   await page.locator('.catalog-results-table').getByRole('row').filter({ has: page.getByRole('rowheader', { name: /^Mesh\b/ }) }).getByRole('button', { name: /^Inspect/, exact: false }).click();
   await expect(page.locator('.catalog-inspector').getByRole('heading', { name: 'Mesh', exact: true })).toBeVisible();
   for (const selector of ['.catalog-workbench', '.catalog-comparison', '.catalog-inspector']) {
@@ -263,6 +256,7 @@ test('inspecting another fabric does not change the chosen fabric', async ({ pag
   const state = await fixture(page, { selected: true });
   await page.addInitScript(() => sessionStorage.setItem('srota-catalog:p-flow', 'job-catalog'));
   await open(page, 'search');
+  await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
   const table = page.locator('.catalog-results-table');
   const mesh = table.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /^Mesh\b/ }) });
   await mesh.getByRole('button', { name: /^Inspect/, exact: false }).click();
@@ -281,6 +275,7 @@ test('incomplete coverage must be acknowledged separately for each reviewed fabr
   const state = await fixture(page, { requiresAck: true });
   await page.addInitScript(() => sessionStorage.setItem('srota-catalog:p-flow', 'job-catalog'));
   await open(page, 'search');
+  await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
   const rows = page.getByRole('row');
   const review = (name: string) => rows.filter({ has: page.getByRole('rowheader', { name: new RegExp(`^${name}\\b`) }) }).getByRole('button', { name: /^Inspect/, exact: false });
   await review('Mesh').click();
@@ -302,6 +297,7 @@ for (const scenario of ['unselectable', 'stale', 'selectionConflict'] as const) 
     const state = await fixture(page, { [scenario]: true });
     await page.addInitScript(() => sessionStorage.setItem('srota-catalog:p-flow', 'job-catalog'));
     await open(page, 'search');
+    await page.getByRole('button', { name: 'All fabrics', exact: true }).click();
     await page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /^Mesh\b/ }) }).getByRole('button', { name: /^Inspect/, exact: false }).click();
     const choose = page.getByRole('button', { name: 'Choose Mesh', exact: true });
     if (scenario === 'selectionConflict') {
@@ -369,7 +365,7 @@ test('switching to AI cannot silently discard unsaved manual parameters', async 
   await page.getByRole('button', { name: 'AI-assisted refinement', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Model endpoint', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Propose & evaluate parameter changes', exact: true })).toBeDisabled();
-  await expect(page.locator('details.assumptions')).toHaveCount(1);
+  await expect(page.locator('details.assumptions')).toHaveCount(0);
 });
 
 for (const family of ['ring_native', 'qtree_native', 'tree4_native', 'fly_native', 'gec']) test(`${family} retains editable router controls after selection`, async ({ page }) => {
@@ -388,15 +384,12 @@ for (const family of ['ring_native', 'qtree_native', 'tree4_native', 'fly_native
 });
 
 test('a lint pass with warnings is never presented as clean RTL', async ({ page }) => {
-  await fixture(page, { selected: true, previewAvailable: true }); await open(page, 'run');
-  await page.getByRole('checkbox', { name: /^Generate limited topology-only RTL/ }).check();
-  await page.getByRole('button', { name: 'Generate supported RTL preview', exact: true }).click();
+  await fixture(page, { selected: true, previewAvailable: true }); await page.goto('/#/deliver/readiness');
+  await page.getByRole('checkbox', { name: /Generate limited topology-only RTL/ }).check();
+  await page.getByRole('button', { name: 'Generate topology-only preview', exact: true }).click();
   await expect(page.getByText('Verilator lint · PASS', { exact: true })).toBeVisible();
   await expect(page.getByText(/clean/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Download preview archive & manifest', exact: true })).toHaveAttribute('download', '');
-  await expect(page.getByText('Final RTL unavailable.', { exact: true })).toBeVisible();
-  await page.getByText('Why / preview limits').click();
-  await expect(page.getByText(/General router RTL realization is not connected\./)).toBeVisible();
 });
 
 test('a missing project explains the required starting point', async ({ page }) => {

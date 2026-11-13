@@ -148,6 +148,9 @@ export function CycleBudget({ project, run }: { project: LoadedProject; run: Loa
 
   const longest = sampled.longest;
   const longestTotals = longest ? packetGroupTotals(longest) : null;
+  const showWork = series.phase === 'loading' || series.phase === 'error' || !!work;
+  const showPacket = observed.phase === 'loading' || observed.phase === 'error' || !!longest;
+  const missing = [!showWork ? 'sampled work counters' : '', !showPacket ? 'watched packet budget' : ''].filter(Boolean);
   const packetSegments = longestTotals ? GROUPS.map(group => ({
     key: group, label: GROUP_LABELS[group], value: longestTotals[group], className: GROUP_CLASS[group],
   })) : [];
@@ -162,7 +165,7 @@ export function CycleBudget({ project, run }: { project: LoadedProject; run: Loa
     {clock.completion !== null && !clock.consistent && <Notice tone="red"><strong>The trace outlasts the recorded completion.</strong> The last requested injection is at cycle {clock.lastInjection?.toLocaleString()} but the run reports completion at {clock.completion.toLocaleString()}. The two artifacts cannot be aligned without an explanation.</Notice>}
 
     <div className="budget-grid">
-      <div className="budget-panel">
+      <div className={`budget-panel${!showWork && !showPacket ? ' budget-wide' : ''}`}>
         <div className="budget-head">
           <div><h3>Run clock</h3><p className="meta-line">Elapsed cycles from request timestamps and the recorded last ejection.</p></div>
           <Badge tone={trace.phase === 'ready' ? 'blue' : 'amber'}>{trace.phase === 'ready' ? 'Trace + stats' : 'Partial'}</Badge>
@@ -194,6 +197,7 @@ export function CycleBudget({ project, run }: { project: LoadedProject; run: Loa
         {clock.completion === null && trace.phase !== 'loading' && <Notice tone="amber">This run reports no completion cycle, so a clock budget cannot be drawn.</Notice>}
       </div>
 
+      {showWork && (
       <div className="budget-panel">
         <div className="budget-head">
           <div><h3>Measured fabric work</h3><p className="meta-line">Queue, arbitration and transmit counters summed over channels and windows.</p></div>
@@ -218,6 +222,9 @@ export function CycleBudget({ project, run }: { project: LoadedProject; run: Loa
         </>}
       </div>
 
+      )}
+
+      {showPacket && (
       <div className="budget-panel budget-wide">
         <div className="budget-head">
           <div><h3>Longest watched packet</h3><p className="meta-line">Head-flit pipeline from the bounded watch sample, closed by the packet's tail retire.</p></div>
@@ -253,7 +260,10 @@ export function CycleBudget({ project, run }: { project: LoadedProject; run: Loa
         </>}
         {observed.phase === 'ready' && !longest && <p className="meta-line">The capture decoded {capture?.packets.length ?? 0} packets but no path has every boundary needed for a complete budget. Incomplete paths stay out of the totals.</p>}
       </div>
+      )}
     </div>
+
+    {missing.length > 0 && <p className="meta-line">Not captured for this run: {missing.join(' and ')}. Series sampling and packet watch are opt-in.</p>}
 
     {watchedRows.length > 0 && <details className="origin">
       <summary>Watched packets · per-packet budget ({watchedRows.length})</summary>

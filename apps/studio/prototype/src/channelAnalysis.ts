@@ -12,19 +12,32 @@ export function median(values: number[]): number | null {
 
 export type UtilizationBin = { low: number; high: number; sustained: number; peak: number };
 
+/** Which bar of a bin a click landed on. The two bars count DIFFERENT
+ *  channels: a channel can peak at 85 % in one window and sustain 8 % over
+ *  the run, so the sustained bar of the 80-90 % bin can be empty while the
+ *  peak bar holds fifteen channels. A filter that ignored this reported
+ *  "0 channels" for a bar the reader had just seen counted. */
+export type UtilizationSeries = 'sustained' | 'peak';
+
 /** One selected histogram bin, carried from the load-shape chart to the
  *  measured-channel list. `last` keeps the top boundary inclusive because
  *  utilizationBins clamps values above the final bin edge into that bin. */
-export type UtilizationRange = { low: number; high: number; last: boolean; step: number };
+export type UtilizationRange = { low: number; high: number; last: boolean; step: number; series: UtilizationSeries };
 
-export function utilizationRangeFor(bin: UtilizationBin, index: number, bins: UtilizationBin[], step: number): UtilizationRange {
-  return { low: bin.low, high: bin.high, last: index === bins.length - 1, step };
+export function utilizationRangeFor(bin: UtilizationBin, index: number, bins: UtilizationBin[], step: number, series: UtilizationSeries = 'sustained'): UtilizationRange {
+  return { low: bin.low, high: bin.high, last: index === bins.length - 1, step, series };
 }
 
 export function utilizationInRange(value: number, range: UtilizationRange | null): boolean {
   if (!range) return true;
   if (!Number.isFinite(value)) return false;
   return value >= range.low && (value < range.high || range.last);
+}
+
+/** The channel's value on the axis the selected bar draws. */
+export function loadChannelInRange(channel: LoadChannel, range: UtilizationRange | null): boolean {
+  if (!range) return true;
+  return utilizationInRange(range.series === 'peak' ? channel.peak_window_utilization : channel.utilization, range);
 }
 
 /** Equal-width bins shared by both series so the sustained/peak contrast is

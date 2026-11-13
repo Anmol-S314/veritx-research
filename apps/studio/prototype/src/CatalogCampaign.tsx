@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { gateway, gatewayReason, type CatalogAnalysis, type CatalogEvaluation, type CatalogPlan, type CatalogRow } from './gateway';
 import { useProject, type LoadedProject } from './project';
 import { Assumptions, Badge, Button, Notice, PageLink, type ViewProps } from './ui';
-import { JobEvents } from './JobEvents';
 import { InteractiveScatter } from './InteractiveScatter';
 import { catalogFacts, catalogProfiles, catalogTradeoffPoints } from './catalogRecommendation';
 import { catalogPerClassMetrics, rtlVerdict } from './catalogMetrics';
@@ -62,10 +61,9 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
   const [viewToken, setViewToken] = useState<string | undefined>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
-  const [approved, setApproved] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [picked, setPicked] = useState('');
-  const [comparisonView, setComparisonView] = useState<'table' | 'plot'>('table');
+  const [comparisonView, setComparisonView] = useState<'table' | 'plot'>('plot');
   const reviewRef = useRef<HTMLDivElement>(null);
   const reviewTrigger = useRef<HTMLElement | null>(null);
   const revealReview = () => {
@@ -83,7 +81,7 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
     let live = true;
     gateway.catalogPlan(id).then(value => {
       if (!live) return;
-      setPlan(value); setSelected(value.topologies.map(row => row.topology_id)); setPlanError(''); setApproved(false);
+      setPlan(value); setSelected(value.topologies.map(row => row.topology_id)); setPlanError('');
     }).catch(caught => { if (live) setPlanError(gatewayReason(caught)); });
     gateway.projectJobs(id, 'CATALOG_EVALUATION').then(value => {
       if (live) setJobId(current => current || value.jobs?.[0]?.job_id || '');
@@ -137,11 +135,11 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
     setPicked(topologyId);
   };
   const launch = async () => {
-    if (!plan || !approved || !selected.length || busy || running) return;
+    if (!plan || !selected.length || busy || running) return;
     setBusy('launch'); setError('');
     try {
       const job = await gateway.launchCatalog(id, plan.draft_design_hash, selected);
-      setJobId(job.job_id); setView(null); setApproved(false); setPicked('');
+      setJobId(job.job_id); setView(null); setPicked('');
     } catch (caught) { setError(gatewayReason(caught)); }
     finally { setBusy(''); }
   };
@@ -161,37 +159,31 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
     {!project.draftMeta?.revisionToken && rows.length > 0 && <Notice tone="amber">The project draft version could not be read. Reload the project before selecting a fabric for refinement.</Notice>}
     {!plan && !planError && <p role="status">Reading saved workload intent…</p>}
     {plan && <details className="catalog-setup" key={rows.length ? 'results' : 'setup'} open={!rows.length}>
-      <summary><span role="heading" aria-level={2}>{rows.length ? 'Evaluation setup' : 'Choose fabrics to evaluate'}</span><small>{plan.participant_count} participants · {plan.operation_count} {plan.operation_count === 1 ? 'operation' : 'operations'} · {selected.length} of {plan.topologies.length} selected</small></summary>
+      <summary><span role="heading" aria-level={2}>Evaluation setup</span><small>{selected.length} of {plan.topologies.length} fabrics · {plan.participant_count} participant{plan.participant_count === 1 ? '' : 's'} · {plan.operation_count} operation{plan.operation_count === 1 ? '' : 's'}</small></summary>
       <div className="catalog-setup-body">
-      {!rows.length && <div className="stat-strip catalog-setup-stats">
-        <div className="stat"><span>Saved workload</span><strong>{project.request?.workload?.model_name || project.detail.draft?.workload_id || project.detail.project.name}</strong><small>Frozen for every evaluated fabric</small></div>
-        <div className="stat"><span>Participants</span><strong>{plan.participant_count}</strong><small>Declared workload participants</small></div>
-        <div className="stat"><span>Operations</span><strong>{plan.operation_count}</strong><small>{plan.operation_count === 1 ? 'Declared operation' : 'Declared operations'}</small></div>
-        <div className="stat"><span>Compute stages</span><strong>{plan.compute_stages || 'None'}</strong><small>{plan.compute_stages ? 'Declared system timing' : 'ASTRA-SIM communication only'}</small></div>
-      </div>}
-      <fieldset className="draft-controls" disabled={running || !!busy}>
-        <legend>Fabrics to evaluate</legend>
-        <div className="actions">{plan.topologies.map(row => <label className="check-chip" key={row.topology_id}>
-          <input type="checkbox" checked={selected.includes(row.topology_id)} onChange={event => { setSelected(ids => event.target.checked ? [...ids, row.topology_id] : ids.filter(value => value !== row.topology_id)); setApproved(false); }} />{row.label}
-        </label>)}</div>
-        <label className="check-row"><input type="checkbox" checked={approved} onChange={event => setApproved(event.target.checked)} />Generate traffic from this saved workload and run BookSim + ASTRA-SIM for the selected fabrics.</label>
-      </fieldset>
-      {!rows.length && <p className="fabric-card-note"><strong>No fabric is ranked yet.</strong> Network, System, Balanced and Best evidenced each rank one declared objective after the run. Refusals and failures stay visible rather than becoming zeros.</p>}
-      {!plan.compute_stages && <Notice tone="amber">No compute stages are declared. ASTRA-SIM can model communication only where supported; these results are not full model inference latency. <PageLink page="flow/tune">Add compute timing</PageLink></Notice>}
-      <div className="toolbar flow-launch-actions"><PageLink page="flow/tune">Back · Workload intent</PageLink>
-        <span className="flow-launch-hint" id="catalog-launch-hint">{!selected.length ? 'Select at least one fabric.' : !approved ? 'Confirm the traffic and evaluation scope above.' : 'Ready to generate the workload traffic and measure the selected fabrics.'}</span>
-        <Button primary disabled={!approved || !selected.length || !!busy || running} aria-describedby="catalog-launch-hint" onClick={launch}>{busy === 'launch' ? 'Submitting…' : 'Generate trace & run catalog'}</Button></div>
+        <fieldset className="draft-controls" disabled={running || !!busy}>
+          <legend className="visually-hidden">Fabrics to evaluate</legend>
+          <div className="catalog-fabric-grid">{plan.topologies.map(row => <label className="check-chip" key={row.topology_id}>
+            <input type="checkbox" checked={selected.includes(row.topology_id)} onChange={event => { setSelected(ids => event.target.checked ? [...ids, row.topology_id] : ids.filter(value => value !== row.topology_id)); }} />{row.label}
+          </label>)}</div>
+        </fieldset>
+        {!plan.compute_stages && <p className="catalog-setup-note">No compute stages declared; ASTRA-SIM covers communication only. <PageLink page="flow/tune">Add compute timing</PageLink></p>}
+        <div className="catalog-setup-actions">
+          <PageLink page="flow/tune">Back · Workload intent</PageLink>
+          <Button primary disabled={!selected.length || !!busy || running} onClick={launch}>{busy === 'launch' ? 'Submitting…' : 'Generate trace & run catalog'}</Button>
+        </div>
       </div>
     </details>}
-    {view && <div className="catalog-run-bar" role="status">
-      <Badge tone={tone(view.job.state)}>{view.job.state.toLowerCase()}</Badge>
-      <span>{rows.filter(row => !['QUEUED', 'RUNNING'].includes(row.status)).length} / {rows.length || selected.length} fabrics</span>
-      <span className="catalog-campaign-scope" title={project.request?.workload?.model_name || project.detail.project.name}>{project.request?.workload?.model_name || project.detail.project.name}</span>
-      <span className="toolbar-end">
-        {running && <Button disabled={!view.job.cancellable} onClick={() => gateway.cancelJob(jobId).then(() => setRetry(n => n + 1)).catch(caught => setError(gatewayReason(caught)))}>Cancel catalog run</Button>}
+    {view && <div className="catalog-run-bar">
+      <div className="catalog-run-status" role="status">
+        <Badge tone={tone(view.job.state)}>{view.job.state.toLowerCase()}</Badge>
+        <span>{rows.filter(row => !['QUEUED', 'RUNNING'].includes(row.status)).length} / {rows.length || selected.length} fabrics</span>
+      </div>
+      <div className="toolbar-end">
+        {running && <Button disabled={!view.job.cancellable} onClick={() => gateway.cancelJob(jobId).then(() => setRetry(n => n + 1)).catch(caught => setError(gatewayReason(caught)))}>Cancel run</Button>}
         <Button onClick={() => setRetry(n => n + 1)}>Refresh results</Button>
         {plan?.selection && <PageLink page="flow/optimize" primary>Refine {plan.selection.label}</PageLink>}
-      </span>
+      </div>
       {view.job.error_message && <Notice tone="red">{view.job.error_message}</Notice>}
       {view.stale && <Notice tone="amber">{view.selection ? `These measurements predate the current saved draft. The chosen ${view.selection.label} selection is preserved, but changed parameters need a new evaluation.` : 'The saved workload or parameters changed. These results remain inspectable, but cannot be selected for the changed design.'}</Notice>}
     </div>}
@@ -204,10 +196,11 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
         <div className="stat"><span>Selectable</span><strong>{selectableCount} / {facts.length}</strong><small>Requirements and evidence checked</small></div>
       </div>
       {configMismatch.length > 0 && <Notice tone="amber">{configMismatch.length} fabrics report different controls and are not directly comparable: {configMismatch.map(row => row.label).join(', ')}.</Notice>}
+      <div className="catalog-results-heading"><div><h2>Recommendation</h2><span>One declared objective per profile; ties stay visible</span></div></div>
       <div className="catalog-profiles" role="group" aria-label="Recommended fabrics">
         {profiles.map(profile => <ProfileChoice key={profile.id} profile={profile} onPick={review} />)}
       </div>
-      <div className="catalog-results-heading"><div><h2>Fabric comparison</h2><span>{rows.length} measured · {selectableCount} selectable</span></div><span className="catalog-results-note">Chosen fabric marked in the table</span></div>
+      <div className="catalog-results-heading"><div><h2>Fabric comparison</h2><span>{rows.length} measured · {selectableCount} selectable</span></div></div>
       <div className={`catalog-workbench${pickedRow ? '' : ' no-selection'}`}>
         <section className="catalog-comparison" aria-label="Fabric comparison">
           <div className="catalog-comparison-toolbar"><div className="segmented" role="group" aria-label="Comparison view">
@@ -227,7 +220,7 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
                   <td className="numeric"><ComparisonValue analysis={row.analyses?.find(a => a.question === 'NETWORK_COMPLETION')} /></td>
                   <td className="numeric"><ComparisonValue analysis={row.analyses?.find(a => a.question === 'SYSTEM_MAKESPAN')} /></td>
                   <td><span className={row.requirements_pass === true ? 'catalog-row-pass' : row.requirements_pass === false ? 'catalog-row-warning' : ''}>{row.requirements_pass === true ? 'Satisfied' : row.requirements_pass === false ? 'Not satisfied' : 'Not established'}</span></td>
-                  <td><span title={rtl.detail}>{row.rtl_support ? row.rtl_support.supported ? 'Available' : 'Unavailable' : 'Not recorded'}</span></td>
+                  <td><span title={rtl.detail}><Badge tone={rtl.tone}>{rtl.text}</Badge></span></td>
                   <td><button type="button" className="text-button" aria-pressed={picked === row.topology_id} aria-controls="catalog-fabric-detail" onClick={() => review(row.topology_id)} aria-label={`Inspect ${row.label}`}>Inspect</button></td>
                 </tr>;
               })}
@@ -241,27 +234,18 @@ export function CatalogCampaign({ project, navigate, notify }: ViewProps & { pro
           <div className="catalog-comparison-footnote"><span>BookSim network · ASTRA-SIM system</span><span>Inspect a fabric to see every recorded metric.</span></div>
         </section>
         {pickedRow && <div className="catalog-inspector-slot" ref={reviewRef} tabIndex={-1}>
-          <CatalogInspector row={{ ...pickedRow, selectable: pickedRow.selectable && currentEvidence }} configuration={configuration} workloadId={view?.workload_id} projectId={id} jobId={jobId} busy={busy}
+          <CatalogInspector row={{ ...pickedRow, selectable: pickedRow.selectable && currentEvidence }} configuration={configuration} projectId={id} jobId={jobId} busy={busy}
             acknowledge={acknowledge} onAcknowledge={setAcknowledge} onChoose={() => choose(pickedRow)} onClose={() => review('')}
             chosen={!!pickedRow.candidate_id && view?.selection?.candidate_id === pickedRow.candidate_id} error={error} onRetry={() => setRetry(n => n + 1)} />
         </div>}
       </div>
     </>}
     {error && !pickedRow && <Notice tone="red">{error}<Button onClick={() => setRetry(n => n + 1)}>Retry status</Button></Notice>}
-    <div className="catalog-utilities">
-      {jobId && <details><summary>Job log &amp; events</summary><JobEvents jobId={jobId} state={view?.job.state} /></details>}
-      {rows.length > 0 && <details><summary>Related analysis &amp; downloads</summary><nav aria-label="Related catalog analysis">
-        <PageLink page="analysis/summary">Analysis · Summary</PageLink><PageLink page="analysis/curves">Analysis · Curves &amp; Pareto</PageLink>
-        <PageLink page="verify/checks">Verify · Checks</PageLink><PageLink page="verify/evidence">Evidence detail</PageLink>
-        <PageLink page="design/fabric-topology">Design · Fabric topology</PageLink><PageLink page="flow/run">Flow · Finalize &amp; RTL</PageLink>
-        <PageLink page="explore/fabric-search">Reference catalog</PageLink><PageLink page="explore/fabric-ablations">Fabric ablations</PageLink>
-        {view?.artifacts.some(file => file.path === 'workload.json') && <a href={gateway.catalogArtifactUrl(id, jobId, 'workload.json')} download>Download generated workload graph</a>}
-      </nav><p>Run analysis needs a compiled revision with an evaluation run. Repository references are not this project's measurements.</p></details>}
-    </div>
     <Assumptions rows={[
       ['Workload', 'The saved high-level intent is frozen for this job. Collective payloads, declared initiator profiles, compute timing, participants, agents and requirements stay unchanged across fabrics. No model or repository reference trace is needed for this path.'],
       ['Configuration', 'Every row shares one NoC-controls identity (buffer depth, link width, arbitration) and one workload identity. Routing law is derived per topology and named in each row; a row whose configuration identity differs is flagged as not directly comparable.'],
-      ['RTL preview', 'Feasibility is predicted from a topology-only compile before selection. It means the one product emitter can produce preview RTL inside its 2–64 router, ≤2-VC, point-to-point slice — never that final simulation-equivalent RTL exists.'],
+      ['RTL preview', 'Feasibility is predicted from a topology-only compile before selection. It means the one product emitter can produce preview RTL inside its 2–64 router, ≤2-VC, point-to-point slice — never that final simulation-equivalent RTL exists. A preview does not inherit composed-family evidence and does not become final because the family has it.'],
+      ['Composed-family evidence', 'A1–A10 evidence is recorded per family and per design hash in the RTL & implementation path on Flow · Finalize & RTL and Deliver. It is not selected-project RTL unless the design hash matches, and it is not physical implementation or signoff.'],
       ['Research RTL', 'M5 research Verilog presence is reported in the inspector / Flow · Finalize & RTL (flow/run) and never upgrades the product preview.'],
       ['Generated inputs', 'The adapters map the same workload to each topology, then generate BookSim packet traces and ASTRA-SIM execution graphs. A packet trace is not an ASTRA execution graph.'],
       ['Profiles', 'Each profile ranks one declared objective. Network completion is BookSim-only; system makespan includes declared compute stages. Balanced sums ranks over both scopes rather than inventing a fused score. A refused or requirement-failing fabric never wins.'],

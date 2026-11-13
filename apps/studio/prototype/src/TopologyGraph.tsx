@@ -59,6 +59,22 @@ function layout(topology: Topology): { points: Map<number, Point>; derived: bool
 
 export function topologyLayout(topology: Topology) { return layout(topology); }
 
+/** Fit the drawing to the routers actually present. The old fixed 800×620
+ *  frame left a 3×3 fabric tiny in the middle of a large panel; a 9×9 fabric
+ *  occupied the same area because spacing was already capped. The frame now
+ *  keeps a constant margin around the real graph, so small and large fabrics
+ *  both use the canvas. */
+function graphViewBox(points: Iterable<Point>, padding = 46): string {
+  const list = [...points];
+  if (!list.length) return '0 0 800 620';
+  const xs = list.map(point => point.x), ys = list.map(point => point.y);
+  const minX = Math.min(...xs) - padding, maxX = Math.max(...xs) + padding;
+  const minY = Math.min(...ys) - padding, maxY = Math.max(...ys) + padding;
+  const width = Math.max(240, maxX - minX), height = Math.max(240, maxY - minY);
+  const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+  return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
+}
+
 // Bend a link only when its straight segment would pass through another router.
 // Flatfly cliques and torus wraparounds otherwise collapse visually into a mesh.
 export function topologyLinkPath(p: Point, q: Point, points: Iterable<Point>): string {
@@ -87,9 +103,10 @@ export function undirectedLinks(topology: Topology): [number, number][] {
   return links;
 }
 
-export function TopologyGraph({ topology, selected, onSelect, highlight, load, telemetry = false, mappingRows, axis = null, degreeCount, selectedWire = null, onSelectWire }: { topology: Topology; selected?: number | null; onSelect?: (routerId: number) => void; highlight?: Topology['channels'][number] | null; load?: Map<string, number>; telemetry?: boolean; mappingRows?: MappingRow[]; axis?: ParallelAxis | null; degreeCount?: number; selectedWire?: number | null; onSelectWire?: (wireId: number | null) => void }) {
+export function TopologyGraph({ topology, selected, onSelect, highlight, load, telemetry = false, mappingRows, axis = null, degreeCount, selectedWire = null, onSelectWire, labels, showSharedWires = true }: { topology: Topology; selected?: number | null; onSelect?: (routerId: number) => void; highlight?: Topology['channels'][number] | null; load?: Map<string, number>; telemetry?: boolean; mappingRows?: MappingRow[]; axis?: ParallelAxis | null; degreeCount?: number; selectedWire?: number | null; onSelectWire?: (wireId: number | null) => void; labels?: boolean; showSharedWires?: boolean }) {
   const { points, derived } = layout(topology);
-  const radius = topology.counts?.routers > 40 ? 7 : 11;
+  const radius = topology.counts?.routers > 40 ? 8 : 11;
+  const showLabels = labels ?? (topology.counts?.routers ?? 0) <= 25;
   const links = undirectedLinks(topology);
   const endpoints = new Map<number, number>();
   const endpointsByRouter = new Map<number, Topology['endpoints']>();
@@ -105,13 +122,33 @@ export function TopologyGraph({ topology, selected, onSelect, highlight, load, t
   const degree = activeAxis ? Math.max(1, degreeCount ?? Math.max(1, ...axisRows.map(row => row.coordinates[activeAxis!] + 1))) : 1;
   const groups = activeAxis ? parallelGroups(axisRows, endpointRouter, activeAxis) : [];
   const showGroups = !!activeAxis && groups.length > 1 && groups.length <= 8;
+  const viewBox = graphViewBox(points.values());
+  const placed = topology.routers.filter(router => Array.isArray(router.coordinates) && router.coordinates.length >= 2);
+  const axesReady = placed.length === topology.routers.length && topology.routers.length > 0 && topology.routers.length <= 144;
+  const columnAxes = new Map<number, Point>();
+  const rowAxes = new Map<number, Point>();
+  if (axesReady) {
+    for (const router of placed) {
+      const point = points.get(router.router_id);
+      if (!point) continue;
+      const [column, row] = router.coordinates;
+      const priorColumn = columnAxes.get(column);
+      if (!priorColumn || point.y < priorColumn.y) columnAxes.set(column, point);
+      const priorRow = rowAxes.get(row);
+      if (!priorRow || point.x < priorRow.x) rowAxes.set(row, point);
+    }
+  }
   return <figure className="topology-figure">
-    <svg className="gateway-topology" viewBox="0 0 800 620" role="img" aria-label={`${topology.family} topology from the repository gateway, ${topology.counts?.routers ?? 0} routers, ${topology.counts?.channels ?? topology.channels.length} directed channels and ${shared.length} shared wires`}>
+    <svg className="gateway-topology" viewBox={viewBox} role="img" aria-label={`${topology.family} topology from the repository gateway, ${topology.counts?.routers ?? 0} routers, ${topology.counts?.channels ?? topology.channels.length} directed channels and ${shared.length} shared wires`}>
       <defs><marker id="gateway-tip" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 z" fill="#0f6c9e" /></marker></defs>
+      {axesReady && <g className="gateway-axes" aria-hidden="true">
+        {[...columnAxes.entries()].map(([column, point]) => <text key={`col-${column}`} x={point.x} y={point.y - radius - 7} textAnchor="middle">{column}</text>)}
+        {[...rowAxes.entries()].map(([row, point]) => <text key={`row-${row}`} x={point.x - radius - 7} y={point.y + 4} textAnchor="end">{row}</text>)}
+      </g>}
       {telemetry && <g className="gateway-telemetry" aria-hidden="true">
         {[...points.entries()].map(([id, p]) => <circle key={`tel-${id}`} className="gateway-telemetry-ring" cx={p.x} cy={p.y} r={radius + 6} />)}
       </g>}
-      {shared.length > 0 && <g className="gateway-shared-links" data-dim={selectedWire !== null}>
+      {shared.length > 0 && <g className="gateway-shared-links" data-dim={selectedWire !== null} data-visible={showSharedWires || selectedWire !== null}>
         {shared.map(link => {
           const p = points.get(link.src_router);
           const taps = link.taps.map(id => points.get(id)).filter((q): q is Point => Boolean(q));
@@ -177,7 +214,9 @@ export function TopologyGraph({ topology, selected, onSelect, highlight, load, t
           const paintAxis = activeAxis;
           const nodeEndpoints = endpointsByRouter.get(id) ?? [];
           return <g key={id} className={`gateway-node${selected === id ? ' gateway-node-selected' : ''}${highlight && (highlight.src_router === id || highlight.dst_router === id) ? ' gateway-node-touched' : ''}`} {...contextTarget('router', id, `Router R${id}`, `${topology.family} · ${topology.channels.filter(channel => channel.src_router === id).length} outbound / ${topology.channels.filter(channel => channel.dst_router === id).length} inbound declared channels · ${nodeEndpoints.length} attached endpoint${nodeEndpoints.length === 1 ? '' : 's'}`)} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `Select router ${id}` : undefined} onClick={() => onSelect?.(id)} onKeyDown={e => { if (onSelect && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(id); } }}>
+            <title>{`Router R${id} · ${nodeEndpoints.length} attached endpoint${nodeEndpoints.length === 1 ? '' : 's'} · ${topology.channels.filter(channel => channel.src_router === id).length} out / ${topology.channels.filter(channel => channel.dst_router === id).length} in`}</title>
             <circle cx={p.x} cy={p.y} r={selected === id ? radius + 3 : radius} />
+            {nodeEndpoints.length > 0 && !paintAxis && <rect className="gateway-node-seat" x={p.x - (radius > 8 ? 2.2 : 1.8)} y={p.y - (radius > 8 ? 2.2 : 1.8)} width={radius > 8 ? 4.4 : 3.6} height={radius > 8 ? 4.4 : 3.6} rx={1} />}
             {paintAxis && nodeEndpoints.map((endpoint, index) => {
               const row = mappingByEndpoint.get(endpoint.endpoint_id);
               const coordinate = row?.coordinates[paintAxis];
@@ -188,8 +227,8 @@ export function TopologyGraph({ topology, selected, onSelect, highlight, load, t
                 <circle className="parallel-satellite" cx={p.x + Math.cos(angle) * distance} cy={p.y + Math.sin(angle) * distance} r={3.6} style={{ fill: coordinate !== undefined ? parallelColor(coordinate, degree) : '#c9d1da' }} />
               </g>;
             })}
-            {topology.counts?.routers <= 25 && <text x={p.x} y={p.y + radius + 12} textAnchor="middle">{id}</text>}
-            {!paintAxis && endpoints.get(id) && topology.counts?.routers <= 40 ? <text className="endpoint-count" x={p.x + radius + 4} y={p.y - radius} >{endpoints.get(id)}</text> : null}
+            {showLabels && <text className={`gateway-node-id${selected === id ? ' selected' : ''}`} x={p.x} y={p.y + radius + (radius > 8 ? 11 : 12)} textAnchor="middle">{id}</text>}
+            {!paintAxis && !showLabels && endpoints.get(id) && topology.counts?.routers <= 40 ? <text className="endpoint-count" x={p.x + radius + 4} y={p.y - radius} >{endpoints.get(id)}</text> : null}
           </g>;
         })}
       </g>
@@ -221,8 +260,9 @@ export function ControlPlaneGraph({ k, c, routing, vcs }: { k: number; c: number
     if (y + 1 < k) links.push([id, id + k]);
   }
   const radius = k > 6 ? 7 : 11;
+  const viewBox = graphViewBox(points.values());
   return <figure className="topology-figure">
-    <svg className="gateway-topology gateway-control-plane" viewBox="0 0 800 620" role="img" aria-label={`Plane C declared control subnet, ${k} by ${k} mesh, ${k * k} routers`}>
+    <svg className="gateway-topology gateway-control-plane" viewBox={viewBox} role="img" aria-label={`Plane C declared control subnet, ${k} by ${k} mesh, ${k * k} routers`}>
       <g className="gateway-links">
         {links.map(([a, b]) => {
           const p = points.get(a), q = points.get(b);

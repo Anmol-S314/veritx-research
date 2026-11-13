@@ -542,6 +542,8 @@ export default function WorkloadAblations(): ReactElement {
         <span><strong>{runs.length}</strong><small>{runs.length === 1 ? 'measured cell' : 'measured cells'}</small></span>
         <span><strong>{okCount}</strong><small>{okCount === 1 ? 'cell ok' : 'cells ok'}</small></span>
         <span><strong>{failedCount}</strong><small>{failedCount === 1 ? 'typed failure' : 'typed failures'}</small></span>
+        <span><strong>{activeWorkload?.active_nodes ?? '—'}</strong><small>active / {activeWorkload?.nodes ?? '—'} endpoints</small></span>
+        <span><strong>{packetSizeLabel(activeWorkload?.packet_size_flits)}</strong><small>trace packet size</small></span>
         <span className="abl-fact-version" title={stamp(doc.generated_at)}><strong>{stampDay(doc.generated_at)}</strong><small>{datasetView === 'tuned' ? 'tuned run' : 'bundled baseline'}</small></span>
       </div>
 
