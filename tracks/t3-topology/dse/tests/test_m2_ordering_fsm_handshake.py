@@ -135,6 +135,11 @@ module tb_ordering_fsm;
   ordering_fsm dut (
     .clk(clk), .rst_n(rst_n),
     .in_valid(in_valid), .in_ready(in_ready), .in_flit(in_flit),
+    // The completion side-band and the ingress identity are tied to the
+    // values the directed cases exercise: no tagged completion, first
+    // initiator.
+    .initiator_in('0), .complete_tagged(1'b0), .complete_seq(13'd0),
+    .complete_initiator('0), .complete_class('0),
     .class_in(class_in), .complete_pulse(complete_pulse),
     .out_valid(out_valid), .out_ready(out_ready), .out_flit(out_flit),
     .assigned_vc(assigned_vc), .order_violation(order_violation),

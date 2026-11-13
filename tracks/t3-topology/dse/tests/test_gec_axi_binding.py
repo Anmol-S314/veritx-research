@@ -98,7 +98,7 @@ def test_cross_domain_slice_emits_both_cdc_directions_and_async_tb_clock():
     assert "clk_d0" in tb and ".init0_clk(clk_d0)" in tb
     assert "forever #7 clk_d0 = ~clk_d0" in tb
     assert "S8 CDC reset flushed in-flight transaction without stale B" in tb
-    assert "while (!init0_awready && timeout < 100) begin" in tb
+    assert "while (!init0_awready && timeout < 8000) begin" in tb
     assert "@(negedge clk_d0); timeout = timeout + 1;" in tb
     assert "@(posedge clk_d0); @(negedge clk_d0);" in tb
 

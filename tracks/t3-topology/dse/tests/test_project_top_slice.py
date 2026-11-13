@@ -181,7 +181,11 @@ def test_composed_slice_lints_and_sims_on_the_top(tmp_path):
     assert "automatic int c2;" in router_src
     assert "automatic int fsp;" in router_src
     assert "automatic int esp;" in router_src
-    assert "automatic int lv = get_class(" in router_src
+    # An initialised declaration inside a block is split: the declaration
+    # moves to the block top and the initialiser stays where it stood, which
+    # is the form a synthesis front-end accepts.
+    assert "automatic int lv;" in router_src
+    assert "lv = get_class(" in router_src
     top_src = (tmp_path / "rtl" / "project_top.sv").read_text()
     assert "beat_idx_q[12:0]" not in top_src
     assert "cap_seq_q + {4'b0, beat_idx_q}" in top_src
@@ -378,7 +382,12 @@ def test_composed_family_lints_and_sims(tmp_path, fam_name, intent_maker):
         assert result["final_implementation"] is False
         assert all(result["scenarios"].values())
         assert manifest["ordering_realization"]["requested_max_outstanding_per_initiator"] == 4
-        assert manifest["ordering_realization"]["effective_max_outstanding_per_initiator"] == 1
+        assert manifest["ordering_realization"]["effective_max_outstanding_per_initiator"] == 4
+        # The limit is measured by the emitted S15 probe, not declared: the
+        # manifest must carry the observed value next to the declared one.
+        assert manifest["ordering_realization"]["declared_max_outstanding_per_initiator"] == 4
+        assert manifest["ordering_realization"]["measured_max_outstanding_per_initiator"] == 4
+        assert "MEASURE: max_outstanding_per_initiator=4" in manifest["sim"]["log"]
         assert any(row["module"] == "gec_mecs16_fabric" for row in manifest["hierarchy"])
         assert "%Warning-UNDRIVEN" not in manifest["lint"].get("log", "")
     mods = {row["module"] for row in manifest["hierarchy"]}

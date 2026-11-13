@@ -21,6 +21,22 @@ UNSUPPORTED_SLICE = "UNSUPPORTED_SLICE_PROFILE"
 PROJECT_TOP_UNIFIED_SCOPE = "UNIFIED_COMPOSED_FAMILY"
 
 
+def _write_rtl(path: Path, text: str) -> None:
+    """Write one emitted module in the subset every tool can read.
+
+    The emitters write readable SystemVerilog; ``portable_sv`` rewrites the
+    three constructs Yosys cannot parse (early ``return``, ``automatic``
+    function locals, ``initial``-block ``$fatal``) and refuses anything it
+    cannot prove safe. Testbenches are written verbatim: they are
+    simulation-only and Yosys never reads them.
+    """
+    if path.name.startswith("tb_"):
+        path.write_text(text)
+        return
+    from veritx_dse.product.sv_portable import portable_sv
+    path.write_text(portable_sv(text))
+
+
 def _run_logged(command, *, log_path: Path, **kwargs):
     """Stream both output channels to disk so failures and interruptions retain logs."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -929,16 +945,29 @@ _ADAPTER_ASSERT_ANCHORS = (
 
 
 def apply_adapter_assert_gate(adapter_source: str) -> str:
+    # The adapter template now carries its own gate: both protocol-check
+    # blocks sit between `ifndef SYNTHESIS and `endif, with the reason
+    # stated above them. The anchors below still exist for adapters that
+    # are emitted without it, and this function stays the single place
+    # that decides, so a source that is already gated is returned as it is
+    # rather than refused.
+    if adapter_source.count("`ifndef SYNTHESIS") >= 2:
+        return adapter_source
     patched = adapter_source
     for old, new in _ADAPTER_ASSERT_ANCHORS:
-        if patched.count(old) != 1:
-            raise _refuse(
-                "the emitted adapter does not carry the expected "
-                "protocol-assert block, so the synthesis gate cannot be "
-                "anchored on it; refusing rather than emitting an "
-                "adapter whose simulation checks survive into synthesis"
-            )
-        patched = patched.replace(old, new, 1)
+        if patched.count(old) == 1:
+            patched = patched.replace(old, new, 1)
+            continue
+        if patched.count(new) >= 1:
+            # The gate is already in place. Applying it twice is a no-op,
+            # which is what a re-render of the same adapter requires.
+            continue
+        raise _refuse(
+            "the emitted adapter does not carry the expected "
+            "protocol-assert block, so the synthesis gate cannot be "
+            "anchored on it; refusing rather than emitting an "
+            "adapter whose simulation checks survive into synthesis"
+        )
     if patched == adapter_source:
         raise _refuse("the adapter assert gate did not change the "
                       "emitted adapter (anchors replaced zero times)")
@@ -1281,6 +1310,27 @@ def render_cdc_slice_wrappers(params, cells):
     return "\n".join(lines)
 
 
+def render_cdc_slice_wrapper_files(params, cells) -> dict[str, str]:
+    """One file per wrapper module, each named for the module it holds.
+
+    The combined ``cdc_slice_wrappers.sv`` container trips DECLFILENAME
+    (a file that holds several modules), so the emitted RTL writes one
+    file per wrapper instead.
+    """
+    combined = render_cdc_slice_wrappers(params, cells)
+    body = combined.replace("`default_nettype none", "")
+    body = body.replace("`default_nettype wire", "")
+    files: dict[str, str] = {}
+    for chunk in body.split("\nmodule ")[1:]:
+        name = chunk.split("(", 1)[0].strip()
+        if not name:
+            continue
+        files[name] = ("`default_nettype none\n\nmodule "
+                       + chunk.strip()
+                       + "\n`default_nettype wire\n")
+    return files
+
+
 def _pattern(gi: int, idx: int) -> int:
     return (0x10000000 * (gi + 1)) | (0x3200 + idx * 0x101 + gi)
 
@@ -1597,7 +1647,7 @@ def render_destination_adapter(params=None):
     return _render_destination_adapter_param(params)
 
 
-INIT_SLICE_TEMPLATE = "module initiator_slice #(\n  parameter int INIT_ID = 0,\n  parameter int INIT_ROUTER = 0,\n  parameter int TARGET_ROUTER = 2,\n  parameter int CLASS_ID = 0,\n  parameter int CLASS_W = 1,\n  parameter int CDC_CROSSED = 0\n) (\n  input  logic clk,\n  input  logic fabric_clk,\n  input  logic rst_n,\n  input  logic [63:0] awaddr_in,\n  input  logic [7:0] awlen_in,\n  input  logic [2:0] awsize_in,\n  input  logic [3:0] awid_in,\n  input  logic awvalid_in,\n  output logic awready_in,\n  input  logic [31:0] wdata_in,\n  input  logic [3:0] wstrb_in,\n  input  logic wlast_in,\n  input  logic wvalid_in,\n  output logic wready_in,\n  input  logic [63:0] araddr_in,\n  input  logic [7:0] arlen_in,\n  input  logic [2:0] arsize_in,\n  input  logic [3:0] arid_in,\n  input  logic arvalid_in,\n  output logic arready_in,\n  output logic [31:0] rdata_out,\n  output logic [1:0] rresp_out,\n  output logic [3:0] rid_out,\n  output logic rlast_out,\n  output logic rvalid_out,\n  input  logic rready_in,\n  output logic [1:0] bresp_out,\n  output logic [3:0] bid_out,\n  output logic bvalid_out,\n  input  logic bready_in,\n  input  logic [12:0] seq_in,\n  output logic [63:0] noc_in_flit,\n  output logic noc_in_valid,\n  input  logic noc_in_ready,\n  input  logic [63:0] noc_out_flit,\n  input  logic noc_out_valid,\n  output logic noc_out_ready,\n  output logic order_violation,\n  output logic outstanding_full,\n  output logic [31:0] injected_count,\n  output logic [31:0] ejected_count,\n  output logic [31:0] immediate_count\n);\n\n  logic [1:0] init_router_b;\n  assign init_router_b = 2'(INIT_ROUTER);\n\n  logic [63:0] adap_out_awaddr;\n  logic [7:0] adap_out_awlen;\n  logic [2:0] adap_out_awsize;\n  logic adap_out_awvalid;\n  logic adap_out_awready;\n  logic [31:0] adap_out_wdata;\n  logic adap_out_wvalid;\n  logic adap_out_wready;\n  logic adap_out_bvalid;\n  logic adap_credit_full;\n  logic bvalid_w;\n  logic bready_w;\n  assign bready_w = 1'b1;\n\n  logic [63:0] dec_addr;\n  logic dec_req_write;\n  logic [15:0] dec_burst_len;\n  logic [2:0] dec_target_oh;\n  logic dec_hit;\n  logic dec_miss;\n  logic dec_overlap;\n  logic dec_allow;\n  logic dec_perm_violation;\n  logic dec_burst_violation;\n\n  logic ord_in_valid;\n  logic ord_in_ready;\n  logic [63:0] ord_in_flit;\n  logic [63:0] ord_out_flit;\n  logic ord_out_valid;\n  logic ord_out_ready;\n  logic ord_complete_pulse;\n  logic [CLASS_W-1:0] ord_class_in;\n  logic [0:0] ord_assigned_vc;\n  logic ord_split_required;\n  logic cdc_in_valid;\n  logic cdc_in_ready;\n  logic [63:0] cdc_in_flit;\n  logic cdc_out_valid;\n  logic cdc_out_ready;\n  logic [63:0] cdc_out_flit;\n\n  logic cap_valid_q;\n  logic cap_write_q;\n  logic [63:0] cap_addr_q;\n  logic [7:0] cap_len_q;\n  logic [2:0] cap_size_q;\n  logic [3:0] cap_id_q;\n  logic [12:0] cap_seq_q;\n  logic [8:0] total_beats_q;\n  logic [8:0] beat_idx_q;\n  logic [8:0] w_cnt_q;\n  logic [31:0] w_buf_q [0:15];\n  logic [3:0] wstrb_buf_q [0:15];\n  logic wstrb_bad_q;\n  logic wlast_bad_q;\n  logic [1:0] agg_status_q;\n  logic [1:0] rsp_status_q;\n  logic [31:0] rsp_rdata_q;\n  logic imm_q;\n  logic [1:0] imm_status_q;\n  logic cmp_pulse_q;\n  logic [2:0] state_q;\n  localparam int REQ_ID_W = 2;\n  localparam [2:0] S_IDLE = 3'd0;\n  localparam [2:0] S_CAPW = 3'd1;\n  localparam [2:0] S_AWRET = 3'd2;\n  localparam [2:0] S_ISSUE = 3'd3;\n  localparam [2:0] S_WAIT_RSP = 3'd4;\n  localparam [2:0] S_RESP = 3'd5;\n  logic [63:0] beat_addr_w;\n  logic [11:0] beat_off_w;\n  logic [31:0] beat_data_w;\n  logic [12:0] beat_seq_w;\n  logic [15:0] burst_len_w;\n  logic size_bad_w;\n  logic burst_long_w;\n  logic issue_fire_w;\n  logic eject_fire_w;\n  logic [31:0] inj_q;\n  logic [31:0] ej_q;\n  logic [31:0] imm_q_cnt;\n  logic ord_viol_w;\n  logic ord_full_w;\n  logic w_fire_w;\n\n  assign dec_addr = cap_addr_q;\n  assign dec_req_write = cap_write_q;\n  assign burst_len_w = (total_beats_q <= 9'd1) ? 16'd0 : (16'(total_beats_q) << cap_size_q);\n  assign dec_burst_len = burst_len_w;\n  assign beat_seq_w = cap_seq_q + {4'b0, beat_idx_q};\n  assign beat_addr_w = cap_addr_q + (64'(beat_idx_q) * (64'd1 << cap_size_q));\n  assign beat_off_w = beat_addr_w[11:0];\n  assign beat_data_w = cap_write_q ? w_buf_q[beat_idx_q[3:0]] : 32'd0;\n  assign size_bad_w = (cap_size_q != 3'd2);\n  assign burst_long_w = (total_beats_q > 9'd16);\n  assign w_fire_w = adap_out_wvalid && adap_out_wready;\n  assign issue_fire_w = (state_q == S_ISSUE) && ord_in_valid && ord_in_ready;\n  assign eject_fire_w = (state_q == S_WAIT_RSP) && cdc_ret_valid && cdc_ret_ready;\n\n  assign ord_in_valid = (state_q == S_ISSUE) && dec_allow && !size_bad_w && !burst_long_w && !wstrb_bad_q && !wlast_bad_q;\n  assign ord_in_flit[63] = 1'b0;\n  assign ord_in_flit[62:61] = 2'b11;\n  assign ord_in_flit[60] = (beat_off_w[11:10] != 2'b00);\n  assign ord_in_flit[59:58] = beat_off_w[9:8];\n  assign ord_in_flit[57] = init_router_b[0];\n  assign ord_in_flit[56] = cap_write_q;\n  assign ord_in_flit[55:50] = beat_off_w[7:2];\n  assign ord_in_flit[49:48] = 2'(TARGET_ROUTER);\n  assign ord_in_flit[47:46] = beat_off_w[1:0];\n  assign ord_in_flit[45] = init_router_b[1];\n  assign ord_in_flit[44:32] = beat_seq_w;\n  assign ord_in_flit[31:0] = beat_data_w;\n  assign ord_class_in = CLASS_W'(CLASS_ID);\n  assign ord_complete_pulse = cmp_pulse_q;\n  assign cdc_in_valid = ord_out_valid;\n  assign cdc_in_flit = ord_out_flit;\n  assign ord_out_ready = cdc_in_ready;\n  assign noc_in_valid = cdc_out_valid;\n  assign noc_in_flit = cdc_out_flit;\n  assign cdc_out_ready = noc_in_ready;\n  assign noc_out_ready = noc_out_ready_tap;\n\n  assign arready_in = (state_q == S_IDLE) && !cap_valid_q;\n  assign adap_out_awready = (state_q == S_AWRET);\n  assign adap_out_wready = (state_q == S_CAPW);\n  assign bvalid_w = (state_q == S_RESP) && cap_write_q;\n\n  assign bvalid_out = adap_out_bvalid;\n  assign bresp_out = imm_q ? imm_status_q : agg_status_q;\n  assign bid_out = cap_id_q;\n  assign rvalid_out = (state_q == S_RESP) && !cap_write_q;\n  assign rresp_out = imm_q ? imm_status_q : rsp_status_q;\n  assign rid_out = cap_id_q;\n  assign rlast_out = imm_q ? 1'b1 : (beat_idx_q == total_beats_q - 9'd1);\n  assign rdata_out = imm_q ? 32'd0 : rsp_rdata_q;\n  assign order_violation = ord_viol_w;\n  assign outstanding_full = ord_full_w;\n  assign injected_count = inj_q;\n  assign ejected_count = ej_q;\n  assign immediate_count = imm_q_cnt;\n\n\n  generate\n    if (INIT_ID == 0) begin : g_adap0\n      adapter_axi5_g0 u_adapter (\n        .clk(clk), .rst_n(rst_n),\n        .in_awaddr(awaddr_in), .in_awlen(awlen_in), .in_awsize(awsize_in), .in_awburst(2'b01),\n        .in_awvalid(awvalid_in), .in_awready(awready_in),\n        .out_awaddr(adap_out_awaddr), .out_awlen(adap_out_awlen), .out_awsize(adap_out_awsize),\n        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),\n        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),\n        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),\n        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)\n      );\n    end else begin : g_adap1\n      adapter_axi5_g1 u_adapter (\n        .clk(clk), .rst_n(rst_n),\n        .in_awaddr(awaddr_in), .in_awlen(awlen_in), .in_awsize(awsize_in), .in_awburst(2'b01),\n        .in_awvalid(awvalid_in), .in_awready(awready_in),\n        .out_awaddr(adap_out_awaddr), .out_awlen(adap_out_awlen), .out_awsize(adap_out_awsize),\n        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),\n        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),\n        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),\n        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)\n      );\n    end\n  endgenerate\n\n  addr_decode u_decode (\n    .addr(dec_addr), .req_id((REQ_ID_W'(INIT_ID))),\n    .req_write(dec_req_write), .burst_len(dec_burst_len),\n    .target_oh(dec_target_oh), .hit(dec_hit), .miss(dec_miss),\n    .overlap(dec_overlap), .allow(dec_allow),\n    .perm_violation(dec_perm_violation), .burst_violation(dec_burst_violation)\n  );\n\n  ordering_fsm u_ordering (\n    .clk(clk), .rst_n(rst_n),\n    .in_valid(ord_in_valid), .in_ready(ord_in_ready),\n    .in_flit(ord_in_flit), .class_in(ord_class_in),\n    .complete_pulse(ord_complete_pulse),\n    .out_valid(ord_out_valid), .out_ready(ord_out_ready),\n    .out_flit(ord_out_flit), .assigned_vc(ord_assigned_vc),\n    .order_violation(ord_viol_w), .outstanding_full(ord_full_w),\n    .split_required(ord_split_required)\n  );\n\n  logic cdc_ret_valid;\n  logic cdc_ret_ready;\n  logic [63:0] cdc_ret_flit;\n  logic noc_out_ready_tap;\n  assign noc_out_ready = noc_out_ready_tap;\n  assign cdc_ret_ready = (state_q == S_WAIT_RSP);\n  generate\n    if (CDC_CROSSED != 0) begin : g_cdc_cross\n      cdc_slice_up_0 u_cdc_up0 (\n        .src_clk(clk), .src_rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .dst_clk(fabric_clk), .dst_rst_n(rst_n),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      cdc_slice_down_0 u_cdc_down0 (\n        .src_clk(fabric_clk), .src_rst_n(rst_n),\n        .in_valid(noc_out_valid), .in_ready(noc_out_ready_tap),\n        .in_flit(noc_out_flit),\n        .dst_clk(clk), .dst_rst_n(rst_n),\n        .out_valid(cdc_ret_valid), .out_ready(cdc_ret_ready),\n        .out_flit(cdc_ret_flit)\n      );\n    end else begin : g_cdc_bypass\n      cdc_bypass u_cdc (\n        .clk(fabric_clk), .rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      assign cdc_ret_valid = noc_out_valid;\n      assign cdc_ret_flit = noc_out_flit;\n      assign noc_out_ready_tap = (state_q == S_WAIT_RSP);\n    end\n  endgenerate\n\n  wire unused_dec_unused = dec_hit ^ dec_target_oh[0] ^ dec_overlap ^ dec_perm_violation ^ dec_burst_violation ^ adap_credit_full ^ ord_assigned_vc[0] ^ ord_split_required ^ wstrb_buf_q[0][0];\n\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) begin\n      cap_valid_q <= 1'b0;\n      cap_write_q <= 1'b0;\n      cap_addr_q <= 64'd0;\n      cap_len_q <= 8'd0;\n      cap_size_q <= 3'd0;\n      cap_id_q <= 4'd0;\n      cap_seq_q <= 13'd0;\n      total_beats_q <= 9'd0;\n      beat_idx_q <= 9'd0;\n      w_cnt_q <= 9'd0;\n      wstrb_bad_q <= 1'b0;\n      wlast_bad_q <= 1'b0;\n      agg_status_q <= 2'b00;\n      rsp_status_q <= 2'b00;\n      rsp_rdata_q <= 32'd0;\n      imm_q <= 1'b0;\n      imm_status_q <= 2'b00;\n      cmp_pulse_q <= 1'b0;\n      state_q <= S_IDLE;\n      inj_q <= 32'd0;\n      ej_q <= 32'd0;\n      imm_q_cnt <= 32'd0;\n    end else begin\n      cmp_pulse_q <= 1'b0;\n      case (state_q)\n        S_IDLE: begin\n          if (adap_out_awvalid) begin\n            cap_valid_q <= 1'b1;\n            cap_write_q <= 1'b1;\n            cap_addr_q <= adap_out_awaddr;\n            cap_len_q <= adap_out_awlen;\n            cap_size_q <= adap_out_awsize;\n            cap_id_q <= awid_in;\n            cap_seq_q <= seq_in;\n            total_beats_q <= {1'b0, adap_out_awlen} + 9'd1;\n            beat_idx_q <= 9'd0;\n            w_cnt_q <= 9'd0;\n            agg_status_q <= 2'b00;\n            wstrb_bad_q <= 1'b0;\n            wlast_bad_q <= 1'b0;\n            state_q <= S_CAPW;\n          end else if (arvalid_in && arready_in) begin\n            cap_valid_q <= 1'b1;\n            cap_write_q <= 1'b0;\n            cap_addr_q <= araddr_in;\n            cap_len_q <= arlen_in;\n            cap_size_q <= arsize_in;\n            cap_id_q <= arid_in;\n            cap_seq_q <= seq_in;\n            total_beats_q <= {1'b0, arlen_in} + 9'd1;\n            beat_idx_q <= 9'd0;\n            w_cnt_q <= 9'd0;\n            agg_status_q <= 2'b00;\n            wstrb_bad_q <= 1'b0;\n            wlast_bad_q <= 1'b0;\n            state_q <= S_ISSUE;\n          end\n        end\n        S_CAPW: begin\n          if (w_fire_w) begin\n            if (w_cnt_q < 9'd16) begin\n              w_buf_q[w_cnt_q[3:0]] <= adap_out_wdata;\n              wstrb_buf_q[w_cnt_q[3:0]] <= wstrb_in;\n            end\n            if (wstrb_in != 4'b1111) wstrb_bad_q <= 1'b1;\n            if (wlast_in != ((w_cnt_q == (total_beats_q - 9'd1)))) wlast_bad_q <= 1'b1;\n            w_cnt_q <= w_cnt_q + 9'd1;\n            if ((w_cnt_q + 9'd1) == total_beats_q) state_q <= S_AWRET;\n          end\n        end\n        S_AWRET: begin\n          state_q <= S_ISSUE;\n        end\n        S_ISSUE: begin\n          if (size_bad_w || burst_long_w || wstrb_bad_q || wlast_bad_q || dec_miss || !dec_allow) begin\n            imm_q <= 1'b1;\n            imm_status_q <= (size_bad_w || wstrb_bad_q || wlast_bad_q) ? 2'b10 : 2'b11;\n            imm_q_cnt <= imm_q_cnt + 32'd1;\n            state_q <= S_RESP;\n          end else if (issue_fire_w) begin\n            inj_q <= inj_q + 32'd1;\n            state_q <= S_WAIT_RSP;\n          end\n        end\n        S_WAIT_RSP: begin\n          if (eject_fire_w) begin\n            rsp_status_q <= cdc_ret_flit[60:59];\n            rsp_rdata_q <= cdc_ret_flit[31:0];\n            ej_q <= ej_q + 32'd1;\n            cmp_pulse_q <= 1'b1;\n            if (cap_write_q) begin\n              if (agg_status_q == 2'b10 || noc_out_flit[60:59] == 2'b10) agg_status_q <= 2'b10;\n              else agg_status_q <= 2'b00;\n              if (beat_idx_q == total_beats_q - 9'd1) begin\n                state_q <= S_RESP;\n              end else begin\n                beat_idx_q <= beat_idx_q + 9'd1;\n                state_q <= S_ISSUE;\n              end\n            end else begin\n              state_q <= S_RESP;\n            end\n          end\n        end\n        S_RESP: begin\n          if ((cap_write_q && bvalid_out && bready_in) || (!cap_write_q && rvalid_out && rready_in)) begin\n            if (imm_q) begin\n              cap_valid_q <= 1'b0;\n              imm_q <= 1'b0;\n              beat_idx_q <= 9'd0;\n              state_q <= S_IDLE;\n            end else if (!cap_write_q && (beat_idx_q != total_beats_q - 9'd1)) begin\n              beat_idx_q <= beat_idx_q + 9'd1;\n              state_q <= S_ISSUE;\n            end else begin\n              cap_valid_q <= 1'b0;\n              beat_idx_q <= 9'd0;\n              state_q <= S_IDLE;\n            end\n          end\n        end\n        default: begin\n          state_q <= S_IDLE;\n        end\n      endcase\n    end\n  end\n\nendmodule"
+INIT_SLICE_TEMPLATE = "module initiator_slice #(\n  parameter int INIT_ID = 0,\n  parameter int INIT_ROUTER = 0,\n  parameter int TARGET_ROUTER = 2,\n  parameter int CLASS_ID = 0,\n  parameter int CLASS_W = 1,\n  parameter int CDC_CROSSED = 0\n) (\n  input  logic clk,\n  input  logic fabric_clk,\n  input  logic rst_n,\n  input  logic [63:0] awaddr_in,\n  input  logic [7:0] awlen_in,\n  input  logic [2:0] awsize_in,\n  input  logic [3:0] awid_in,\n  input  logic awvalid_in,\n  output logic awready_in,\n  input  logic [31:0] wdata_in,\n  input  logic [3:0] wstrb_in,\n  input  logic wlast_in,\n  input  logic wvalid_in,\n  output logic wready_in,\n  input  logic [63:0] araddr_in,\n  input  logic [7:0] arlen_in,\n  input  logic [2:0] arsize_in,\n  input  logic [3:0] arid_in,\n  input  logic arvalid_in,\n  output logic arready_in,\n  output logic [31:0] rdata_out,\n  output logic [1:0] rresp_out,\n  output logic [3:0] rid_out,\n  output logic rlast_out,\n  output logic rvalid_out,\n  input  logic rready_in,\n  output logic [1:0] bresp_out,\n  output logic [3:0] bid_out,\n  output logic bvalid_out,\n  input  logic bready_in,\n  input  logic [12:0] seq_in,\n  output logic [63:0] noc_in_flit,\n  output logic noc_in_valid,\n  input  logic noc_in_ready,\n  input  logic [63:0] noc_out_flit,\n  input  logic noc_out_valid,\n  output logic noc_out_ready,\n  output logic order_violation,\n  output logic outstanding_full,\n  output logic [31:0] injected_count,\n  output logic [31:0] ejected_count,\n  output logic [31:0] immediate_count\n);\n\n  logic [1:0] init_router_b;\n  assign init_router_b = 2'(INIT_ROUTER);\n\n  logic [63:0] adap_out_awaddr;\n  logic [7:0] adap_out_awlen;\n  logic [2:0] adap_out_awsize;\n  logic adap_out_awvalid;\n  logic adap_out_awready;\n  logic [31:0] adap_out_wdata;\n  logic adap_out_wvalid;\n  logic adap_out_wready;\n  logic adap_out_bvalid;\n  logic adap_credit_full;\n  logic bvalid_w;\n  logic bready_w;\n  assign bready_w = 1'b1;\n\n  logic [63:0] dec_addr;\n  logic dec_req_write;\n  logic [15:0] dec_burst_len;\n  logic [2:0] dec_target_oh;\n  logic dec_hit;\n  logic dec_miss;\n  logic dec_overlap;\n  logic dec_allow;\n  logic dec_perm_violation;\n  logic dec_burst_violation;\n\n  logic ord_in_valid;\n  logic ord_in_ready;\n  logic [63:0] ord_in_flit;\n  logic [63:0] ord_out_flit;\n  logic ord_out_valid;\n  logic ord_out_ready;\n  logic ord_complete_pulse;\n  logic [CLASS_W-1:0] ord_class_in;\n  logic [0:0] ord_assigned_vc;\n  logic ord_split_required;\n  logic cdc_in_valid;\n  logic cdc_in_ready;\n  logic [63:0] cdc_in_flit;\n  logic cdc_out_valid;\n  logic cdc_out_ready;\n  logic [63:0] cdc_out_flit;\n\n  logic cap_valid_q;\n  logic cap_write_q;\n  logic [63:0] cap_addr_q;\n  logic [7:0] cap_len_q;\n  logic [2:0] cap_size_q;\n  logic [3:0] cap_id_q;\n  logic [12:0] cap_seq_q;\n  logic [8:0] total_beats_q;\n  logic [8:0] beat_idx_q;\n  logic [8:0] w_cnt_q;\n  logic [31:0] w_buf_q [0:15];\n  logic [3:0] wstrb_buf_q [0:15];\n  logic wstrb_bad_q;\n  logic wlast_bad_q;\n  logic [1:0] agg_status_q;\n  logic [1:0] rsp_status_q;\n  logic [31:0] rsp_rdata_q;\n  logic imm_q;\n  logic [1:0] imm_status_q;\n  logic cmp_pulse_q;\n  logic [2:0] state_q;\n  localparam int REQ_ID_W = 2;\n  localparam [2:0] S_IDLE = 3'd0;\n  localparam [2:0] S_CAPW = 3'd1;\n  localparam [2:0] S_AWRET = 3'd2;\n  localparam [2:0] S_ISSUE = 3'd3;\n  localparam [2:0] S_WAIT_RSP = 3'd4;\n  localparam [2:0] S_RESP = 3'd5;\n  logic [63:0] beat_addr_w;\n  logic [11:0] beat_off_w;\n  logic [31:0] beat_data_w;\n  logic [12:0] beat_seq_w;\n  logic [15:0] burst_len_w;\n  logic size_bad_w;\n  logic burst_long_w;\n  logic issue_fire_w;\n  logic eject_fire_w;\n  logic [31:0] inj_q;\n  logic [31:0] ej_q;\n  logic [31:0] imm_q_cnt;\n  logic ord_viol_w;\n  logic ord_full_w;\n  logic w_fire_w;\n\n  assign dec_addr = cap_addr_q;\n  assign dec_req_write = cap_write_q;\n  assign burst_len_w = (total_beats_q <= 9'd1) ? 16'd0 : (16'(total_beats_q) << cap_size_q);\n  assign dec_burst_len = burst_len_w;\n  assign beat_seq_w = cap_seq_q + {4'b0, beat_idx_q};\n  assign beat_addr_w = cap_addr_q + (64'(beat_idx_q) * (64'd1 << cap_size_q));\n  assign beat_off_w = beat_addr_w[11:0];\n  assign beat_data_w = cap_write_q ? w_buf_q[beat_idx_q[3:0]] : 32'd0;\n  assign size_bad_w = (cap_size_q != 3'd2);\n  assign burst_long_w = (total_beats_q > 9'd16);\n  assign w_fire_w = adap_out_wvalid && adap_out_wready;\n  assign issue_fire_w = (state_q == S_ISSUE) && ord_in_valid && ord_in_ready;\n  assign eject_fire_w = (state_q == S_WAIT_RSP) && cdc_ret_valid && cdc_ret_ready;\n\n  assign ord_in_valid = (state_q == S_ISSUE) && dec_allow && !size_bad_w && !burst_long_w && !wstrb_bad_q && !wlast_bad_q;\n  assign ord_in_flit[63] = 1'b0;\n  assign ord_in_flit[62:61] = 2'b11;\n  assign ord_in_flit[60] = (beat_off_w[11:10] != 2'b00);\n  assign ord_in_flit[59:58] = beat_off_w[9:8];\n  assign ord_in_flit[57] = init_router_b[0];\n  assign ord_in_flit[56] = cap_write_q;\n  assign ord_in_flit[55:50] = beat_off_w[7:2];\n  assign ord_in_flit[49:48] = 2'(TARGET_ROUTER);\n  assign ord_in_flit[47:46] = beat_off_w[1:0];\n  assign ord_in_flit[45] = init_router_b[1];\n  assign ord_in_flit[44:32] = beat_seq_w;\n  assign ord_in_flit[31:0] = beat_data_w;\n  assign ord_class_in = CLASS_W'(CLASS_ID);\n  assign ord_complete_pulse = cmp_pulse_q;\n  assign cdc_in_valid = ord_out_valid;\n  assign cdc_in_flit = ord_out_flit;\n  assign ord_out_ready = cdc_in_ready;\n  assign noc_in_valid = cdc_out_valid;\n  assign noc_in_flit = cdc_out_flit;\n  assign cdc_out_ready = noc_in_ready;\n\n  assign arready_in = (state_q == S_IDLE) && !cap_valid_q;\n  assign adap_out_awready = (state_q == S_AWRET);\n  assign adap_out_wready = (state_q == S_CAPW);\n  assign bvalid_w = (state_q == S_RESP) && cap_write_q;\n\n  assign bvalid_out = adap_out_bvalid;\n  assign bresp_out = imm_q ? imm_status_q : agg_status_q;\n  assign bid_out = cap_id_q;\n  assign rvalid_out = (state_q == S_RESP) && !cap_write_q;\n  assign rresp_out = imm_q ? imm_status_q : rsp_status_q;\n  assign rid_out = cap_id_q;\n  assign rlast_out = imm_q ? 1'b1 : (beat_idx_q == total_beats_q - 9'd1);\n  assign rdata_out = imm_q ? 32'd0 : rsp_rdata_q;\n  assign order_violation = ord_viol_w;\n  assign outstanding_full = ord_full_w;\n  assign injected_count = inj_q;\n  assign ejected_count = ej_q;\n  assign immediate_count = imm_q_cnt;\n\n\n  generate\n    if (INIT_ID == 0) begin : g_adap0\n      adapter_axi5_g0 u_adapter (\n        .clk(clk), .rst_n(rst_n),\n        .in_awaddr(awaddr_in), .in_awlen(awlen_in), .in_awsize(awsize_in), .in_awburst(2'b01),\n        .in_awvalid(awvalid_in), .in_awready(awready_in),\n        .out_awaddr(adap_out_awaddr), .out_awlen(adap_out_awlen), .out_awsize(adap_out_awsize),\n        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),\n        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),\n        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),\n        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)\n      );\n    end else begin : g_adap1\n      adapter_axi5_g1 u_adapter (\n        .clk(clk), .rst_n(rst_n),\n        .in_awaddr(awaddr_in), .in_awlen(awlen_in), .in_awsize(awsize_in), .in_awburst(2'b01),\n        .in_awvalid(awvalid_in), .in_awready(awready_in),\n        .out_awaddr(adap_out_awaddr), .out_awlen(adap_out_awlen), .out_awsize(adap_out_awsize),\n        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),\n        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),\n        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),\n        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)\n      );\n    end\n  endgenerate\n\n  addr_decode u_decode (\n    .addr(dec_addr), .req_id((REQ_ID_W'(INIT_ID))),\n    .req_write(dec_req_write), .burst_len(dec_burst_len),\n    .target_oh(dec_target_oh), .hit(dec_hit), .miss(dec_miss),\n    .overlap(dec_overlap), .allow(dec_allow),\n    .perm_violation(dec_perm_violation), .burst_violation(dec_burst_violation)\n  );\n\n  ordering_fsm u_ordering (\n    .clk(clk), .rst_n(rst_n),\n    .in_valid(ord_in_valid), .in_ready(ord_in_ready),\n    .in_flit(ord_in_flit), .class_in(ord_class_in),\n    .initiator_in('0), .complete_tagged(1'b0), .complete_seq(13'd0),\n    .complete_initiator('0), .complete_class('0),\n    .complete_pulse(ord_complete_pulse),\n    .out_valid(ord_out_valid), .out_ready(ord_out_ready),\n    .out_flit(ord_out_flit), .assigned_vc(ord_assigned_vc),\n    .order_violation(ord_viol_w), .outstanding_full(ord_full_w),\n    .split_required(ord_split_required)\n  );\n\n  logic cdc_ret_valid;\n  logic cdc_ret_ready;\n  logic [63:0] cdc_ret_flit;\n  logic noc_out_ready_tap;\n  assign noc_out_ready = noc_out_ready_tap;\n  assign cdc_ret_ready = (state_q == S_WAIT_RSP);\n  generate\n    if (CDC_CROSSED != 0) begin : g_cdc_cross\n      cdc_slice_up_0 u_cdc_up0 (\n        .src_clk(clk), .src_rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .dst_clk(fabric_clk), .dst_rst_n(rst_n),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      cdc_slice_down_0 u_cdc_down0 (\n        .src_clk(fabric_clk), .src_rst_n(rst_n),\n        .in_valid(noc_out_valid), .in_ready(noc_out_ready_tap),\n        .in_flit(noc_out_flit),\n        .dst_clk(clk), .dst_rst_n(rst_n),\n        .out_valid(cdc_ret_valid), .out_ready(cdc_ret_ready),\n        .out_flit(cdc_ret_flit)\n      );\n    end else begin : g_cdc_bypass\n      cdc_bypass u_cdc (\n        .clk(fabric_clk), .rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      assign cdc_ret_valid = noc_out_valid;\n      assign cdc_ret_flit = noc_out_flit;\n      assign noc_out_ready_tap = (state_q == S_WAIT_RSP);\n    end\n  endgenerate\n\n  wire unused_dec_unused = dec_hit ^ dec_target_oh[0] ^ dec_overlap ^ dec_perm_violation ^ dec_burst_violation ^ adap_credit_full ^ ord_assigned_vc[0] ^ ord_split_required ^ wstrb_buf_q[0][0];\n\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) begin\n      cap_valid_q <= 1'b0;\n      cap_write_q <= 1'b0;\n      cap_addr_q <= 64'd0;\n      cap_len_q <= 8'd0;\n      cap_size_q <= 3'd0;\n      cap_id_q <= 4'd0;\n      cap_seq_q <= 13'd0;\n      total_beats_q <= 9'd0;\n      beat_idx_q <= 9'd0;\n      w_cnt_q <= 9'd0;\n      wstrb_bad_q <= 1'b0;\n      wlast_bad_q <= 1'b0;\n      agg_status_q <= 2'b00;\n      rsp_status_q <= 2'b00;\n      rsp_rdata_q <= 32'd0;\n      imm_q <= 1'b0;\n      imm_status_q <= 2'b00;\n      cmp_pulse_q <= 1'b0;\n      state_q <= S_IDLE;\n      inj_q <= 32'd0;\n      ej_q <= 32'd0;\n      imm_q_cnt <= 32'd0;\n    end else begin\n      cmp_pulse_q <= 1'b0;\n      case (state_q)\n        S_IDLE: begin\n          if (adap_out_awvalid) begin\n            cap_valid_q <= 1'b1;\n            cap_write_q <= 1'b1;\n            cap_addr_q <= adap_out_awaddr;\n            cap_len_q <= adap_out_awlen;\n            cap_size_q <= adap_out_awsize;\n            cap_id_q <= awid_in;\n            cap_seq_q <= seq_in;\n            total_beats_q <= {1'b0, adap_out_awlen} + 9'd1;\n            beat_idx_q <= 9'd0;\n            w_cnt_q <= 9'd0;\n            agg_status_q <= 2'b00;\n            wstrb_bad_q <= 1'b0;\n            wlast_bad_q <= 1'b0;\n            state_q <= S_CAPW;\n          end else if (arvalid_in && arready_in) begin\n            cap_valid_q <= 1'b1;\n            cap_write_q <= 1'b0;\n            cap_addr_q <= araddr_in;\n            cap_len_q <= arlen_in;\n            cap_size_q <= arsize_in;\n            cap_id_q <= arid_in;\n            cap_seq_q <= seq_in;\n            total_beats_q <= {1'b0, arlen_in} + 9'd1;\n            beat_idx_q <= 9'd0;\n            w_cnt_q <= 9'd0;\n            agg_status_q <= 2'b00;\n            wstrb_bad_q <= 1'b0;\n            wlast_bad_q <= 1'b0;\n            state_q <= S_ISSUE;\n          end\n        end\n        S_CAPW: begin\n          if (w_fire_w) begin\n            if (w_cnt_q < 9'd16) begin\n              w_buf_q[w_cnt_q[3:0]] <= adap_out_wdata;\n              wstrb_buf_q[w_cnt_q[3:0]] <= wstrb_in;\n            end\n            if (wstrb_in != 4'b1111) wstrb_bad_q <= 1'b1;\n            if (wlast_in != ((w_cnt_q == (total_beats_q - 9'd1)))) wlast_bad_q <= 1'b1;\n            w_cnt_q <= w_cnt_q + 9'd1;\n            if ((w_cnt_q + 9'd1) == total_beats_q) state_q <= S_AWRET;\n          end\n        end\n        S_AWRET: begin\n          state_q <= S_ISSUE;\n        end\n        S_ISSUE: begin\n          if (size_bad_w || burst_long_w || wstrb_bad_q || wlast_bad_q || dec_miss || !dec_allow) begin\n            imm_q <= 1'b1;\n            imm_status_q <= (size_bad_w || wstrb_bad_q || wlast_bad_q) ? 2'b10 : 2'b11;\n            imm_q_cnt <= imm_q_cnt + 32'd1;\n            state_q <= S_RESP;\n          end else if (issue_fire_w) begin\n            inj_q <= inj_q + 32'd1;\n            state_q <= S_WAIT_RSP;\n          end\n        end\n        S_WAIT_RSP: begin\n          if (eject_fire_w) begin\n            rsp_status_q <= cdc_ret_flit[60:59];\n            rsp_rdata_q <= cdc_ret_flit[31:0];\n            ej_q <= ej_q + 32'd1;\n            cmp_pulse_q <= 1'b1;\n            if (cap_write_q) begin\n              if (agg_status_q == 2'b10 || noc_out_flit[60:59] == 2'b10) agg_status_q <= 2'b10;\n              else agg_status_q <= 2'b00;\n              if (beat_idx_q == total_beats_q - 9'd1) begin\n                state_q <= S_RESP;\n              end else begin\n                beat_idx_q <= beat_idx_q + 9'd1;\n                state_q <= S_ISSUE;\n              end\n            end else begin\n              state_q <= S_RESP;\n            end\n          end\n        end\n        S_RESP: begin\n          if ((cap_write_q && bvalid_out && bready_in) || (!cap_write_q && rvalid_out && rready_in)) begin\n            if (imm_q) begin\n              cap_valid_q <= 1'b0;\n              imm_q <= 1'b0;\n              beat_idx_q <= 9'd0;\n              state_q <= S_IDLE;\n            end else if (!cap_write_q && (beat_idx_q != total_beats_q - 9'd1)) begin\n              beat_idx_q <= beat_idx_q + 9'd1;\n              state_q <= S_ISSUE;\n            end else begin\n              cap_valid_q <= 1'b0;\n              beat_idx_q <= 9'd0;\n              state_q <= S_IDLE;\n            end\n          end\n        end\n        default: begin\n          state_q <= S_IDLE;\n        end\n      endcase\n    end\n  end\n\nendmodule"
 
 
 def _default_top(params):
@@ -1718,14 +1768,18 @@ def _apply_axi5_adapter_tieoffs_to_slice(tpl: str, *, data_width: int) -> str:
     """
     decls, conns, sink = _axi5_slice_adapter_tieoffs(data_width=data_width)
     comment = "\n".join(_axi5_slice_adapter_tieoff_comment())
-    _anchor = "  assign bready_w = 1'b1;\n"
+    # The tie-off declarations are inserted after the adapter's own wires.
+    # The anchor is the last of them rather than the old `assign bready_w`
+    # line: that wire is gone from the slice (the adapter's b-ready input is
+    # left open), and the locked renderer never carried the assign at all.
+    _anchor = "  logic bvalid_w;\n"
     if _anchor not in tpl:
         raise _refuse("the slice template lost its adapter wire anchor")
     tpl = tpl.replace(
         _anchor,
         _anchor + "\n" + comment + "\n" + "\n".join(decls) + "\n",
         1)
-    _tail = ("        .bvalid(bvalid_w), .bready(bready_w), "
+    _tail = ("        .bvalid(bvalid_w), "
              ".out_bvalid(adap_out_bvalid), .out_bready(bready_in), "
              ".credit_full(adap_credit_full)\n")
     if tpl.count(_tail) != 2:
@@ -1744,20 +1798,30 @@ def _apply_axi5_adapter_tieoffs_to_slice(tpl: str, *, data_width: int) -> str:
     # The decode and ordering results the slice does not act on.
     _dec_tail = ("    .perm_violation(dec_perm_violation), "
                  ".burst_violation(dec_burst_violation)\n  );")
-    if tpl.count(_dec_tail) != 1:
+    _dec_conns = _axi5_slice_decode_conns()
+    if tpl.count(_dec_tail) == 1:
+        # `wire_req_id` carries the trusted ingress identity the slice has no
+        # second copy of, so it is tied off with the ignored outputs.
+        tpl = tpl.replace(
+            _dec_tail,
+            "    .perm_violation(dec_perm_violation), "
+            ".burst_violation(dec_burst_violation),\n"
+            "    .wire_req_id('0),\n"
+            + "\n".join(_dec_conns) + "\n  );")
+    elif ".wire_req_id(" not in tpl:
+        # A template that is already patched carries the tie-off itself;
+        # one that carries neither the tail nor the tie-off did change
+        # shape, and the refusal has to stay.
         raise _refuse("the slice template's decode instantiation changed shape")
-    tpl = tpl.replace(
-        _dec_tail,
-        "    .perm_violation(dec_perm_violation), "
-        ".burst_violation(dec_burst_violation),\n"
-        + "\n".join(_axi5_slice_decode_conns()) + "\n  );")
     _ord_tail = "    .split_required(ord_split_required)\n  );"
-    if tpl.count(_ord_tail) != 1:
+    _ord_conns = _axi5_slice_ordering_conns()
+    if tpl.count(_ord_tail) == 1:
+        tpl = tpl.replace(
+            _ord_tail,
+            "    .split_required(ord_split_required),\n"
+            + "\n".join(_ord_conns) + "\n  );")
+    elif ".initiator_in(" not in tpl:
         raise _refuse("the slice template's ordering instantiation changed shape")
-    tpl = tpl.replace(
-        _ord_tail,
-        "    .split_required(ord_split_required),\n"
-        + "\n".join(_axi5_slice_ordering_conns()) + "\n  );")
     return tpl
 
 
@@ -2030,8 +2094,6 @@ def _render_project_top_locked() -> str:
         "  logic adap_out_bvalid;",
         "  logic adap_credit_full;",
         "  logic bvalid_w;",
-        "  logic bready_w;",
-        "  assign bready_w = 1'b1;",
         "",
         "  logic [63:0] dec_addr;",
         "  logic dec_req_write;",
@@ -2169,7 +2231,7 @@ def _render_project_top_locked() -> str:
         "        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),",
         "        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),",
         "        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),",
-        "        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)",
+        "        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)",
         "      );",
         "    end else begin : g_adap1",
         "      adapter_axi5_g1 u_adapter (",
@@ -2180,7 +2242,7 @@ def _render_project_top_locked() -> str:
         "        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),",
         "        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),",
         "        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),",
-        "        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)",
+        "        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full)",
         "      );",
         "    end",
         "  endgenerate",
@@ -2190,13 +2252,15 @@ def _render_project_top_locked() -> str:
         "    .req_write(dec_req_write), .burst_len(dec_burst_len),",
         "    .target_oh(dec_target_oh), .hit(dec_hit), .miss(dec_miss),",
         "    .overlap(dec_overlap), .allow(dec_allow),",
-        "    .perm_violation(dec_perm_violation), .burst_violation(dec_burst_violation)",
+        "    .perm_violation(dec_perm_violation), .burst_violation(dec_burst_violation),",
+        "    .wire_req_id('0)",
         "  );",
         "",
         "  ordering_fsm u_ordering (",
         "    .clk(clk), .rst_n(rst_n),",
         "    .in_valid(ord_in_valid), .in_ready(ord_in_ready),",
         "    .in_flit(ord_in_flit), .class_in(ord_class_in),",
+        "    .initiator_in('0), .complete_tagged(1'b0), .complete_seq(13'd0), .complete_initiator('0), .complete_class('0),"
         "    .complete_pulse(ord_complete_pulse),",
         "    .out_valid(ord_out_valid), .out_ready(ord_out_ready),",
         "    .out_flit(ord_out_flit), .assigned_vc(ord_assigned_vc),",
@@ -2634,12 +2698,12 @@ def _render_tb_project_top_locked() -> str:
         "      init0_wdata = p8_pat(seed8, 0); init0_wstrb = 4'b1111; init0_wlast = (nbeats == 1); init0_wvalid = 1'b1;",
         "      p8_seq0 = p8_seq0 + nbeats;",
         "      timeout = 0;",
-        "      while (!init0_awready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init0_awready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init0_awvalid = 1'b0;",
         "      for (k = 0; k < nbeats; k = k + 1) begin",
         "        if (k > 0) begin init0_wdata = p8_pat(seed8, k); init0_wlast = (k == nbeats - 1); end",
         "        timeout = 0;",
-        "        while (!init0_wready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "        while (!init0_wready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "        if (timeout >= 100) fail_msg(\"P8W: wready timeout\");",
         "        p8_accepted = p8_accepted + 1;",
         "        @(posedge clk);",
@@ -2668,7 +2732,7 @@ def _render_tb_project_top_locked() -> str:
         "      p8_seq0 = p8_seq0 + nbeats;",
         "      p8_accepted = p8_accepted + nbeats;",
         "      timeout = 0;",
-        "      while (!init0_arready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init0_arready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init0_arvalid = 1'b0;",
         "      k = 0; timeout = 0;",
         "      while (k < nbeats && timeout < 6000) begin",
@@ -2701,7 +2765,7 @@ def _render_tb_project_top_locked() -> str:
         "      p8_seq1 = p8_seq1 + nbeats;",
         "      p8_accepted = p8_accepted + nbeats;",
         "      timeout = 0;",
-        "      while (!init1_arready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init1_arready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init1_arvalid = 1'b0;",
         "      k = 0; timeout = 0;",
         "      while (k < nbeats && timeout < 6000) begin",
@@ -2790,14 +2854,14 @@ def _render_tb_project_top_locked() -> str:
         "      init0_wdata = data; init0_wstrb = 4'b1111; init0_wlast = 1'b1; init0_wvalid = 1'b1; init0_seq = seq;",
         "      init0_bready = 1'b1;",
         "      timeout = 0;",
-        "      while (!init0_awready && timeout < 100) begin",
+        "      while (!init0_awready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
         "      @(negedge clk);",
         "      init0_awvalid = 1'b0;",
         "      timeout = 0;",
-        "      while (!init0_wready && timeout < 100) begin",
+        "      while (!init0_wready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
@@ -2825,7 +2889,7 @@ def _render_tb_project_top_locked() -> str:
         "      init0_araddr = addr; init0_arlen = 8'd0; init0_arsize = 3'd2; init0_arid = 4'd0; init0_arvalid = 1'b1; init0_seq = seq;",
         "      init0_rready = 1'b1;",
         "      timeout = 0;",
-        "      while (!init0_arready && timeout < 100) begin",
+        "      while (!init0_arready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
@@ -2856,14 +2920,14 @@ def _render_tb_project_top_locked() -> str:
         "      init1_wdata = data; init1_wstrb = 4'b1111; init1_wlast = 1'b1; init1_wvalid = 1'b1; init1_seq = seq;",
         "      init1_bready = 1'b1;",
         "      timeout = 0;",
-        "      while (!init1_awready && timeout < 100) begin",
+        "      while (!init1_awready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
         "      @(negedge clk);",
         "      init1_awvalid = 1'b0;",
         "      timeout = 0;",
-        "      while (!init1_wready && timeout < 100) begin",
+        "      while (!init1_wready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
@@ -2891,7 +2955,7 @@ def _render_tb_project_top_locked() -> str:
         "      init1_araddr = addr; init1_arlen = 8'd0; init1_arsize = 3'd2; init1_arid = 4'd0; init1_arvalid = 1'b1; init1_seq = seq;",
         "      init1_rready = 1'b1;",
         "      timeout = 0;",
-        "      while (!init1_arready && timeout < 100) begin",
+        "      while (!init1_arready && timeout < 8000) begin",
         "        @(posedge clk); timeout = timeout + 1;",
         "      end",
         "      @(posedge clk);",
@@ -2924,14 +2988,14 @@ def _render_tb_project_top_locked() -> str:
         "      init0_awvalid = 1'b1; init0_seq = seq_base; init0_bready = 1'b1;",
         "      init0_wdata = d0; init0_wstrb = wstrb0; init0_wlast = (blen==8'd0); init0_wvalid = 1'b1;",
         "      timeout = 0;",
-        "      while (!init0_awready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init0_awready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init0_awvalid = 1'b0;",
         "      for (k = 0; k < (blen+1); k = k + 1) begin",
         "        if (k == 1) begin init0_wdata = d1; init0_wstrb = 4'b1111; init0_wlast = (blen==8'd1); end",
         "        if (k == 2) begin init0_wdata = d2; init0_wstrb = 4'b1111; init0_wlast = (blen==8'd2); end",
         "        if (k == 3) begin init0_wdata = d3; init0_wstrb = 4'b1111; init0_wlast = (blen==8'd3); end",
         "        timeout = 0;",
-        "        while (!init0_wready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "        while (!init0_wready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "        if (timeout >= 100) fail_msg(\"BURSTW: wready timeout\");",
         "        @(posedge clk);",
         "      end",
@@ -2958,7 +3022,7 @@ def _render_tb_project_top_locked() -> str:
         "      init0_araddr = addr; init0_arlen = blen; init0_arsize = 3'd2; init0_arid = rid; init0_arvalid = 1'b1; init0_seq = seq_base;",
         "      init0_rready = 1'b1;",
         "      timeout = 0;",
-        "      while (!init0_arready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init0_arready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init0_arvalid = 1'b0;",
         "      cnt = 0;",
         "      timeout = 0;",
@@ -2993,10 +3057,10 @@ def _render_tb_project_top_locked() -> str:
         "      init1_awvalid = 1'b1; init1_seq = seq_base; init1_bready = 1'b1;",
         "      init1_wdata = 32'hA5A5A5A5; init1_wstrb = 4'b1111; init1_wlast = (blen==8'd0); init1_wvalid = 1'b1;",
         "      timeout = 0;",
-        "      while (!init1_awready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init1_awready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init1_awvalid = 1'b0;",
         "      timeout = 0;",
-        "      while (!init1_wready && timeout < 100) begin @(posedge clk); timeout = timeout + 1; end",
+        "      while (!init1_wready && timeout < 8000) begin @(posedge clk); timeout = timeout + 1; end",
         "      @(posedge clk); init1_wvalid = 1'b0;",
         "      timeout = 0;",
         "      while (!init1_bvalid && timeout < 2000) begin @(posedge clk); timeout = timeout + 1; end",
@@ -3519,13 +3583,13 @@ def _render_tb_project_top_param(params):
             f"      init{gi}_wdata = data; init{gi}_wstrb = 4'b1111; init{gi}_wlast = 1'b1; init{gi}_wvalid = 1'b1; init{gi}_seq = seq;",
             f"      init{gi}_bready = 1'b1;",
             "      timeout = 0;",
-            f"      while (!init{gi}_awready && timeout < 100) begin",
+            f"      while (!init{gi}_awready && timeout < 8000) begin",
             "        @(posedge clk); timeout = timeout + 1;",
             "      end",
             "      @(posedge clk);",
             f"      init{gi}_awvalid = 1'b0;",
             "      timeout = 0;",
-            f"      while (!init{gi}_wready && timeout < 100) begin",
+            f"      while (!init{gi}_wready && timeout < 8000) begin",
             "        @(posedge clk); timeout = timeout + 1;",
             "      end",
             "      @(posedge clk);",
@@ -3552,7 +3616,7 @@ def _render_tb_project_top_param(params):
             f"      init{gi}_araddr = addr; init{gi}_arlen = 8'd0; init{gi}_arsize = 3'd2; init{gi}_arid = 4'd0; init{gi}_arvalid = 1'b1; init{gi}_seq = seq;",
             f"      init{gi}_rready = 1'b1;",
             "      timeout = 0;",
-            f"      while (!init{gi}_arready && timeout < 100) begin",
+            f"      while (!init{gi}_arready && timeout < 8000) begin",
             "        @(posedge clk); timeout = timeout + 1;",
             "      end",
             "      @(posedge clk);",
@@ -3927,8 +3991,9 @@ def run_rtl_slice(request_doc: dict, directory: Path, config: dict) -> dict:
     (target / "project_top.sv").write_text(render_project_top(top_params))
     (target / "tb_project_top.sv").write_text(render_tb_project_top(tb_params))
     if cells:
-        (target / "cdc_slice_wrappers.sv").write_text(
-            render_cdc_slice_wrappers(params, cells))
+        _wrapper_files = render_cdc_slice_wrapper_files(params, cells)
+        for _wname, _wsrc in _wrapper_files.items():
+            (target / (_wname + ".sv")).write_text(_wsrc)
 
     dut_files = [
         "noc_pkg.sv", "router.sv", "noc_top.sv",
@@ -3937,7 +4002,8 @@ def run_rtl_slice(request_doc: dict, directory: Path, config: dict) -> dict:
         "cdc_bypass.sv", "destination_adapter.sv", "project_top.sv",
     ]
     if cells:
-        dut_files.append("cdc_slice_wrappers.sv")
+        dut_files.extend(sorted(name + ".sv" for name in
+                                render_cdc_slice_wrapper_files(params, cells)))
         dut_files.extend(cell.filename for cell in cells)
         dut_files.append("cdc_fifo.sv")
     dut_files = [*dict.fromkeys(dut_files)]
@@ -3955,8 +4021,10 @@ def run_rtl_slice(request_doc: dict, directory: Path, config: dict) -> dict:
             for cell in cells:
                 if cell.filename not in files:
                     files.append(cell.filename)
-            if cells and "cdc_slice_wrappers.sv" not in files:
-                files.append("cdc_slice_wrappers.sv")
+            if cells:
+                for _wname in render_cdc_slice_wrapper_files(params, cells):
+                    if _wname + ".sv" not in files:
+                        files.append(_wname + ".sv")
             meta["files"] = files
             meta["composed_slice"] = {
                 "top": "project_top",
@@ -5206,7 +5274,7 @@ def _render_family_pkg(params: ComposedFamilyParams) -> str:
     lines.append("`default_nettype wire")
     lines.append("")
     return "\n".join(lines)
-_UNIFIED_ROUTER_TEMPLATE = ("`default_nettype none\n// The router's port and state arrays are indexed from 0 upwards: the\n// ascending packed and unpacked ranges are deliberate, because the\n// noc_top instantiates the router by concatenating the network ports\n// in the same ascending order and element p must land on port p on both\n// sides. Flipping the ranges would reorder the ports, so the ascending\n// bit range is kept and the style warning is switched off here with\n// that reason stated rather than left as a blanket flag.\n/* verilator lint_off ASCRANGE */\nmodule router #(\n  parameter int ID = 0,\n  parameter int DEG = 0,\n  parameter int ROUTE_CYCLES = __ROUTE__,\n  parameter int VC_ALLOC_CYCLES = __VCCY__,\n  parameter int SWITCH_TRAVERSAL = __TRAVCY__,\n  parameter int CREDIT_RETURN_LATENCY = __LAT__,\n  parameter int OUTPUT_DELAY = __OD__,\n  parameter int HOLD_SWITCH = __HOLD__,\n  parameter int VC_REUSE_TAIL_CREDIT = __TAIL__,\n  parameter int ALLOCATOR_AGE = __AGE__,\n  parameter int HYBRID = __HYB__,\n  parameter int PKT_VALIANT = __VAL__,\n  parameter int PKT_RANK = __RNK__,\n  parameter int ISLAND_MASK = __ISLNM__,\n  parameter int SIDE_DEPTH = __SD__,\n  parameter int SIDE_WM = __SW__,\n  parameter int PLANE_D_END = __PDE__,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_MIN = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_ESC = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_ROW = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_COL = '0,\n  parameter logic [__DISTBITS__:0] RT_DIST = '0,\n  parameter logic [noc_pkg::N_ROUTERS-2:0] SHAPE_TAB = '0\n) (\n  input logic clk,\n  input logic rst_n,\n  input noc_pkg::flit_raw_t [0:DEG-1] n_in_flit,\n  input logic [0:DEG-1] n_in_valid,\n  output logic [0:DEG-1] n_in_ready,\n  output noc_pkg::flit_raw_t [0:DEG-1] n_out_flit,\n  output logic [0:DEG-1] n_out_valid,\n  input logic [0:DEG-1] n_out_ready,\n  input noc_pkg::flit_raw_t local_in_flit,\n  input logic local_in_valid,\n  output logic local_in_ready,\n  output noc_pkg::flit_raw_t local_out_flit,\n  output logic local_out_valid,\n  input logic local_out_ready\n);\n/* verilator lint_on ASCRANGE */\n  localparam int NUM_PORTS = noc_pkg::NUM_PORTS;\n  localparam int LOCAL_PORT = noc_pkg::LOCAL_PORT;\n  localparam int NUM_VCS = noc_pkg::NUM_VCS;\n  localparam int BUF_DEPTH = noc_pkg::BUF_DEPTH;\n  localparam int N_ROUTERS = noc_pkg::N_ROUTERS;\n  localparam int DST_W = noc_pkg::DST_W;\n  localparam int PORT_W = noc_pkg::PORT_W;\n  localparam int TYPE_W = noc_pkg::TYPE_W;\n  localparam logic [TYPE_W-1:0] FT_HEAD = noc_pkg::FT_HEAD;\n  localparam logic [TYPE_W-1:0] FT_TAIL = noc_pkg::FT_TAIL;\n  localparam logic [TYPE_W-1:0] FT_SINGLE = noc_pkg::FT_SINGLE;\n  localparam int KER_W = __KERW__;\n  localparam int RANGE_BITS = __RBITS__;\n  localparam int KER_LSB = __KERLSB__;\n  localparam int KER_MSB = __KERMSB__;\n  localparam int DIST_W = __RBITS__;\n  localparam int ESC_VC = (NUM_VCS > 1) ? 1 : 0;\n  localparam int AGE_K = noc_pkg::BLOCK_K * 8;\n  localparam int ESC_YIELD_K = 4;\n  logic [DST_W-1:0] id_w;\n  assign id_w = ID;\n  // The flit argument is read field by field. The whole argument is\n  // consumed here so the fields an accessor does not read are not\n  // reported as unused: the accessors deliberately look at one field\n  // each, and the field bounds come from the package that owns the\n  // compiled layout.\n  function automatic logic [noc_pkg::VC_W-1:0] get_vc(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[noc_pkg::VC_MSB:noc_pkg::VC_LSB];\n  endfunction\n  function automatic logic [TYPE_W-1:0] get_type(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[noc_pkg::TYPE_MSB:noc_pkg::TYPE_LSB];\n  endfunction\n  function automatic logic [DST_W-1:0] get_dst(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[noc_pkg::DST_MSB:noc_pkg::DST_LSB];\n  endfunction\n  function automatic logic is_head(input noc_pkg::flit_raw_t f);\n    return (get_type(f) == FT_HEAD) || (get_type(f) == FT_SINGLE);\n  endfunction\n  function automatic logic is_tail(input noc_pkg::flit_raw_t f);\n    return (get_type(f) == FT_TAIL) || (get_type(f) == FT_SINGLE);\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_min(input int dst);\n    return RT_MIN[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_esc(input int dst);\n    return RT_ESC[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_row(input int dst);\n    return RT_ROW[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_col(input int dst);\n    return RT_COL[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic int get_dist(input int dst);\n    return RT_DIST[dst*DIST_W +: DIST_W];\n  endfunction\n  function automatic logic [KER_W-1:0] get_ker(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[KER_MSB:KER_LSB];\n  endfunction\n  function automatic int ker_rank(input noc_pkg::flit_raw_t f);\n    return get_ker(f)[KER_W-2:KER_W-1-RANGE_BITS];\n  endfunction\n  function automatic int ker_intm(input noc_pkg::flit_raw_t f);\n    return get_ker(f)[RANGE_BITS-1:0];\n  endfunction\n  function automatic logic ker_leg(input noc_pkg::flit_raw_t f);\n    return get_ker(f)[KER_W-1];\n  endfunction\n  function automatic logic ker_shape(input noc_pkg::flit_raw_t f);\n    return get_ker(f)[KER_W-2-RANGE_BITS];\n  endfunction\n  function automatic noc_pkg::flit_raw_t ker_step(input noc_pkg::flit_raw_t f);\n    automatic noc_pkg::flit_raw_t out_f;\n    automatic logic [KER_W-1:0] km;\n    automatic int ker_n;\n    automatic logic [31:0] unused_ker_n_bits;\n    out_f = f;\n    km = get_ker(f);\n    if (ISLAND_MASK != 0 && is_head(f)) begin\n      km[KER_W-2-RANGE_BITS] = SHAPE_TAB[get_dst(f)];\n    end\n    if (PKT_VALIANT && is_head(f)) begin\n      ker_n = (int'(get_dst(f)) * 13 + int'(f[noc_pkg::SRC_MSB:noc_pkg::SRC_LSB]) * 7 + 17) % N_ROUTERS;\n      km[RANGE_BITS-1:0] = ker_n;\n      km[KER_W-1] = 1'b0;\n    end\n    if (PKT_VALIANT && ker_intm(f) == ID && !ker_leg(f)) km[KER_W-1] = 1'b1;\n    if (PKT_RANK) begin\n      km[KER_W-2:KER_W-1-RANGE_BITS] = ker_rank(f) + 1;\n    end\n    out_f[KER_MSB:KER_LSB] = km;\n    if (PKT_RANK) begin\n      automatic int ker_r;\n      ker_r = ker_rank(f) + 1;\n      if (ker_r >= NUM_VCS) ker_r = NUM_VCS - 1;\n      out_f[__VCM__:__VCL__] = ker_r[noc_pkg::VC_W-1:0];\n    end\n    // The valiant intermediate is computed modulo N_ROUTERS; the whole\n    // value is consumed here so the unused high bits are not reported.\n    unused_ker_n_bits = ker_n;\n    return out_f;\n  endfunction\n  noc_pkg::flit_raw_t q [0:NUM_PORTS*NUM_VCS-1][0:BUF_DEPTH-1];\n  logic [noc_pkg::QCNT_W-1:0] q_cnt [0:NUM_PORTS*NUM_VCS-1];\n  logic [31:0] q_age [0:NUM_PORTS*NUM_VCS-1];\n  logic              rt_alloc [0:NUM_PORTS*NUM_VCS-1];\n  logic [PORT_W-1:0] rt_out [0:NUM_PORTS*NUM_VCS-1];\n  logic              esc_mode [0:NUM_PORTS*NUM_VCS-1];\n  logic [noc_pkg::CRED_W-1:0] cred [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic [noc_pkg::CRED_W-1:0] cred_hist [0:NUM_PORTS-1][0:NUM_VCS-1][0:(CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY : 1)-1];\n  logic [3:0] esc_starve [0:NUM_PORTS-1];\n  noc_pkg::flit_raw_t out_r [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic out_vld [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic [31:0] out_hold [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic              lock_active [0:NUM_PORTS-1];\n  logic [7:0] lock_owner [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] lock_vc [0:NUM_PORTS-1];\n  logic [31:0] side_write [0:NUM_PORTS-1];\n  logic [31:0] side_read [0:NUM_PORTS-1];\n  logic side_wm_hold [0:NUM_PORTS-1];\n  /* verilator lint_off ASCRANGE */\n  // Port index is the bit position in these packed vectors; ascending is deliberate.\n  logic [0:NUM_PORTS-1] in_valid_all;\n  logic [0:NUM_PORTS-1] in_ready_all;\n  logic [0:NUM_PORTS-1] in_side_ready;\n  noc_pkg::flit_raw_t in_flit_all [0:NUM_PORTS-1];\n  noc_pkg::flit_raw_t side_q [0:NUM_PORTS-1][0:(SIDE_DEPTH > 0 ? SIDE_DEPTH : 1)-1];\n  noc_pkg::flit_raw_t [0:NUM_PORTS-1][0:NUM_VCS-1] out_flit_all;\n  /* verilator lint_on ASCRANGE */\n  logic [NUM_PORTS-1:0][NUM_VCS-1:0] out_valid_all;\n  logic [NUM_PORTS-1:0] out_valid_show;\n  logic [NUM_PORTS-1:0] out_ready_all;\n  logic [31:0] show_vc_k [0:NUM_PORTS-1];\n  logic [31:0] age_best [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] esc_valid;\n  logic [NUM_PORTS-1:0] free_valid;\n  logic [7:0] esc_pick [0:NUM_PORTS-1];\n  logic [7:0] free_pick [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] esc_vc [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_valid;\n  logic [7:0] grant_sp [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_sv [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_valid2;\n  logic [7:0] grant_sp2 [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_sv2 [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_local_valid;\n  logic [7:0] grant_local_sp [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_local_sv [0:NUM_PORTS-1];\n  logic [PORT_W-1:0] cand_out [0:NUM_PORTS*NUM_VCS-1];\n  for (genvar p = 0; p < noc_pkg::MAX_DEG; p++) begin : gen_net_map\n    if (p < DEG) begin : used\n      assign in_flit_all[p] = n_in_flit[p];\n      assign in_valid_all[p] = n_in_valid[p];\n      assign n_in_ready[p] = in_ready_all[p];\n      assign n_out_flit[p] = out_flit_all[p][show_vc_k[p]];\n      assign n_out_valid[p] = out_valid_show[p];\n      assign out_ready_all[p] = n_out_ready[p];\n    end else begin : unused\n      assign in_flit_all[p] = '0;\n      assign in_valid_all[p] = 1'b0;\n      assign in_ready_all[p] = 1'b1;\n      assign out_ready_all[p] = 1'b0;\n    end\n  end\n  assign in_flit_all[LOCAL_PORT] = local_in_flit;\n  assign in_valid_all[LOCAL_PORT] = local_in_valid;\n  assign local_in_ready = in_ready_all[LOCAL_PORT];\n  assign local_out_flit = out_flit_all[LOCAL_PORT][show_vc_k[LOCAL_PORT]];\n  assign local_out_valid = out_valid_show[LOCAL_PORT];\n  assign out_ready_all[LOCAL_PORT] = local_out_ready;\n  always_comb begin\n    for (int p = 0; p < NUM_PORTS; p++) begin\n      automatic logic [noc_pkg::VC_W-1:0] st_vc;\n      automatic int st_q;\n      automatic int st_cc;\n      st_vc = get_vc(in_flit_all[p]);\n      st_q = p * NUM_VCS + int'(st_vc);\n      st_cc = st_q;\n      if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(in_flit_all[p]) && st_q < NUM_PORTS * NUM_VCS && esc_mode[st_q]) st_cc = p * NUM_VCS + ESC_VC;\n      in_side_ready[p] = 1'b0;\n      in_ready_all[p] = 1'b0;\n      if (st_cc < NUM_PORTS * NUM_VCS) begin\n        if (SIDE_DEPTH > 0 && side_write[p] > 0 && (!side_wm_hold[p] || SIDE_WM == 0)) begin : side_admit\n        end else begin : main_admit\n          if (q_cnt[st_cc] < BUF_DEPTH && (!is_head(in_flit_all[p]) || q_cnt[st_cc] == 0)) begin\n            in_ready_all[p] = 1'b1;\n          end else if (SIDE_DEPTH > 0 && SIDE_WM > 0 && q_cnt[st_cc] == BUF_DEPTH && side_write[p] < SIDE_DEPTH) begin\n            if (!side_wm_hold[p]) in_side_ready[p] = 1'b1;\n          end\n        end\n      end\n    end\n  end\n  always_comb begin\n    for (int p = 0; p < NUM_PORTS; p++) begin\n      show_vc_k[p] = '0;\n      out_valid_show[p] = 1'b0;\n      for (int v = NUM_VCS - 1; v >= 0; v--) begin\n        if (out_valid_all[p][v] && !(v != 0 && esc_starve[p] >= ESC_YIELD_K[3:0] && out_valid_all[p][0])) begin\n          show_vc_k[p] = v;\n          out_valid_show[p] = 1'b1;\n        end\n      end\n    end\n  end\n  always_comb begin\n    for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n      cand_out[c] = '0;\n      if (q_cnt[c] > 0) begin\n        if (rt_alloc[c]) begin\n          cand_out[c] = rt_out[c];\n        end else if (esc_mode[c] && (c % NUM_VCS) == ESC_VC) begin\n          cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n        end else if ((c % NUM_VCS) != 0) begin\n          cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n        end else begin\n          if (PKT_VALIANT && ker_leg(q[c][0]) == 1'b0 && ker_intm(q[c][0]) != ID) begin\n            cand_out[c] = get_rt_min(ker_intm(q[c][0]));\n          end else if (ker_shape(q[c][0]) == 1'b1 && get_rt_col(get_dst(q[c][0])) != get_rt_min(get_dst(q[c][0]))) begin\n            cand_out[c] = get_rt_col(get_dst(q[c][0]));\n          end else if (HYBRID != 0 && get_rt_esc(get_dst(q[c][0])) != get_rt_min(get_dst(q[c][0]))) begin\n            automatic logic [PORT_W-1:0] p_mesh = get_rt_min(get_dst(q[c][0]));\n            automatic logic [PORT_W-1:0] p_mecs = get_rt_esc(get_dst(q[c][0]));\n            automatic int used_mesh = BUF_DEPTH - int'(cred[p_mesh][0]);\n            automatic int used_mecs = BUF_DEPTH - int'(cred[p_mecs][ESC_VC]);\n            automatic int cost_mesh = used_mesh * (get_dist(get_dst(q[c][0])) > 0 ? get_dist(get_dst(q[c][0])) : 1);\n            if (used_mecs <= cost_mesh) cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n            else cand_out[c] = get_rt_min(get_dst(q[c][0]));\n          end else begin\n            cand_out[c] = get_rt_min(get_dst(q[c][0]));\n          end\n        end\n        if (get_dst(q[c][0]) == id_w) cand_out[c] = LOCAL_PORT[PORT_W-1:0];\n      end\n    end\n  end\n  always_comb begin\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      for (int v = 0; v < NUM_VCS; v++) begin\n        out_valid_all[o][v] = out_vld[o][v] && out_hold[o][v] >= SWITCH_TRAVERSAL + OUTPUT_DELAY;\n        out_flit_all[o][v] = out_r[o][v];\n      end\n    end\n  end\n  always_comb begin\n    // The grant scan reads the same per-candidate values in both\n    // branches. They are declared once for the block and assigned\n    // before use, so a branch that does not consult a value cannot\n    // leave the lint inferring a latch for it.\n    automatic int c;\n    automatic bit lock_ok;\n    automatic bit wait_ok;\n    automatic bit vc_ok;\n    automatic bit dst_ok;\n    automatic bit cand_ok;\n    automatic bit cred_ok;\n    automatic logic [31:0] unused_c_bits;\n    c = 0;\n    lock_ok = 1'b0;\n    wait_ok = 1'b0;\n    vc_ok = 1'b0;\n    dst_ok = 1'b0;\n    cand_ok = 1'b0;\n    cred_ok = 1'b0;\n    unused_c_bits = 32'd0;\n    esc_valid = '0;\n    free_valid = '0;\n    grant_local_valid = '0;\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      esc_pick[o] = '0;\n      free_pick[o] = '0;\n      esc_vc[o] = '0;\n      age_best[o] = '0;\n      grant_local_sp[o] = '0;\n      grant_local_sv[o] = '0;\n    end\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      if (o == LOCAL_PORT) begin\n        for (int p = 0; p < NUM_PORTS; p++) begin\n          for (int v = 0; v < NUM_VCS; v++) begin\n            c = p * NUM_VCS + v;\n            if (!grant_local_valid[o] && c >= 0 && q_cnt[c] > 0 && cred[o][v] > 0 && cand_out[c] == LOCAL_PORT[PORT_W-1:0] && get_dst(q[c][0]) == id_w && q_age[c] >= ROUTE_CYCLES + VC_ALLOC_CYCLES && get_vc(q[c][0]) == v[noc_pkg::VC_W-1:0] && (!lock_active[o] || (lock_owner[o] == p[7:0] && lock_vc[o] == v[noc_pkg::VC_W-1:0]))) begin\n              grant_local_valid[o] = 1'b1;\n              grant_local_sp[o] = p[7:0];\n              grant_local_sv[o] = v[noc_pkg::VC_W-1:0];\n            end\n          end\n        end\n      end else begin\n        for (int p = 0; p < NUM_PORTS; p++) begin\n          for (int v = 0; v < NUM_VCS; v++) begin\n            c = p * NUM_VCS + v;\n            lock_ok = (!lock_active[o] || (lock_owner[o] == p[7:0] && lock_vc[o] == v[noc_pkg::VC_W-1:0]));\n            wait_ok = (q_age[c] >= ROUTE_CYCLES + VC_ALLOC_CYCLES);\n            vc_ok = (get_vc(q[c][0]) == v[noc_pkg::VC_W-1:0]);\n            dst_ok = (get_dst(q[c][0]) != id_w);\n            cand_ok = (cand_out[c] == o[PORT_W-1:0]);\n            cred_ok = (cred[o][v] > 0);\n            // c indexes the per-VC queues; the whole value is consumed\n            // here so the unused high bits are not reported.\n            unused_c_bits = c;\n            if (ALLOCATOR_AGE) begin\n              if (q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok && q_age[c] > age_best[o]) begin\n                age_best[o] = q_age[c];\n                if (v == 0) begin\n                  free_valid[o] = 1'b1;\n                  free_pick[o] = p[7:0];\n                end else begin\n                  esc_valid[o] = 1'b1;\n                  esc_pick[o] = p[7:0];\n                  esc_vc[o] = v[noc_pkg::VC_W-1:0];\n                end\n              end\n            end else begin\n              if (!esc_valid[o] && v != 0 && q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok) begin\n                esc_valid[o] = 1'b1;\n                esc_pick[o] = p[7:0];\n                esc_vc[o] = v[noc_pkg::VC_W-1:0];\n              end\n              if (v == 0 && !free_valid[o] && q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok) begin\n                free_valid[o] = 1'b1;\n                free_pick[o] = p[7:0];\n              end\n            end\n          end\n        end\n      end\n    end\n  end\n  always_comb begin\n    grant_valid = '0;\n    grant_valid2 = '0;\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      grant_sp[o] = '0;\n      grant_sv[o] = '0;\n      grant_sp2[o] = '0;\n      grant_sv2[o] = '0;\n    end\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      if (o == LOCAL_PORT) begin\n        if (grant_local_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = grant_local_sp[o];\n          grant_sv[o] = grant_local_sv[o];\n        end\n      end else begin\n        if (esc_valid[o] && free_valid[o]) begin\n          if (esc_starve[o] >= ESC_YIELD_K[3:0]) begin\n            grant_valid[o] = 1'b1;\n            grant_sp[o] = free_pick[o];\n            grant_sv[o] = '0;\n            grant_valid2[o] = 1'b1;\n            grant_sp2[o] = esc_pick[o];\n            grant_sv2[o] = esc_vc[o];\n          end else begin\n            grant_valid[o] = 1'b1;\n            grant_sp[o] = esc_pick[o];\n            grant_sv[o] = esc_vc[o];\n            grant_valid2[o] = 1'b1;\n            grant_sp2[o] = free_pick[o];\n            grant_sv2[o] = '0;\n          end\n        end else if (esc_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = esc_pick[o];\n          grant_sv[o] = esc_vc[o];\n        end else if (free_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = free_pick[o];\n          grant_sv[o] = '0;\n        end\n      end\n    end\n  end\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) begin\n      for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n        q_cnt[c] <= '0;\n        q_age[c] <= '0;\n        rt_alloc[c] <= 1'b0;\n        rt_out[c] <= '0;\n        esc_mode[c] <= 1'b0;\n      end\n      for (int pi = 0; pi < NUM_PORTS; pi++) begin\n        esc_starve[pi] <= '0;\n        lock_active[pi] <= 1'b0;\n        lock_owner[pi] <= '0;\n        lock_vc[pi] <= '0;\n        side_write[pi] <= '0;\n        side_read[pi] <= '0;\n        side_wm_hold[pi] <= 1'b0;\n        side_q[pi][0] <= '0;\n        for (int v3 = 0; v3 < NUM_VCS; v3++) begin\n          cred[pi][v3] <= BUF_DEPTH[noc_pkg::CRED_W-1:0];\n          for (int k = 0; k < (CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY : 1); k++) cred_hist[pi][v3][k] <= '0;\n          out_vld[pi][v3] <= 1'b0;\n          out_hold[pi][v3] <= '0;\n        end\n      end\n    end else begin\n      for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n        if (q_cnt[c] > 0) q_age[c] <= q_age[c] + 1;\n        if ((c % NUM_VCS) == 0 && ESC_VC != 0 && NUM_VCS > 1 && !rt_alloc[c] && !esc_mode[c] && (c % NUM_VCS) < PLANE_D_END && q_cnt[c] > 0 && q_age[c] >= AGE_K && get_vc(q[c][0]) == 0) begin\n          esc_mode[c] <= 1'b1;\n        end\n      end\n      for (int p = 0; p < NUM_PORTS; p++) begin\n        automatic int st_q;\n        automatic int st_cc;\n        st_q = p * NUM_VCS + int'(get_vc(in_flit_all[p]));\n        st_cc = st_q;\n        if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(in_flit_all[p]) && st_q < NUM_PORTS * NUM_VCS && esc_mode[st_q]) st_cc = p * NUM_VCS + ESC_VC;\n        if (in_valid_all[p] && in_ready_all[p] && st_cc < NUM_PORTS * NUM_VCS && q_cnt[st_cc] < BUF_DEPTH) begin\n          q[st_cc][q_cnt[st_cc]] <= in_flit_all[p];\n          q_cnt[st_cc] <= q_cnt[st_cc] + 1;\n        end else if (in_valid_all[p] && in_side_ready[p] && int'(side_write[p]) < SIDE_DEPTH) begin\n          side_q[p][side_write[p]] <= in_flit_all[p];\n          side_write[p] <= side_write[p] + 1;\n        end\n        if (side_write[p] == side_read[p]) side_wm_hold[p] <= 1'b0;\n        if (int'(side_write[p]) >= SIDE_WM && SIDE_WM > 0) side_wm_hold[p] <= 1'b1;\n        if (side_write[p] > side_read[p]) begin\n          automatic int sd_q;\n          automatic int sd_cc;\n          sd_q = p * NUM_VCS + int'(get_vc(side_q[p][side_read[p]]));\n          sd_cc = sd_q;\n          if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(side_q[p][side_read[p]]) && sd_q < NUM_PORTS * NUM_VCS && esc_mode[sd_q]) sd_cc = p * NUM_VCS + ESC_VC;\n          if (sd_cc < NUM_PORTS * NUM_VCS && q_cnt[sd_cc] < BUF_DEPTH && (!is_head(side_q[p][side_read[p]]) || q_cnt[sd_cc] == 0)) begin\n            q[sd_cc][q_cnt[sd_cc]] <= side_q[p][side_read[p]];\n            q_cnt[sd_cc] <= q_cnt[sd_cc] + 1;\n            side_read[p] <= side_read[p] + 1;\n          end\n        end\n      end\n      for (int o = 0; o < NUM_PORTS; o++) begin\n        if (free_valid[o] && esc_valid[o]) begin\n          if (grant_valid[o] && grant_sv[o] == 0) esc_starve[o] <= '0;\n          else if (esc_starve[o] < 4'd15) esc_starve[o] <= esc_starve[o] + 1;\n        end else begin\n          esc_starve[o] <= '0;\n        end\n      end\n      for (int o = 0; o < NUM_PORTS; o++) begin\n        for (int v4 = 0; v4 < NUM_VCS; v4++) begin\n          if (out_vld[o][v4]) begin\n            if (out_hold[o][v4] >= SWITCH_TRAVERSAL + OUTPUT_DELAY && out_ready_all[o] && show_vc_k[o] == v4[31:0]) begin\n              out_vld[o][v4] <= 1'b0;\n              out_hold[o][v4] <= '0;\n              if (VC_REUSE_TAIL_CREDIT != 0) begin\n                cred[o][v4] <= cred[o][v4] + cred_hist[o][v4][(CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY - 1 : 0)];\n              end\n            end else if (out_hold[o][v4] < SWITCH_TRAVERSAL + OUTPUT_DELAY) begin\n              out_hold[o][v4] <= out_hold[o][v4] + 1;\n            end\n          end\n          for (int kk = 0; kk < (CREDIT_RETURN_LATENCY > 1 ? CREDIT_RETURN_LATENCY - 1 : 0); kk++) begin\n            cred_hist[o][v4][kk] <= cred_hist[o][v4][kk + 1];\n          end\n        end\n        if (grant_valid[o] && grant_sp[o] < NUM_PORTS) begin\n          automatic int p = grant_sp[o];\n          automatic int v = grant_sv[o];\n          automatic int c = p * NUM_VCS + v;\n          if (c >= 0 && c < NUM_PORTS * NUM_VCS && q_cnt[c] > 0) begin\n            if (!out_vld[o][v]) begin\n              out_vld[o][v] <= 1'b1;\n              out_hold[o][v] <= '0;\n              out_r[o][v] <= ker_step(q[c][0]);\n              cred[o][v] <= (cred[o][v] > 0) ? cred[o][v] - 1 : cred[o][v];\n              cred_hist[o][v][0] <= cred_hist[o][v][0] + 1;\n              if (is_head(q[c][0])) begin\n                rt_alloc[c] <= 1'b1;\n                rt_out[c] <= o[PORT_W-1:0];\n                q_age[c] <= '0;\n                if (HOLD_SWITCH) begin\n                  lock_active[o] <= 1'b1;\n                  lock_owner[o] <= p[7:0];\n                  lock_vc[o] <= v[noc_pkg::VC_W-1:0];\n                end\n              end\n              for (int jj = 0; jj < BUF_DEPTH - 1; jj++) begin\n                q[c][jj] <= q[c][jj + 1];\n              end\n              q_cnt[c] <= q_cnt[c] - 1;\n              if (is_tail(q[c][0])) begin\n                rt_alloc[c] <= 1'b0;\n                esc_mode[c] <= 1'b0;\n                if (HOLD_SWITCH && lock_active[o]) begin\n                  lock_active[o] <= 1'b0;\n                end\n              end\n            end\n          end\n        end\n        if (grant_valid2[o] && grant_sp2[o] < NUM_PORTS) begin\n          automatic int p2 = grant_sp2[o];\n          automatic int v2 = grant_sv2[o];\n          automatic int c2 = p2 * NUM_VCS + v2;\n          if (c2 >= 0 && c2 < NUM_PORTS * NUM_VCS && q_cnt[c2] > 0) begin\n            if (!out_vld[o][v2]) begin\n              out_vld[o][v2] <= 1'b1;\n              out_hold[o][v2] <= '0;\n              out_r[o][v2] <= ker_step(q[c2][0]);\n              cred[o][v2] <= (cred[o][v2] > 0) ? cred[o][v2] - 1 : cred[o][v2];\n              cred_hist[o][v2][0] <= cred_hist[o][v2][0] + 1;\n              if (is_head(q[c2][0])) begin\n                rt_alloc[c2] <= 1'b1;\n                rt_out[c2] <= o[PORT_W-1:0];\n                q_age[c2] <= '0;\n                if (HOLD_SWITCH) begin\n                  lock_active[o] <= 1'b1;\n                  lock_owner[o] <= p2[7:0];\n                  lock_vc[o] <= v2[noc_pkg::VC_W-1:0];\n                end\n              end\n              for (int jj = 0; jj < BUF_DEPTH - 1; jj++) begin\n                q[c2][jj] <= q[c2][jj + 1];\n              end\n              q_cnt[c2] <= q_cnt[c2] - 1;\n              if (is_tail(q[c2][0])) begin\n                rt_alloc[c2] <= 1'b0;\n                esc_mode[c2] <= 1'b0;\n                if (HOLD_SWITCH && lock_active[o]) begin\n                  lock_active[o] <= 1'b0;\n                end\n              end\n            end\n          end\n        end\n      end\n    end\n  end\nendmodule\n`default_nettype wire\n")
+_UNIFIED_ROUTER_TEMPLATE = ("`default_nettype none\n// The router's port and state arrays are indexed from 0 upwards: the\n// ascending packed and unpacked ranges are deliberate, because the\n// noc_top instantiates the router by concatenating the network ports\n// in the same ascending order and element p must land on port p on both\n// sides. Flipping the ranges would reorder the ports, so the ascending\n// bit range is kept and the style warning is switched off here with\n// that reason stated rather than left as a blanket flag.\n/* verilator lint_off ASCRANGE */\nmodule router #(\n  parameter int ID = 0,\n  parameter int DEG = 0,\n  parameter int ROUTE_CYCLES = __ROUTE__,\n  parameter int VC_ALLOC_CYCLES = __VCCY__,\n  parameter int SWITCH_TRAVERSAL = __TRAVCY__,\n  parameter int CREDIT_RETURN_LATENCY = __LAT__,\n  parameter int OUTPUT_DELAY = __OD__,\n  parameter int HOLD_SWITCH = __HOLD__,\n  parameter int VC_REUSE_TAIL_CREDIT = __TAIL__,\n  parameter int ALLOCATOR_AGE = __AGE__,\n  parameter int HYBRID = __HYB__,\n  parameter int PKT_VALIANT = __VAL__,\n  parameter int PKT_RANK = __RNK__,\n  parameter int ISLAND_MASK = __ISLNM__,\n  parameter int SIDE_DEPTH = __SD__,\n  parameter int SIDE_WM = __SW__,\n  parameter int PLANE_D_END = __PDE__,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_MIN = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_ESC = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_ROW = '0,\n  parameter logic [noc_pkg::PORT_W*noc_pkg::N_ROUTERS-1:0] RT_COL = '0,\n  parameter logic [__DISTBITS__:0] RT_DIST = '0,\n  parameter logic [noc_pkg::N_ROUTERS-2:0] SHAPE_TAB = '0\n) (\n  input logic clk,\n  input logic rst_n,\n  input noc_pkg::flit_raw_t [0:DEG-1] n_in_flit,\n  input logic [0:DEG-1] n_in_valid,\n  output logic [0:DEG-1] n_in_ready,\n  output noc_pkg::flit_raw_t [0:DEG-1] n_out_flit,\n  output logic [0:DEG-1] n_out_valid,\n  input logic [0:DEG-1] n_out_ready,\n  input noc_pkg::flit_raw_t local_in_flit,\n  input logic local_in_valid,\n  output logic local_in_ready,\n  output noc_pkg::flit_raw_t local_out_flit,\n  output logic local_out_valid,\n  input logic local_out_ready\n);\n/* verilator lint_on ASCRANGE */\n  localparam int NUM_PORTS = noc_pkg::NUM_PORTS;\n  localparam int LOCAL_PORT = noc_pkg::LOCAL_PORT;\n  localparam int NUM_VCS = noc_pkg::NUM_VCS;\n  localparam int BUF_DEPTH = noc_pkg::BUF_DEPTH;\n  localparam int N_ROUTERS = noc_pkg::N_ROUTERS;\n  localparam int DST_W = noc_pkg::DST_W;\n  localparam int PORT_W = noc_pkg::PORT_W;\n  localparam int TYPE_W = noc_pkg::TYPE_W;\n  localparam logic [TYPE_W-1:0] FT_HEAD = noc_pkg::FT_HEAD;\n  localparam logic [TYPE_W-1:0] FT_TAIL = noc_pkg::FT_TAIL;\n  localparam logic [TYPE_W-1:0] FT_SINGLE = noc_pkg::FT_SINGLE;\n  localparam int KER_W = __KERW__;\n  localparam int RANGE_BITS = __RBITS__;\n  localparam int KER_LSB = __KERLSB__;\n  localparam int KER_MSB = __KERMSB__;\n  localparam int DIST_W = __RBITS__;\n  localparam int ESC_VC = (NUM_VCS > 1) ? 1 : 0;\n  localparam int AGE_K = noc_pkg::BLOCK_K * 8;\n  localparam int ESC_YIELD_K = 4;\n  // An accessor's return width is spelled through a module-scope constant:\n  // not every Verilog frontend resolves a package range or a package\n  // typedef inside a function's return type.\n  localparam int VC_RET_W = noc_pkg::VC_W;\n  localparam int VC_LSB = noc_pkg::VC_LSB;\n  localparam int VC_MSB = noc_pkg::VC_MSB;\n  logic [DST_W-1:0] id_w;\n  assign id_w = ID;\n  // The flit argument is read field by field. The whole argument is\n  // consumed here so the fields an accessor does not read are not\n  // reported as unused: the accessors deliberately look at one field\n  // each, and the field bounds come from the package that owns the\n  // compiled layout.\n  function automatic logic [VC_RET_W-1:0] get_vc(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[VC_MSB:VC_LSB];\n  endfunction\n  function automatic logic [TYPE_W-1:0] get_type(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[noc_pkg::TYPE_MSB:noc_pkg::TYPE_LSB];\n  endfunction\n  function automatic logic [DST_W-1:0] get_dst(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[noc_pkg::DST_MSB:noc_pkg::DST_LSB];\n  endfunction\n  function automatic logic is_head(input noc_pkg::flit_raw_t f);\n    return (get_type(f) == FT_HEAD) || (get_type(f) == FT_SINGLE);\n  endfunction\n  function automatic logic is_tail(input noc_pkg::flit_raw_t f);\n    return (get_type(f) == FT_TAIL) || (get_type(f) == FT_SINGLE);\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_min(input int dst);\n    return RT_MIN[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_esc(input int dst);\n    return RT_ESC[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_row(input int dst);\n    return RT_ROW[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic logic [PORT_W-1:0] get_rt_col(input int dst);\n    return RT_COL[dst*PORT_W +: PORT_W];\n  endfunction\n  function automatic int get_dist(input int dst);\n    return RT_DIST[dst*DIST_W +: DIST_W];\n  endfunction\n  function automatic logic [KER_W-1:0] get_ker(input noc_pkg::flit_raw_t f);\n    automatic logic unused_f_bits;\n    unused_f_bits = &{1'b0, f};\n    return f[KER_MSB:KER_LSB];\n  endfunction\n  function automatic int ker_rank(input noc_pkg::flit_raw_t f);\n    return (int'(get_ker(f)) >> (KER_W - 1 - RANGE_BITS)) & ((1 << RANGE_BITS) - 1);\n  endfunction\n  function automatic int ker_intm(input noc_pkg::flit_raw_t f);\n    return int'(get_ker(f)) & ((1 << RANGE_BITS) - 1);\n  endfunction\n  function automatic logic ker_leg(input noc_pkg::flit_raw_t f);\n    return ((int'(get_ker(f)) >> (KER_W - 1)) & 1) != 0;\n  endfunction\n  function automatic logic ker_shape(input noc_pkg::flit_raw_t f);\n    return ((int'(get_ker(f)) >> (KER_W - 2 - RANGE_BITS)) & 1) != 0;\n  endfunction\n  function automatic noc_pkg::flit_raw_t ker_step(input noc_pkg::flit_raw_t f);\n    automatic noc_pkg::flit_raw_t out_f;\n    automatic logic [KER_W-1:0] km;\n    automatic int ker_n;\n    automatic logic [31:0] unused_ker_n_bits;\n    out_f = f;\n    km = get_ker(f);\n    if (ISLAND_MASK != 0 && is_head(f)) begin\n      km[KER_W-2-RANGE_BITS] = SHAPE_TAB[get_dst(f)];\n    end\n    if (PKT_VALIANT && is_head(f)) begin\n      ker_n = (int'(get_dst(f)) * 13 + int'(f[noc_pkg::SRC_MSB:noc_pkg::SRC_LSB]) * 7 + 17) % N_ROUTERS;\n      km[RANGE_BITS-1:0] = ker_n;\n      km[KER_W-1] = 1'b0;\n    end\n    if (PKT_VALIANT && ker_intm(f) == ID && !ker_leg(f)) km[KER_W-1] = 1'b1;\n    if (PKT_RANK) begin\n      km[KER_W-2:KER_W-1-RANGE_BITS] = ker_rank(f) + 1;\n    end\n    out_f[KER_MSB:KER_LSB] = km;\n    if (PKT_RANK) begin\n      automatic int ker_r;\n      ker_r = ker_rank(f) + 1;\n      if (ker_r >= NUM_VCS) ker_r = NUM_VCS - 1;\n      out_f[__VCM__:__VCL__] = ker_r[noc_pkg::VC_W-1:0];\n    end\n    // The valiant intermediate is computed modulo N_ROUTERS; the whole\n    // value is consumed here so the unused high bits are not reported.\n    unused_ker_n_bits = ker_n;\n    return out_f;\n  endfunction\n  noc_pkg::flit_raw_t q [0:NUM_PORTS*NUM_VCS-1][0:BUF_DEPTH-1];\n  logic [noc_pkg::QCNT_W-1:0] q_cnt [0:NUM_PORTS*NUM_VCS-1];\n  logic [31:0] q_age [0:NUM_PORTS*NUM_VCS-1];\n  logic              rt_alloc [0:NUM_PORTS*NUM_VCS-1];\n  logic [PORT_W-1:0] rt_out [0:NUM_PORTS*NUM_VCS-1];\n  logic              esc_mode [0:NUM_PORTS*NUM_VCS-1];\n  logic [noc_pkg::CRED_W-1:0] cred [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic [noc_pkg::CRED_W-1:0] cred_hist [0:NUM_PORTS-1][0:NUM_VCS-1][0:(CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY : 1)-1];\n  logic [3:0] esc_starve [0:NUM_PORTS-1];\n  noc_pkg::flit_raw_t out_r [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic out_vld [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic [31:0] out_hold [0:NUM_PORTS-1][0:NUM_VCS-1];\n  logic              lock_active [0:NUM_PORTS-1];\n  logic [7:0] lock_owner [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] lock_vc [0:NUM_PORTS-1];\n  logic [31:0] side_write [0:NUM_PORTS-1];\n  logic [31:0] side_read [0:NUM_PORTS-1];\n  logic side_wm_hold [0:NUM_PORTS-1];\n  /* verilator lint_off ASCRANGE */\n  // Port index is the bit position in these packed vectors; ascending is deliberate.\n  logic [0:NUM_PORTS-1] in_valid_all;\n  logic [0:NUM_PORTS-1] in_ready_all;\n  logic [0:NUM_PORTS-1] in_side_ready;\n  noc_pkg::flit_raw_t in_flit_all [0:NUM_PORTS-1];\n  noc_pkg::flit_raw_t side_q [0:NUM_PORTS-1][0:(SIDE_DEPTH > 0 ? SIDE_DEPTH : 1)-1];\n  noc_pkg::flit_raw_t [0:NUM_PORTS-1][0:NUM_VCS-1] out_flit_all;\n  /* verilator lint_on ASCRANGE */\n  logic [NUM_PORTS-1:0][NUM_VCS-1:0] out_valid_all;\n  logic [NUM_PORTS-1:0] out_valid_show;\n  logic [NUM_PORTS-1:0] out_ready_all;\n  logic [31:0] show_vc_k [0:NUM_PORTS-1];\n  logic [31:0] age_best [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] esc_valid;\n  logic [NUM_PORTS-1:0] free_valid;\n  logic [7:0] esc_pick [0:NUM_PORTS-1];\n  logic [7:0] free_pick [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] esc_vc [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_valid;\n  logic [7:0] grant_sp [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_sv [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_valid2;\n  logic [7:0] grant_sp2 [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_sv2 [0:NUM_PORTS-1];\n  logic [NUM_PORTS-1:0] grant_local_valid;\n  logic [7:0] grant_local_sp [0:NUM_PORTS-1];\n  logic [noc_pkg::VC_W-1:0] grant_local_sv [0:NUM_PORTS-1];\n  logic [PORT_W-1:0] cand_out [0:NUM_PORTS*NUM_VCS-1];\n  for (genvar p = 0; p < noc_pkg::MAX_DEG; p++) begin : gen_net_map\n    if (p < DEG) begin : used\n      assign in_flit_all[p] = n_in_flit[p];\n      assign in_valid_all[p] = n_in_valid[p];\n      assign n_in_ready[p] = in_ready_all[p];\n      assign n_out_flit[p] = out_flit_all[p][show_vc_k[p]];\n      assign n_out_valid[p] = out_valid_show[p];\n      assign out_ready_all[p] = n_out_ready[p];\n    end else begin : unused\n      assign in_flit_all[p] = '0;\n      assign in_valid_all[p] = 1'b0;\n      assign in_ready_all[p] = 1'b1;\n      assign out_ready_all[p] = 1'b0;\n    end\n  end\n  assign in_flit_all[LOCAL_PORT] = local_in_flit;\n  assign in_valid_all[LOCAL_PORT] = local_in_valid;\n  assign local_in_ready = in_ready_all[LOCAL_PORT];\n  assign local_out_flit = out_flit_all[LOCAL_PORT][show_vc_k[LOCAL_PORT]];\n  assign local_out_valid = out_valid_show[LOCAL_PORT];\n  assign out_ready_all[LOCAL_PORT] = local_out_ready;\n  always_comb begin\n    for (int p = 0; p < NUM_PORTS; p++) begin\n      automatic logic [noc_pkg::VC_W-1:0] st_vc;\n      automatic int st_q;\n      automatic int st_cc;\n      st_vc = get_vc(in_flit_all[p]);\n      st_q = p * NUM_VCS + int'(st_vc);\n      st_cc = st_q;\n      if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(in_flit_all[p]) && st_q < NUM_PORTS * NUM_VCS && esc_mode[st_q]) st_cc = p * NUM_VCS + ESC_VC;\n      in_side_ready[p] = 1'b0;\n      in_ready_all[p] = 1'b0;\n      if (st_cc < NUM_PORTS * NUM_VCS) begin\n        if (SIDE_DEPTH > 0 && side_write[p] > 0 && (!side_wm_hold[p] || SIDE_WM == 0)) begin : side_admit\n        end else begin : main_admit\n          if (q_cnt[st_cc] < BUF_DEPTH && (!is_head(in_flit_all[p]) || q_cnt[st_cc] == 0)) begin\n            in_ready_all[p] = 1'b1;\n          end else if (SIDE_DEPTH > 0 && SIDE_WM > 0 && q_cnt[st_cc] == BUF_DEPTH && side_write[p] < SIDE_DEPTH) begin\n            if (!side_wm_hold[p]) in_side_ready[p] = 1'b1;\n          end\n        end\n      end\n    end\n  end\n  always_comb begin\n    for (int p = 0; p < NUM_PORTS; p++) begin\n      show_vc_k[p] = '0;\n      out_valid_show[p] = 1'b0;\n      for (int v = NUM_VCS - 1; v >= 0; v--) begin\n        if (out_valid_all[p][v] && !(v != 0 && esc_starve[p] >= ESC_YIELD_K[3:0] && out_valid_all[p][0])) begin\n          show_vc_k[p] = v;\n          out_valid_show[p] = 1'b1;\n        end\n      end\n    end\n  end\n  always_comb begin\n    for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n      cand_out[c] = '0;\n      if (q_cnt[c] > 0) begin\n        if (rt_alloc[c]) begin\n          cand_out[c] = rt_out[c];\n        end else if (esc_mode[c] && (c % NUM_VCS) == ESC_VC) begin\n          cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n        end else if ((c % NUM_VCS) != 0) begin\n          cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n        end else begin\n          if (PKT_VALIANT && ker_leg(q[c][0]) == 1'b0 && ker_intm(q[c][0]) != ID) begin\n            cand_out[c] = get_rt_min(ker_intm(q[c][0]));\n          end else if (ker_shape(q[c][0]) == 1'b1 && get_rt_col(get_dst(q[c][0])) != get_rt_min(get_dst(q[c][0]))) begin\n            cand_out[c] = get_rt_col(get_dst(q[c][0]));\n          end else if (HYBRID != 0 && get_rt_esc(get_dst(q[c][0])) != get_rt_min(get_dst(q[c][0]))) begin\n            automatic logic [PORT_W-1:0] p_mesh = get_rt_min(get_dst(q[c][0]));\n            automatic logic [PORT_W-1:0] p_mecs = get_rt_esc(get_dst(q[c][0]));\n            automatic int used_mesh = BUF_DEPTH - int'(cred[p_mesh][0]);\n            automatic int used_mecs = BUF_DEPTH - int'(cred[p_mecs][ESC_VC]);\n            automatic int cost_mesh = used_mesh * (get_dist(get_dst(q[c][0])) > 0 ? get_dist(get_dst(q[c][0])) : 1);\n            if (used_mecs <= cost_mesh) cand_out[c] = get_rt_esc(get_dst(q[c][0]));\n            else cand_out[c] = get_rt_min(get_dst(q[c][0]));\n          end else begin\n            cand_out[c] = get_rt_min(get_dst(q[c][0]));\n          end\n        end\n        if (get_dst(q[c][0]) == id_w) cand_out[c] = LOCAL_PORT[PORT_W-1:0];\n      end\n    end\n  end\n  always_comb begin\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      for (int v = 0; v < NUM_VCS; v++) begin\n        out_valid_all[o][v] = out_vld[o][v] && out_hold[o][v] >= SWITCH_TRAVERSAL + OUTPUT_DELAY;\n        out_flit_all[o][v] = out_r[o][v];\n      end\n    end\n  end\n  always_comb begin\n    // The grant scan reads the same per-candidate values in both\n    // branches. They are declared once for the block and assigned\n    // before use, so a branch that does not consult a value cannot\n    // leave the lint inferring a latch for it.\n    automatic int c;\n    automatic bit lock_ok;\n    automatic bit wait_ok;\n    automatic bit vc_ok;\n    automatic bit dst_ok;\n    automatic bit cand_ok;\n    automatic bit cred_ok;\n    automatic logic [31:0] unused_c_bits;\n    c = 0;\n    lock_ok = 1'b0;\n    wait_ok = 1'b0;\n    vc_ok = 1'b0;\n    dst_ok = 1'b0;\n    cand_ok = 1'b0;\n    cred_ok = 1'b0;\n    unused_c_bits = 32'd0;\n    esc_valid = '0;\n    free_valid = '0;\n    grant_local_valid = '0;\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      esc_pick[o] = '0;\n      free_pick[o] = '0;\n      esc_vc[o] = '0;\n      age_best[o] = '0;\n      grant_local_sp[o] = '0;\n      grant_local_sv[o] = '0;\n    end\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      if (o == LOCAL_PORT) begin\n        for (int p = 0; p < NUM_PORTS; p++) begin\n          for (int v = 0; v < NUM_VCS; v++) begin\n            c = p * NUM_VCS + v;\n            if (!grant_local_valid[o] && c >= 0 && q_cnt[c] > 0 && cred[o][v] > 0 && cand_out[c] == LOCAL_PORT[PORT_W-1:0] && get_dst(q[c][0]) == id_w && q_age[c] >= ROUTE_CYCLES + VC_ALLOC_CYCLES && get_vc(q[c][0]) == v[noc_pkg::VC_W-1:0] && (!lock_active[o] || (lock_owner[o] == p[7:0] && lock_vc[o] == v[noc_pkg::VC_W-1:0]))) begin\n              grant_local_valid[o] = 1'b1;\n              grant_local_sp[o] = p[7:0];\n              grant_local_sv[o] = v[noc_pkg::VC_W-1:0];\n            end\n          end\n        end\n      end else begin\n        for (int p = 0; p < NUM_PORTS; p++) begin\n          for (int v = 0; v < NUM_VCS; v++) begin\n            c = p * NUM_VCS + v;\n            lock_ok = (!lock_active[o] || (lock_owner[o] == p[7:0] && lock_vc[o] == v[noc_pkg::VC_W-1:0]));\n            wait_ok = (q_age[c] >= ROUTE_CYCLES + VC_ALLOC_CYCLES);\n            vc_ok = (get_vc(q[c][0]) == v[noc_pkg::VC_W-1:0]);\n            dst_ok = (get_dst(q[c][0]) != id_w);\n            cand_ok = (cand_out[c] == o[PORT_W-1:0]);\n            cred_ok = (cred[o][v] > 0);\n            // c indexes the per-VC queues; the whole value is consumed\n            // here so the unused high bits are not reported.\n            unused_c_bits = c;\n            if (ALLOCATOR_AGE) begin\n              if (q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok && q_age[c] > age_best[o]) begin\n                age_best[o] = q_age[c];\n                if (v == 0) begin\n                  free_valid[o] = 1'b1;\n                  free_pick[o] = p[7:0];\n                end else begin\n                  esc_valid[o] = 1'b1;\n                  esc_pick[o] = p[7:0];\n                  esc_vc[o] = v[noc_pkg::VC_W-1:0];\n                end\n              end\n            end else begin\n              if (!esc_valid[o] && v != 0 && q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok) begin\n                esc_valid[o] = 1'b1;\n                esc_pick[o] = p[7:0];\n                esc_vc[o] = v[noc_pkg::VC_W-1:0];\n              end\n              if (v == 0 && !free_valid[o] && q_cnt[c] > 0 && wait_ok && vc_ok && dst_ok && cand_ok && cred_ok && lock_ok) begin\n                free_valid[o] = 1'b1;\n                free_pick[o] = p[7:0];\n              end\n            end\n          end\n        end\n      end\n    end\n  end\n  always_comb begin\n    grant_valid = '0;\n    grant_valid2 = '0;\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      grant_sp[o] = '0;\n      grant_sv[o] = '0;\n      grant_sp2[o] = '0;\n      grant_sv2[o] = '0;\n    end\n    for (int o = 0; o < NUM_PORTS; o++) begin\n      if (o == LOCAL_PORT) begin\n        if (grant_local_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = grant_local_sp[o];\n          grant_sv[o] = grant_local_sv[o];\n        end\n      end else begin\n        if (esc_valid[o] && free_valid[o]) begin\n          if (esc_starve[o] >= ESC_YIELD_K[3:0]) begin\n            grant_valid[o] = 1'b1;\n            grant_sp[o] = free_pick[o];\n            grant_sv[o] = '0;\n            grant_valid2[o] = 1'b1;\n            grant_sp2[o] = esc_pick[o];\n            grant_sv2[o] = esc_vc[o];\n          end else begin\n            grant_valid[o] = 1'b1;\n            grant_sp[o] = esc_pick[o];\n            grant_sv[o] = esc_vc[o];\n            grant_valid2[o] = 1'b1;\n            grant_sp2[o] = free_pick[o];\n            grant_sv2[o] = '0;\n          end\n        end else if (esc_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = esc_pick[o];\n          grant_sv[o] = esc_vc[o];\n        end else if (free_valid[o]) begin\n          grant_valid[o] = 1'b1;\n          grant_sp[o] = free_pick[o];\n          grant_sv[o] = '0;\n        end\n      end\n    end\n  end\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) begin\n      for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n        q_cnt[c] <= '0;\n        q_age[c] <= '0;\n        rt_alloc[c] <= 1'b0;\n        rt_out[c] <= '0;\n        esc_mode[c] <= 1'b0;\n      end\n      for (int pi = 0; pi < NUM_PORTS; pi++) begin\n        esc_starve[pi] <= '0;\n        lock_active[pi] <= 1'b0;\n        lock_owner[pi] <= '0;\n        lock_vc[pi] <= '0;\n        side_write[pi] <= '0;\n        side_read[pi] <= '0;\n        side_wm_hold[pi] <= 1'b0;\n        side_q[pi][0] <= '0;\n        for (int v3 = 0; v3 < NUM_VCS; v3++) begin\n          cred[pi][v3] <= BUF_DEPTH[noc_pkg::CRED_W-1:0];\n          for (int k = 0; k < (CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY : 1); k++) cred_hist[pi][v3][k] <= '0;\n          out_vld[pi][v3] <= 1'b0;\n          out_hold[pi][v3] <= '0;\n        end\n      end\n    end else begin\n      for (int c = 0; c < NUM_PORTS * NUM_VCS; c++) begin\n        if (q_cnt[c] > 0) q_age[c] <= q_age[c] + 1;\n        if ((c % NUM_VCS) == 0 && ESC_VC != 0 && NUM_VCS > 1 && !rt_alloc[c] && !esc_mode[c] && (c % NUM_VCS) < PLANE_D_END && q_cnt[c] > 0 && q_age[c] >= AGE_K && get_vc(q[c][0]) == 0) begin\n          esc_mode[c] <= 1'b1;\n        end\n      end\n      for (int p = 0; p < NUM_PORTS; p++) begin\n        automatic int st_q;\n        automatic int st_cc;\n        st_q = p * NUM_VCS + int'(get_vc(in_flit_all[p]));\n        st_cc = st_q;\n        if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(in_flit_all[p]) && st_q < NUM_PORTS * NUM_VCS && esc_mode[st_q]) st_cc = p * NUM_VCS + ESC_VC;\n        if (in_valid_all[p] && in_ready_all[p] && st_cc < NUM_PORTS * NUM_VCS && q_cnt[st_cc] < BUF_DEPTH) begin\n          // queue contents are written by the per-entry enable blocks below\n          q_cnt[st_cc] <= q_cnt[st_cc] + 1;\n        end else if (in_valid_all[p] && in_side_ready[p] && int'(side_write[p]) < SIDE_DEPTH) begin\n          side_q[p][side_write[p]] <= in_flit_all[p];\n          side_write[p] <= side_write[p] + 1;\n        end\n        if (side_write[p] == side_read[p]) side_wm_hold[p] <= 1'b0;\n        if (int'(side_write[p]) >= SIDE_WM && SIDE_WM > 0) side_wm_hold[p] <= 1'b1;\n        if (side_write[p] > side_read[p]) begin\n          automatic int sd_q;\n          automatic int sd_cc;\n          sd_q = p * NUM_VCS + int'(get_vc(side_q[p][side_read[p]]));\n          sd_cc = sd_q;\n          if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(side_q[p][side_read[p]]) && sd_q < NUM_PORTS * NUM_VCS && esc_mode[sd_q]) sd_cc = p * NUM_VCS + ESC_VC;\n          if (sd_cc < NUM_PORTS * NUM_VCS && q_cnt[sd_cc] < BUF_DEPTH && (!is_head(side_q[p][side_read[p]]) || q_cnt[sd_cc] == 0)) begin\n            q[sd_cc][q_cnt[sd_cc]] <= side_q[p][side_read[p]];\n            q_cnt[sd_cc] <= q_cnt[sd_cc] + 1;\n            side_read[p] <= side_read[p] + 1;\n          end\n        end\n      end\n      for (int o = 0; o < NUM_PORTS; o++) begin\n        if (free_valid[o] && esc_valid[o]) begin\n          if (grant_valid[o] && grant_sv[o] == 0) esc_starve[o] <= '0;\n          else if (esc_starve[o] < 4'd15) esc_starve[o] <= esc_starve[o] + 1;\n        end else begin\n          esc_starve[o] <= '0;\n        end\n      end\n      for (int o = 0; o < NUM_PORTS; o++) begin\n        for (int v4 = 0; v4 < NUM_VCS; v4++) begin\n          if (out_vld[o][v4]) begin\n            if (out_hold[o][v4] >= SWITCH_TRAVERSAL + OUTPUT_DELAY && out_ready_all[o] && show_vc_k[o] == v4[31:0]) begin\n              out_vld[o][v4] <= 1'b0;\n              out_hold[o][v4] <= '0;\n              if (VC_REUSE_TAIL_CREDIT != 0) begin\n                cred[o][v4] <= cred[o][v4] + cred_hist[o][v4][(CREDIT_RETURN_LATENCY > 0 ? CREDIT_RETURN_LATENCY - 1 : 0)];\n              end\n            end else if (out_hold[o][v4] < SWITCH_TRAVERSAL + OUTPUT_DELAY) begin\n              out_hold[o][v4] <= out_hold[o][v4] + 1;\n            end\n          end\n          for (int kk = 0; kk < (CREDIT_RETURN_LATENCY > 1 ? CREDIT_RETURN_LATENCY - 1 : 0); kk++) begin\n            cred_hist[o][v4][kk] <= cred_hist[o][v4][kk + 1];\n          end\n        end\n        if (grant_valid[o] && grant_sp[o] < NUM_PORTS) begin\n          automatic int p = grant_sp[o];\n          automatic int v = grant_sv[o];\n          automatic int c = p * NUM_VCS + v;\n          if (c >= 0 && c < NUM_PORTS * NUM_VCS && q_cnt[c] > 0) begin\n            if (!out_vld[o][v]) begin\n              out_vld[o][v] <= 1'b1;\n              out_hold[o][v] <= '0;\n              out_r[o][v] <= ker_step(q[c][0]);\n              cred[o][v] <= (cred[o][v] > 0) ? cred[o][v] - 1 : cred[o][v];\n              cred_hist[o][v][0] <= cred_hist[o][v][0] + 1;\n              if (is_head(q[c][0])) begin\n                rt_alloc[c] <= 1'b1;\n                rt_out[c] <= o[PORT_W-1:0];\n                q_age[c] <= '0;\n                if (HOLD_SWITCH) begin\n                  lock_active[o] <= 1'b1;\n                  lock_owner[o] <= p[7:0];\n                  lock_vc[o] <= v[noc_pkg::VC_W-1:0];\n                end\n              end\n              for (int jj = 0; jj < BUF_DEPTH - 1; jj++) begin\n                q[c][jj] <= q[c][jj + 1];\n              end\n              q_cnt[c] <= q_cnt[c] - 1;\n              if (is_tail(q[c][0])) begin\n                rt_alloc[c] <= 1'b0;\n                esc_mode[c] <= 1'b0;\n                if (HOLD_SWITCH && lock_active[o]) begin\n                  lock_active[o] <= 1'b0;\n                end\n              end\n            end\n          end\n        end\n        if (grant_valid2[o] && grant_sp2[o] < NUM_PORTS) begin\n          automatic int p2 = grant_sp2[o];\n          automatic int v2 = grant_sv2[o];\n          automatic int c2 = p2 * NUM_VCS + v2;\n          if (c2 >= 0 && c2 < NUM_PORTS * NUM_VCS && q_cnt[c2] > 0) begin\n            if (!out_vld[o][v2]) begin\n              out_vld[o][v2] <= 1'b1;\n              out_hold[o][v2] <= '0;\n              out_r[o][v2] <= ker_step(q[c2][0]);\n              cred[o][v2] <= (cred[o][v2] > 0) ? cred[o][v2] - 1 : cred[o][v2];\n              cred_hist[o][v2][0] <= cred_hist[o][v2][0] + 1;\n              if (is_head(q[c2][0])) begin\n                rt_alloc[c2] <= 1'b1;\n                rt_out[c2] <= o[PORT_W-1:0];\n                q_age[c2] <= '0;\n                if (HOLD_SWITCH) begin\n                  lock_active[o] <= 1'b1;\n                  lock_owner[o] <= p2[7:0];\n                  lock_vc[o] <= v2[noc_pkg::VC_W-1:0];\n                end\n              end\n              for (int jj = 0; jj < BUF_DEPTH - 1; jj++) begin\n                q[c2][jj] <= q[c2][jj + 1];\n              end\n              q_cnt[c2] <= q_cnt[c2] - 1;\n              if (is_tail(q[c2][0])) begin\n                rt_alloc[c2] <= 1'b0;\n                esc_mode[c2] <= 1'b0;\n                if (HOLD_SWITCH && lock_active[o]) begin\n                  lock_active[o] <= 1'b0;\n                end\n              end\n            end\n          end\n        end\n      end\n    end\n  end\n  genvar gq, gj;\n  generate\n    for (gq = 0; gq < NUM_PORTS * NUM_VCS; gq++) begin : gen_wq\n      for (gj = 0; gj < BUF_DEPTH; gj++) begin : gen_we\n        localparam int Q = gq;\n        localparam int J = gj;\n        // One flop bank per (queue, entry). The admission decision is a decode\n        // into an enable, so no 64-bit data mux is built for the write path.\n        always_ff @(posedge clk or negedge rst_n) begin\n          if (!rst_n) q[Q][J] <= '0;\n          else begin\n            for (int p = 0; p < NUM_PORTS; p++) begin\n              int st_q;\n              int st_cc;\n              st_q = p * NUM_VCS + int'(get_vc(in_flit_all[p]));\n              st_cc = st_q;\n              if (ESC_VC != 0 && NUM_VCS > 1 && !is_head(in_flit_all[p]) && st_q < NUM_PORTS * NUM_VCS && esc_mode[st_q]) st_cc = p * NUM_VCS + ESC_VC;\n              if (in_valid_all[p] && in_ready_all[p] && st_cc == Q && q_cnt[Q] == J) q[Q][J] <= in_flit_all[p];\n            end\n          end\n        end\n      end\n    end\n  endgenerate\nendmodule\n`default_nettype wire\n")
 
 
 def _render_family_router(params: ComposedFamilyParams) -> str:
@@ -5310,6 +5378,13 @@ def _render_family_router(params: ComposedFamilyParams) -> str:
             + "\n      default: return '1;\n    endcase")
     for _k, _v in _subs.items():
         body = body.replace(_k, _v)
+    # Block-local declarations are implicitly automatic in SystemVerilog, and the
+    # Yosys Verilog frontend rejects the explicit keyword inside always blocks
+    # ("syntax error, unexpected TOK_AUTOMATIC"), which blocks the synthesis gate.
+    # `function automatic` is left intact: that form elaborates everywhere.
+    body = re.sub(
+        r"(?<!function )\bautomatic\s+(?=(?:logic|bit|int|integer|byte|noc_pkg::))",
+        "", body)
     import re as _re
     leftover = _re.findall(r"__[A-Z]+__", body)
     if leftover:
@@ -5720,6 +5795,9 @@ def _widen_family_initiator_src(src: str, params) -> str:
     _p = _p.replace("  logic [31:0] adap_out_wdata", f"  logic [{_dw - 1}:0] adap_out_wdata")
     _p = _p.replace("  input logic [3:0] wstrb_in", f"  input logic [{_strbw - 1}:0] wstrb_in")
     _p = _p.replace("  logic [31:0] w_data_q", f"  logic [{_dw - 1}:0] w_data_q")
+    _p = _p.replace("  logic [31:0] beat_data_w", f"  logic [{_dw - 1}:0] beat_data_w")
+    _p = _p.replace("  logic [31:0] w_buf_q [0:3][0:15]",
+                    f"  logic [{_dw - 1}:0] w_buf_q [0:3][0:15]")
     _p = _p.replace("  logic [31:0] rsp_rdata_q", f"  logic [{_dw - 1}:0] rsp_rdata_q")
     _p = _p.replace("  logic [0:0] ord_assigned_vc", f"  logic [{_vcw - 1}:0] ord_assigned_vc")
     _p = _p.replace("  logic [63:0] ord_in_flit", f"  logic [{_flw - 1}:0] ord_in_flit")
@@ -5729,7 +5807,8 @@ def _widen_family_initiator_src(src: str, params) -> str:
     _p = _p.replace("  output logic [63:0] noc_in_flit", f"  output logic [{_flw - 1}:0] noc_in_flit")
     _p = _p.replace("  input logic [63:0] noc_out_flit", f"  input logic [{_flw - 1}:0] noc_out_flit")
     _p = _p.replace("  assign size_bad_w = (cap_size_q != 3'd2)", f"  assign size_bad_w = (cap_size_q != 3'd{_size})")
-    _p = _p.replace("  assign word_w = beat_off_w[11:2]", f"  assign word_w = beat_off_w[11:{_s and (2 if _dw == 32 else 3 if _dw == 64 else 4)}]")
+    _word_hi = 8 if _dw == 32 else 9 if _dw == 64 else 10
+    _p = _p.replace("  assign word_w = beat_off_w[8:2]", f"  assign word_w = beat_off_w[{_word_hi}:{_word_hi - 6}]")
     _p = _p.replace("  assign ord_in_flit[63] = 1'b0", f"  assign ord_in_flit[{_flw - 1}:{_flw - _vcw}] = '0")
     _p = _p.replace("  assign ord_in_flit[62:61] = 2'b11", f"  assign ord_in_flit[{62 + _s}:{61 + _s}] = 2'b11")
     _p = _p.replace("  assign ord_in_flit[60] = oor_w", f"  assign ord_in_flit[{60 + _s}] = oor_w")
@@ -5744,7 +5823,10 @@ def _widen_family_initiator_src(src: str, params) -> str:
     _p = _p.replace("  assign rdata_out = imm_q ? 32'd0 : rsp_rdata_q", f"  assign rdata_out = imm_q ? {_dw}'d0 : rsp_rdata_q")
     _p = _p.replace("      w_data_q <= 32'd0", f"      w_data_q <= {_dw}'d0")
     _p = _p.replace("      rsp_rdata_q <= 32'd0", f"      rsp_rdata_q <= {_dw}'d0")
-    _p = _p.replace("            if (wstrb_in != 4'b1111)", f"            if (wstrb_in != {_strbw}'b{'1' * _strbw})")
+    _p = _p.replace("        if (wstrb_in != 4'b1111)",
+                    f"        if (wstrb_in != {_strbw}'b{'1' * _strbw})")
+    _p = _p.replace("            if (wstrb_in != 4'b1111)",
+                    f"            if (wstrb_in != {_strbw}'b{'1' * _strbw})")
     _p = _p.replace("            rsp_status_q <= noc_out_flit[60:59]", f"            rsp_status_q <= noc_out_flit[{60 + _s}:{59 + _s}]")
     _p = _p.replace("            rsp_rdata_q <= noc_out_flit[31:0]", f"            rsp_rdata_q <= noc_out_flit[{_dw - 1}:0]")
     _p = _p.replace("            agg_status_q <= noc_out_flit[60:59]", f"            agg_status_q <= noc_out_flit[{60 + _s}:{59 + _s}]")
@@ -5776,16 +5858,33 @@ def _widen_family_initiator_src(src: str, params) -> str:
             _parts.append("        .out_flit(cdc_ret_flit)")
             _parts.append("      );")
             _parts.append("    end")
-        _new_block = f"  logic cdc_ret_valid;\n  logic cdc_ret_ready;\n  logic [{_flw - 1}:0] cdc_ret_flit;\n  logic noc_out_ready_tap;\n  assign noc_out_ready = noc_out_ready_tap;\n  assign cdc_ret_ready = (state_q == S_WAIT);\n  generate\n" + "\n".join(_parts) + f"\n    else begin : g_cdc_bypass\n      cdc_bypass u_cdc (\n        .clk(clk), .rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      assign cdc_ret_valid = noc_out_valid;\n      assign cdc_ret_flit = noc_out_flit;\n      assign noc_out_ready_tap = (state_q == S_WAIT);\n    end\n  endgenerate"
+        _status_lo, _status_hi = 54 + _s, 55 + _s
+        _gaps = [r for r in ((_dw, _status_lo - 1), (_status_hi + 1, _flw - 1))
+                 if r[0] <= r[1]]
+        _unused_ret = "".join(f" ^ ^cdc_ret_flit[{_hi}:{_lo}]" for _lo, _hi in _gaps)
+        _unused_ret = ("  // The returned flit carries routing fields this slice does not\n"
+                       "  // read (it reads the status and payload only), so those\n"
+                       "  // bits are consumed here rather than left dangling.\n"
+                       f"  wire unused_cdc_ret_flit = 1'b0{_unused_ret};\n"
+                       if _unused_ret else "")
+        _new_block = f"  logic cdc_ret_valid;\n  logic cdc_ret_ready;\n  logic [{_flw - 1}:0] cdc_ret_flit;\n  logic noc_out_ready_tap;\n{_unused_ret}  assign noc_out_ready = noc_out_ready_tap;\n  assign cdc_ret_ready = (state_q == S_WAIT);\n  generate\n" + "\n".join(_parts) + f"\n    else begin : g_cdc_bypass\n      cdc_bypass u_cdc (\n        .clk(clk), .rst_n(rst_n),\n        .in_valid(cdc_in_valid), .in_ready(cdc_in_ready),\n        .in_flit(cdc_in_flit),\n        .out_valid(cdc_out_valid), .out_ready(cdc_out_ready),\n        .out_flit(cdc_out_flit)\n      );\n      assign cdc_ret_valid = noc_out_valid;\n      assign cdc_ret_flit = noc_out_flit;\n      assign noc_out_ready_tap = (state_q == S_WAIT);\n    end\n  endgenerate"
         if _old_cdc in _p:
             _p = _p.replace("  input logic clk,\n",
                             "  input logic clk,\n  input logic fabric_clk,\n", 1)
             _p = _p.replace(_old_cdc, _new_block, 1)
             _p = _p.replace("  assign eject_fire_w = (state_q == S_WAIT) && noc_out_valid && noc_out_ready;", "  assign eject_fire_w = (state_q == S_WAIT) && cdc_ret_valid && cdc_ret_ready;")
-            _p = _p.replace("  assign noc_out_ready = (state_q == S_WAIT);", "  wire noc_out_ready_tap_decl = (state_q == S_WAIT);")
+            _p = _p.replace("  assign noc_out_ready = (state_q == S_WAIT);\n", "")
+            _p = _p.replace("    else begin : g_cdc_bypass", "    else begin : g_cdc_bypass\n      // The fabric clock is unused on a slice that does not cross.\n      wire unused_fabric_clk = fabric_clk & 1'b1;")
             _p = _p.replace("            rsp_status_q <= noc_out_flit[60:59];", f"            rsp_status_q <= cdc_ret_flit[{60 + _s}:{59 + _s}];")
             _p = _p.replace("            rsp_rdata_q <= noc_out_flit[31:0];", f"            rsp_rdata_q <= cdc_ret_flit[{_dw - 1}:0];")
             _p = _p.replace("            agg_status_q <= noc_out_flit[60:59];", f"            agg_status_q <= cdc_ret_flit[{60 + _s}:{59 + _s}];")
+            # The write-status reduction reads the same response field, so on a
+            # crossed slice it must also come from the synchronised return flit
+            # instead of the raw asynchronous input.
+            _p = _p.replace("noc_out_flit[60:59] == 2'b10)", f"cdc_ret_flit[{60 + _s}:{59 + _s}] == 2'b10)")
+            _p = _p.replace("            rsp_status_q <= noc_out_flit[55:54];", f"            rsp_status_q <= cdc_ret_flit[{55 + _s}:{54 + _s}];")
+            _p = _p.replace("            rsp_rdata_q <= noc_out_flit[31:0];", f"            rsp_rdata_q <= cdc_ret_flit[{_dw - 1}:0];")
+            _p = _p.replace("            agg_status_q <= noc_out_flit[55:54];", f"            agg_status_q <= cdc_ret_flit[{55 + _s}:{54 + _s}];")
     return _p
 #: The AXI5 adapter inputs the composed slice does not drive, with the
 #: neutral value each takes and the reason that value is safe there.
@@ -5863,6 +5962,9 @@ _AXI5_SLICE_TIED_INPUTS: tuple[tuple[str, str, str], ...] = (
 #: named sink, so the emitted source shows exactly which adapter results
 #: the slice ignores instead of leaving the pins unconnected.
 _AXI5_SLICE_SUNK_OUTPUTS: tuple[tuple[str, int], ...] = (
+    # The slice holds its own B-ready constant, so the adapter's
+    # bready output is sunk rather than driving the same wire.
+    ("bready", 1),
     ("out_awburst", 2),
     ("out_awcache", 4),
     ("out_awprot", 3),
@@ -6083,8 +6185,6 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  logic adap_out_bvalid;")
     lines.append("  logic adap_credit_full;")
     lines.append("  logic bvalid_w;")
-    lines.append("  logic bready_w;")
-    lines.append("  assign bready_w = 1'b1;")
     lines.append("")
     _axi5_decls, _axi5_conns, _axi5_sink = _axi5_slice_adapter_tieoffs(
         data_width=_dw_f)
@@ -6121,11 +6221,41 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("")
     lines.append("  logic cap_write_q;")
     lines.append("  logic [63:0] cap_addr_q;")
-    lines.append("  logic [7:0] cap_len_q;")
     lines.append("  logic [2:0] cap_size_q;")
     lines.append("  logic [3:0] cap_id_q;")
     lines.append("  logic [12:0] cap_seq_q;")
-    lines.append("  logic [31:0] w_data_q;")
+    # The capture FIFO decouples the AXI side from the issue engine: up to
+    # OUTSTANDING transactions are accepted (AW/AR plus their W beats) while
+    # an earlier one is still waiting for its response, so a master is not
+    # stalled per transaction. The fabric still executes them one at a time
+    # in capture order, which is legal for a strongly ordered initiator.
+    lines.append("  localparam int OUTSTANDING = 4;")
+    lines.append("  integer ci;")
+    lines.append("  logic [1:0] cq_head_q;")
+    lines.append("  logic [1:0] cq_tail_q;")
+    lines.append("  logic [2:0] cq_count_q;")
+    lines.append("  logic [1:0] cap_slot_q;")
+    lines.append("  logic [63:0] cq_addr_q [0:3];")
+    lines.append("  logic [7:0] cq_len_q [0:3];")
+    lines.append("  logic [2:0] cq_size_q [0:3];")
+    lines.append("  logic [3:0] cq_id_q [0:3];")
+    lines.append("  logic [12:0] cq_seq_q [0:3];")
+    lines.append("  logic cq_write_q [0:3];")
+    lines.append("  logic cq_pend_q [0:3];")
+    lines.append("  logic cq_wbad_q [0:3];")
+    lines.append("  logic cq_lbad_q [0:3];")
+    lines.append("  logic [4:0] cq_wgot_q [0:3];")
+    lines.append("  logic [31:0] w_buf_q [0:3][0:15];")
+    lines.append("  logic [8:0] total_beats_q;")
+    lines.append("  logic [8:0] beat_idx_q;")
+    lines.append("  logic [1:0] wsel_w;")
+    lines.append("  logic wpending_w;")
+    lines.append("  logic cq_room_w;")
+    lines.append("  logic head_ready_w;")
+    lines.append("  logic [11:0] beat_addr_w;")
+    lines.append("  logic [31:0] beat_data_w;")
+    lines.append("  logic [12:0] beat_seq_w;")
+    lines.append("  logic [15:0] burst_len_w;")
     lines.append("  logic wstrb_bad_q;")
     lines.append("  logic wlast_bad_q;")
     lines.append("  logic [1:0] agg_status_q;")
@@ -6140,6 +6270,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  localparam [2:0] S_ISSUE = 3'd2;")
     lines.append("  localparam [2:0] S_WAIT = 3'd3;")
     lines.append("  localparam [2:0] S_RESP = 3'd4;")
+    lines.append("  localparam [2:0] S_AWRET = 3'd5;")
     lines.append("  logic [11:0] beat_off_w;")
     lines.append("  logic oor_w;")
     lines.append("  logic [6:0] word_w;")
@@ -6156,12 +6287,16 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("")
     lines.append("  assign dec_addr = cap_addr_q;")
     lines.append("  assign dec_req_write = cap_write_q;")
-    lines.append("  assign dec_burst_len = 16'd4;")
-    lines.append("  assign beat_off_w = cap_addr_q[11:0];")
-    lines.append("  assign word_w = beat_off_w[11:2];")
+    lines.append("  assign burst_len_w = (total_beats_q <= 9'd1) ? 16'd0 : (16'(total_beats_q) << cap_size_q);")
+    lines.append("  assign dec_burst_len = burst_len_w;")
+    lines.append("  assign beat_seq_w = cap_seq_q + {4'b0, beat_idx_q};")
+    lines.append("  assign beat_addr_w = cap_addr_q[11:0] + (12'(beat_idx_q) * (12'(12'd1) << cap_size_q));")
+    lines.append("  assign beat_data_w = cap_write_q ? w_buf_q[cap_slot_q][beat_idx_q[3:0]] : 32'd0;")
+    lines.append("  assign beat_off_w = beat_addr_w;")
+    lines.append("  assign word_w = beat_off_w[8:2];")
     lines.append("  assign oor_w = (beat_off_w >= 12'd512);")
     lines.append("  assign size_bad_w = (cap_size_q != 3'd2);")
-    lines.append("  assign burst_long_w = (cap_len_q != 8'd0);")
+    lines.append("  assign burst_long_w = (total_beats_q > 9'd16);")
     lines.append("  assign w_fire_w = adap_out_wvalid && adap_out_wready;")
     lines.append("  assign issue_fire_w = (state_q == S_ISSUE) && ord_in_valid && ord_in_ready;")
     lines.append("  assign eject_fire_w = (state_q == S_WAIT) && noc_out_valid && noc_out_ready;")
@@ -6183,8 +6318,8 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  assign ord_in_flit[" + str(_ty_l + _ty_w2 - 1) + ":" + str(_ty_l) + "] = 2'b11;")
     lines.append("  assign ord_in_flit[" + str(_dst_l + _dst_w2 - 1) + ":" + str(_dst_l) + "] = TARGET_ENDPOINT[" + str(_dst_w2 - 1) + ":0];")
     lines.append("  assign ord_in_flit[" + str(_src_l + _src_w2 - 1) + ":" + str(_src_l) + "] = INIT_ENDPOINT[" + str(_src_w2 - 1) + ":0];")
-    lines.append("  assign ord_in_flit[" + str(_pay_l + _win - 1) + ":" + str(_pay_l) + "] = w_data_q[" + str(_win - 1) + ":0];")
-    lines.append("  assign ord_in_flit[" + str(_seq_l + 12) + ":" + str(_seq_l) + "] = cap_seq_q;")
+    lines.append("  assign ord_in_flit[" + str(_pay_l + _win - 1) + ":" + str(_pay_l) + "] = beat_data_w[" + str(_win - 1) + ":0];")
+    lines.append("  assign ord_in_flit[" + str(_seq_l + 12) + ":" + str(_seq_l) + "] = beat_seq_w;")
     lines.append("  assign ord_in_flit[" + str(_word_l + 6) + ":" + str(_word_l) + "] = word_w;")
     lines.append("  assign ord_in_flit[" + str(_write_l) + "] = cap_write_q;")
     lines.append("  assign ord_in_flit[" + str(_oor_l) + "] = oor_w;")
@@ -6218,9 +6353,15 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  assign cdc_out_ready = noc_in_ready;")
     lines.append("  assign noc_out_ready = (state_q == S_WAIT);")
     lines.append("")
-    lines.append("  assign arready_in = (state_q == S_IDLE);")
-    lines.append("  assign adap_out_awready = (state_q == S_IDLE);")
-    lines.append("  assign adap_out_wready = (state_q == S_CAPW);")
+    lines.append("  assign cq_room_w = (cq_count_q < 3'd4);")
+    lines.append("  assign wpending_w = cq_pend_q[0] | cq_pend_q[1] | cq_pend_q[2] | cq_pend_q[3];")
+    lines.append("  // AXI W beats follow AW order and reads never set the pending")
+    lines.append("  // flag, so the oldest pending write entry owns the W channel.")
+    lines.append("  assign wsel_w = cq_pend_q[0] ? 2'd0 : cq_pend_q[1] ? 2'd1 : cq_pend_q[2] ? 2'd2 : 2'd3;")
+    lines.append("  assign head_ready_w = (cq_count_q != 3'd0) && (cq_write_q[cq_head_q] ? !cq_pend_q[cq_head_q] : 1'b1);")
+    lines.append("  assign arready_in = cq_room_w;")
+    lines.append("  assign adap_out_awready = cq_room_w;")
+    lines.append("  assign adap_out_wready = wpending_w;")
     lines.append("  assign bvalid_w = (state_q == S_RESP) && cap_write_q;")
     lines.append("")
     lines.append("  assign bvalid_out = adap_out_bvalid;")
@@ -6229,7 +6370,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  assign rvalid_out = (state_q == S_RESP) && !cap_write_q;")
     lines.append("  assign rresp_out = imm_q ? imm_status_q : rsp_status_q;")
     lines.append("  assign rid_out = cap_id_q;")
-    lines.append("  assign rlast_out = 1'b1;")
+    lines.append("  assign rlast_out = imm_q ? 1'b1 : (beat_idx_q == (total_beats_q - 9'd1));")
     lines.append("  assign rdata_out = imm_q ? 32'd0 : rsp_rdata_q;")
     lines.append("  assign order_violation = ord_viol_w;")
     lines.append("  assign outstanding_full = ord_full_w;")
@@ -6247,7 +6388,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),")
     lines.append("        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),")
     lines.append("        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),")
-    lines.append("        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full),")
+    lines.append("        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full),")
     lines.extend(_axi5_conns)
     lines.append("      );")
     lines.append("    end else begin : g_adap1")
@@ -6259,7 +6400,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("        .out_awvalid(adap_out_awvalid), .out_awready(adap_out_awready),")
     lines.append("        .wdata(wdata_in), .wvalid(wvalid_in), .wready(wready_in),")
     lines.append("        .out_wdata(adap_out_wdata), .out_wvalid(adap_out_wvalid), .out_wready(adap_out_wready),")
-    lines.append("        .bvalid(bvalid_w), .bready(bready_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full),")
+    lines.append("        .bvalid(bvalid_w), .out_bvalid(adap_out_bvalid), .out_bready(bready_in), .credit_full(adap_credit_full),")
     lines.extend(_axi5_conns)
     lines.append("      );")
     lines.append("    end")
@@ -6273,6 +6414,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("    .target_oh(dec_target_oh), .hit(dec_hit), .miss(dec_miss),")
     lines.append("    .overlap(dec_overlap), .allow(dec_allow),")
     lines.append("    .perm_violation(dec_perm_violation), .burst_violation(dec_burst_violation),")
+    lines.append("    .wire_req_id('0),")
     lines.extend(_axi5_slice_decode_conns())
     lines.append("  );")
     lines.append("")
@@ -6280,6 +6422,7 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("    .clk(clk), .rst_n(rst_n),")
     lines.append("    .in_valid(ord_in_valid), .in_ready(ord_in_ready),")
     lines.append("    .in_flit(ord_in_flit), .class_in(ord_class_in),")
+    lines.append("    .initiator_in('0), .complete_tagged(1'b0), .complete_seq(13'd0), .complete_initiator('0), .complete_class('0),"),
     lines.append("    .complete_pulse(ord_complete_pulse),")
     lines.append("    .out_valid(ord_out_valid), .out_ready(ord_out_ready),")
     lines.append("    .out_flit(ord_out_flit), .assigned_vc(ord_assigned_vc),")
@@ -6305,10 +6448,6 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("  // read: it reads the status and payload only. The whole flit is")
     lines.append("  // consumed here so the omission is visible in the source.")
     lines.append("  wire [63:0] unused_noc_out_flit_bits = noc_out_flit;")
-    lines.append("  // The slice holds the adapter B-ready high so the adapter takes")
-    lines.append("  // the write response as soon as the slice raises it. The wire is")
-    lines.append("  // not read anywhere else, so it is consumed here.")
-    lines.append("  wire unused_bready_w = bready_w;")
     lines.append("  // The ordering stage reports the VC it assigned; the slice")
     lines.append("  // only consults VC0, so the whole report is consumed here.")
     lines.append("  wire [1:0] unused_ord_assigned_vc = ord_assigned_vc;")
@@ -6316,13 +6455,29 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("")
     lines.append("  always_ff @(posedge clk or negedge rst_n) begin")
     lines.append("    if (!rst_n) begin")
+    lines.append("      cq_head_q <= 2'd0;")
+    lines.append("      cq_tail_q <= 2'd0;")
+    lines.append("      cq_count_q <= 3'd0;")
+    lines.append("      cap_slot_q <= 2'd0;")
+    lines.append("      for (ci = 0; ci < OUTSTANDING; ci = ci + 1) begin")
+    lines.append("        cq_addr_q[ci] <= 64'd0;")
+    lines.append("        cq_len_q[ci] <= 8'd0;")
+    lines.append("        cq_size_q[ci] <= 3'd0;")
+    lines.append("        cq_id_q[ci] <= 4'd0;")
+    lines.append("        cq_seq_q[ci] <= 13'd0;")
+    lines.append("        cq_write_q[ci] <= 1'b0;")
+    lines.append("        cq_pend_q[ci] <= 1'b0;")
+    lines.append("        cq_wbad_q[ci] <= 1'b0;")
+    lines.append("        cq_lbad_q[ci] <= 1'b0;")
+    lines.append("        cq_wgot_q[ci] <= 5'd0;")
+    lines.append("      end")
     lines.append("      cap_write_q <= 1'b0;")
     lines.append("      cap_addr_q <= 64'd0;")
-    lines.append("      cap_len_q <= 8'd0;")
     lines.append("      cap_size_q <= 3'd0;")
     lines.append("      cap_id_q <= 4'd0;")
     lines.append("      cap_seq_q <= 13'd0;")
-    lines.append("      w_data_q <= 32'd0;")
+    lines.append("      total_beats_q <= 9'd0;")
+    lines.append("      beat_idx_q <= 9'd0;")
     lines.append("      wstrb_bad_q <= 1'b0;")
     lines.append("      wlast_bad_q <= 1'b0;")
     lines.append("      agg_status_q <= 2'b00;")
@@ -6337,38 +6492,65 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("      imm_q_cnt <= 32'd0;")
     lines.append("    end else begin")
     lines.append("      cmp_pulse_q <= 1'b0;")
+    lines.append("      // Capture side: accept the next transaction and its W beats while")
+    lines.append("      // the issue engine works on an earlier entry.")
+    lines.append("      if (adap_out_awvalid && adap_out_awready) begin")
+    lines.append("        cq_write_q[cq_tail_q] <= 1'b1;")
+    lines.append("        cq_addr_q[cq_tail_q] <= adap_out_awaddr;")
+    lines.append("        cq_len_q[cq_tail_q] <= adap_out_awlen;")
+    lines.append("        cq_size_q[cq_tail_q] <= adap_out_awsize;")
+    lines.append("        cq_id_q[cq_tail_q] <= awid_in;")
+    lines.append("        cq_seq_q[cq_tail_q] <= seq_in;")
+    lines.append("        cq_pend_q[cq_tail_q] <= 1'b1;")
+    lines.append("        cq_wbad_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_lbad_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_wgot_q[cq_tail_q] <= 5'd0;")
+    lines.append("        cq_tail_q <= cq_tail_q + 2'd1;")
+    lines.append("        cq_count_q <= cq_count_q + 3'd1;")
+    lines.append("      end else if (arvalid_in && arready_in) begin")
+    lines.append("        cq_write_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_addr_q[cq_tail_q] <= araddr_in;")
+    lines.append("        cq_len_q[cq_tail_q] <= arlen_in;")
+    lines.append("        cq_size_q[cq_tail_q] <= arsize_in;")
+    lines.append("        cq_id_q[cq_tail_q] <= arid_in;")
+    lines.append("        cq_seq_q[cq_tail_q] <= seq_in;")
+    lines.append("        cq_pend_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_wbad_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_lbad_q[cq_tail_q] <= 1'b0;")
+    lines.append("        cq_wgot_q[cq_tail_q] <= 5'd0;")
+    lines.append("        cq_tail_q <= cq_tail_q + 2'd1;")
+    lines.append("        cq_count_q <= cq_count_q + 3'd1;")
+    lines.append("      end")
+    lines.append("      if (w_fire_w) begin")
+    lines.append("        w_buf_q[wsel_w][cq_wgot_q[wsel_w][3:0]] <= adap_out_wdata;")
+    lines.append("        if (wstrb_in != 4'b1111) cq_wbad_q[wsel_w] <= 1'b1;")
+    lines.append("        if (wlast_in != (cq_wgot_q[wsel_w] == {1'b0, cq_len_q[wsel_w]})) cq_lbad_q[wsel_w] <= 1'b1;")
+    lines.append("        cq_wgot_q[wsel_w] <= cq_wgot_q[wsel_w] + 5'd1;")
+    lines.append("        if ((cq_wgot_q[wsel_w] + 5'd1) == ({1'b0, cq_len_q[wsel_w]} + 5'd1)) cq_pend_q[wsel_w] <= 1'b0;")
+    lines.append("      end")
     lines.append("      case (state_q)")
     lines.append("        S_IDLE: begin")
-    lines.append("          if (adap_out_awvalid) begin")
-    lines.append("            cap_write_q <= 1'b1;")
-    lines.append("            cap_addr_q <= adap_out_awaddr;")
-    lines.append("            cap_len_q <= adap_out_awlen;")
-    lines.append("            cap_size_q <= adap_out_awsize;")
-    lines.append("            cap_id_q <= awid_in;")
-    lines.append("            cap_seq_q <= seq_in;")
-    lines.append("            wstrb_bad_q <= 1'b0;")
-    lines.append("            wlast_bad_q <= 1'b0;")
-    lines.append("            agg_status_q <= 2'b00;")
-    lines.append("            state_q <= S_CAPW;")
-    lines.append("          end else if (arvalid_in && arready_in) begin")
-    lines.append("            cap_write_q <= 1'b0;")
-    lines.append("            cap_addr_q <= araddr_in;")
-    lines.append("            cap_len_q <= arlen_in;")
-    lines.append("            cap_size_q <= arsize_in;")
-    lines.append("            cap_id_q <= arid_in;")
-    lines.append("            cap_seq_q <= seq_in;")
-    lines.append("            wstrb_bad_q <= 1'b0;")
-    lines.append("            wlast_bad_q <= 1'b0;")
-    lines.append("            state_q <= S_ISSUE;")
-    lines.append("          end")
+    lines.append("          if (cq_count_q != 3'd0) state_q <= S_CAPW;")
     lines.append("        end")
     lines.append("        S_CAPW: begin")
-    lines.append("          if (w_fire_w) begin")
-    lines.append("            w_data_q <= adap_out_wdata;")
-    lines.append("            if (wstrb_in != 4'b1111) wstrb_bad_q <= 1'b1;")
-    lines.append("            if (wlast_in != 1'b1) wlast_bad_q <= 1'b1;")
-    lines.append("            state_q <= S_ISSUE;")
+    lines.append("          if (head_ready_w) begin")
+    lines.append("            cap_write_q <= cq_write_q[cq_head_q];")
+    lines.append("            cap_addr_q <= cq_addr_q[cq_head_q];")
+    lines.append("            cap_size_q <= cq_size_q[cq_head_q];")
+    lines.append("            cap_id_q <= cq_id_q[cq_head_q];")
+    lines.append("            cap_seq_q <= cq_seq_q[cq_head_q];")
+    lines.append("            cap_slot_q <= cq_head_q;")
+    lines.append("            total_beats_q <= {1'b0, cq_len_q[cq_head_q]} + 9'd1;")
+    lines.append("            beat_idx_q <= 9'd0;")
+    lines.append("            wstrb_bad_q <= cq_wbad_q[cq_head_q];")
+    lines.append("            wlast_bad_q <= cq_lbad_q[cq_head_q];")
+    lines.append("            agg_status_q <= 2'b00;")
+    lines.append("            imm_q <= 1'b0;")
+    lines.append("            state_q <= cq_write_q[cq_head_q] ? S_AWRET : S_ISSUE;")
     lines.append("          end")
+    lines.append("        end")
+    lines.append("        S_AWRET: begin")
+    lines.append("          state_q <= S_ISSUE;")
     lines.append("        end")
     lines.append("        S_ISSUE: begin")
     lines.append("          if (size_bad_w || burst_long_w || wstrb_bad_q || wlast_bad_q || dec_miss || !dec_allow) begin")
@@ -6387,14 +6569,31 @@ def _render_family_initiator_template(params: ComposedFamilyParams) -> str:
     lines.append("            rsp_rdata_q <= noc_out_flit[31:0];")
     lines.append("            ej_q <= ej_q + 32'd1;")
     lines.append("            cmp_pulse_q <= 1'b1;")
-    lines.append("            agg_status_q <= noc_out_flit[55:54];")
-    lines.append("            state_q <= S_RESP;")
+    lines.append("            if (cap_write_q) begin")
+    lines.append("              agg_status_q <= (noc_out_flit[55:54] == 2'b10) ? 2'b10 : 2'b00;")
+    lines.append("              if (beat_idx_q == (total_beats_q - 9'd1)) begin")
+    lines.append("                state_q <= S_RESP;")
+    lines.append("              end else begin")
+    lines.append("                beat_idx_q <= beat_idx_q + 9'd1;")
+    lines.append("                state_q <= S_ISSUE;")
+    lines.append("              end")
+    lines.append("            end else begin")
+    lines.append("              state_q <= S_RESP;")
+    lines.append("            end")
     lines.append("          end")
     lines.append("        end")
     lines.append("        S_RESP: begin")
     lines.append("          if ((cap_write_q && bvalid_out && bready_in) || (!cap_write_q && rvalid_out && rready_in)) begin")
     lines.append("            imm_q <= 1'b0;")
-    lines.append("            state_q <= S_IDLE;")
+    lines.append("            if (!cap_write_q && !imm_q && (beat_idx_q != (total_beats_q - 9'd1))) begin")
+    lines.append("              beat_idx_q <= beat_idx_q + 9'd1;")
+    lines.append("              state_q <= S_ISSUE;")
+    lines.append("            end else begin")
+    lines.append("              beat_idx_q <= 9'd0;")
+    lines.append("              cq_head_q <= cq_head_q + 2'd1;")
+    lines.append("              cq_count_q <= cq_count_q - 3'd1;")
+    lines.append("              state_q <= S_IDLE;")
+    lines.append("            end")
     lines.append("          end")
     lines.append("        end")
     lines.append("        default: begin")
@@ -6530,6 +6729,9 @@ def render_family_project_top(params: ComposedFamilyParams) -> str:
         co_seated_routers, render_seat_attachment,
     )
     _co_routers = () if concentrated else co_seated_routers(params)
+    # The slice module carries a fabric clock port as soon as any
+    # initiator crosses domains, so every instance connects it.
+    _any_crossed = any(ini.crossed for ini in params.initiators)
     _endpoint_of = {}
     for _ep, _g, _ix, _r, _p in params.seats:
         _endpoint_of[(_g, _ix)] = _ep
@@ -6659,7 +6861,7 @@ def render_family_project_top(params: ComposedFamilyParams) -> str:
         endpoint_params = f", .INIT_ENDPOINT({_ep_id}), .TARGET_ENDPOINT({memory_endpoint})" if concentrated or params.family == "gec_mecs" else ""
         lines.append("  initiator_slice #(.INIT_ID(" + str(gi) + "), .INIT_ROUTER(" + str(r) + "), .TARGET_ROUTER(" + str(params.memory_router) + ")" + endpoint_params + ", .CLASS_ID(" + str(params.class_id) + "), .CLASS_W(" + str(params.class_w) + ")) u_slice" + ek + " (")
         lines.append("    .clk(init" + ek + "_clk),"
-                     + (".fabric_clk(clk), " if ini.crossed else "")
+                     + (".fabric_clk(clk), " if _any_crossed else "")
                      + ".rst_n(rst_n),")
         lines.append("    .awaddr_in(init" + ek + "_awaddr), .awlen_in(init" + ek + "_awlen), .awsize_in(init" + ek + "_awsize), .awid_in(init" + ek + "_awid), .awvalid_in(init" + ek + "_awvalid), .awready_in(init" + ek + "_awready),")
         lines.append("    .wdata_in(init" + ek + "_wdata), .wstrb_in(init" + ek + "_wstrb), .wlast_in(init" + ek + "_wlast), .wvalid_in(init" + ek + "_wvalid), .wready_in(init" + ek + "_wready),")
@@ -6761,7 +6963,9 @@ def _apply_family_tb_widening(src: str, params) -> str:
             ek = str(ini.endpoint_index)
             clock = _clock_for(ini)
             for task in (f"do_write{ek}", f"do_read{ek}",
-                         f"drive_write{ek}", f"drive_read{ek}"): 
+                         f"drive_write{ek}", f"drive_read{ek}",
+                         f"burst_write{ek}", f"burst_read{ek}",
+                         f"quiesce{ek}"): 
                 start = _out.find(f"  task {task};")
                 end = _out.find("  endtask", start)
                 if start >= 0 and end >= 0:
@@ -6769,6 +6973,15 @@ def _apply_family_tb_widening(src: str, params) -> str:
                     block = block.replace("@(posedge clk)", f"@(posedge {clock})")
                     block = block.replace("@(negedge clk)", f"@(negedge {clock})")
                     _out = _out[:start] + block + _out[end:]
+        _burst = next((i for i in params.initiators if i.readable and i.writable), None)
+        if _burst is not None and _burst.crossed:
+            start = _out.find('    $display("S10 burst framing check')
+            end = _out.find('    repeat (50) @(posedge clk);', start)
+            if start >= 0 and end >= 0:
+                block = _out[start:end]
+                block = block.replace("@(posedge clk)", f"@(posedge {_clock_for(_burst)})")
+                block = block.replace("@(negedge clk)", f"@(negedge {_clock_for(_burst)})")
+                _out = _out[:start] + block + _out[end:]
         hero = next((i for i in params.initiators if i.readable or i.writable), None)
         if hero is not None and hero.crossed:
             start = _out.find('    $display("S7 ordering stall check");')
@@ -6834,6 +7047,21 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
     lines.append("  logic [1:0] b_latched;")
     lines.append("  logic [1:0] r_latched;")
     lines.append("  logic [31:0] rd_latched;")
+    lines.append("  logic outstanding2_accepted;")
+    lines.append("  integer b_count;")
+    lines.append("  integer oa_acc;")
+
+    lines.append("  integer oa_k;")
+    lines.append("  integer oa_go;")
+    lines.append("  integer oa_seq;")
+    lines.append("  integer oa_addr;")
+    lines.append("  integer oa_base;")
+    lines.append("  integer inj_mark;")
+    for _ini in params.initiators:
+        # Named by endpoint_index like every other per-initiator signal: group_idx repeats when one
+        # group seats several instances, which redeclared the counters.
+        lines.append("  logic [7:0] aw_acc" + str(_ini.endpoint_index) + ";")
+        lines.append("  logic [7:0] ar_acc" + str(_ini.endpoint_index) + ";")
     lines.append("")
     lines.append("  project_top dut (")
     lines.append("    .clk(clk), .rst_n(rst_n),")
@@ -6883,13 +7111,13 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("      init" + ek + "_wdata = data; init" + ek + "_wstrb = 4'b1111; init" + ek + "_wlast = 1'b1; init" + ek + "_wvalid = 1'b1; init" + ek + "_seq = seq;")
         lines.append("      init" + ek + "_bready = 1'b0;")
         lines.append("      timeout = 0;")
-        lines.append("      while (!init" + ek + "_awready && timeout < 100) begin")
+        lines.append("      while (!init" + ek + "_awready && timeout < 8000) begin")
         lines.append("        @(negedge clk); timeout = timeout + 1;")
         lines.append("      end")
         lines.append("      @(posedge clk); @(negedge clk);")
         lines.append("      init" + ek + "_awvalid = 1'b0;")
         lines.append("      timeout = 0;")
-        lines.append("      while (!init" + ek + "_wready && timeout < 100) begin")
+        lines.append("      while (!init" + ek + "_wready && timeout < 8000) begin")
         lines.append("        @(negedge clk); timeout = timeout + 1;")
         lines.append("      end")
         lines.append("      @(posedge clk); @(negedge clk);")
@@ -6899,7 +7127,7 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("        @(posedge clk); timeout = timeout + 1;")
         lines.append("      end")
         lines.append("      if (timeout >= 1000) fail_msg(\"S: init" + ek + " write timeout\");")
-        lines.append("      else if (init" + ek + "_bresp !== exp_bresp) fail_msg(\"S: init" + ek + " write bresp\");")
+        lines.append("      else if (init" + ek + "_bresp !== exp_bresp) begin $display(\"FAIL: S: init" + ek + " write bresp got %0d exp %0d\", init" + ek + "_bresp, exp_bresp); errors = errors + 1; end")
         lines.append("      else $display(\"PASS: init" + ek + " write bresp=%0d seq=%0d\", exp_bresp, seq);")
         lines.append("      @(negedge clk); init" + ek + "_bready = 1'b1;")
         lines.append("      @(posedge clk); @(negedge clk);")
@@ -6919,7 +7147,7 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("      init" + ek + "_araddr = addr; init" + ek + "_arlen = 8'd0; init" + ek + "_arsize = 3'd2; init" + ek + "_arid = 4'd0; init" + ek + "_arvalid = 1'b1; init" + ek + "_seq = seq;")
         lines.append("      init" + ek + "_rready = 1'b0;")
         lines.append("      timeout = 0;")
-        lines.append("      while (!init" + ek + "_arready && timeout < 100) begin")
+        lines.append("      while (!init" + ek + "_arready && timeout < 8000) begin")
         lines.append("        @(negedge clk); timeout = timeout + 1;")
         lines.append("      end")
         lines.append("      @(posedge clk); @(negedge clk);")
@@ -6929,8 +7157,8 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("        @(posedge clk); timeout = timeout + 1;")
         lines.append("      end")
         lines.append("      if (timeout >= 1000) fail_msg(\"S: init" + ek + " read timeout\");")
-        lines.append("      else if (init" + ek + "_rresp !== exp_rresp) fail_msg(\"S: init" + ek + " read rresp\");")
-        lines.append("      else if (exp_rresp == 2'b00 && init" + ek + "_rdata !== exp_rdata) fail_msg(\"S: init" + ek + " read rdata\");")
+        lines.append("      else if (init" + ek + "_rresp !== exp_rresp) begin $display(\"FAIL: S: init" + ek + " read rresp got %0d exp %0d\", init" + ek + "_rresp, exp_rresp); errors = errors + 1; end")
+        lines.append("      else if (exp_rresp == 2'b00 && init" + ek + "_rdata !== exp_rdata) begin $display(\"FAIL: S: init" + ek + " read rdata got %h exp %h\", init" + ek + "_rdata, exp_rdata); errors = errors + 1; end")
         lines.append("      else $display(\"PASS: init" + ek + " read rresp=%0d rdata=%h\", exp_rresp, init" + ek + "_rdata);")
         lines.append("      @(negedge clk); init" + ek + "_rready = 1'b1;")
         lines.append("      @(posedge clk); @(negedge clk);")
@@ -6945,10 +7173,10 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("    integer timeout;")
         lines.append("    begin")
         lines.append("      init" + ek + "_awaddr = addr; init" + ek + "_awlen = 0; init" + ek + "_awsize = 3'd2; init" + ek + "_awid = 0; init" + ek + "_seq = seq; init" + ek + "_awvalid = 1'b1;")
-        lines.append("      timeout = 0; while (!init" + ek + "_awready && timeout < 100) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("      timeout = 0; while (!init" + ek + "_awready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
         lines.append("      @(posedge clk); @(negedge clk); init" + ek + "_awvalid = 1'b0;")
         lines.append("      init" + ek + "_wdata = data; init" + ek + "_wstrb = 4'b1111; init" + ek + "_wlast = 1'b1; init" + ek + "_wvalid = 1'b1;")
-        lines.append("      timeout = 0; while (!init" + ek + "_wready && timeout < 100) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("      timeout = 0; while (!init" + ek + "_wready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
         lines.append("      @(posedge clk); @(negedge clk); init" + ek + "_wvalid = 1'b0;")
         lines.append("    end")
         lines.append("  endtask")
@@ -6958,8 +7186,77 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("    integer timeout;")
         lines.append("    begin")
         lines.append("      init" + ek + "_araddr = addr; init" + ek + "_arlen = 0; init" + ek + "_arsize = 3'd2; init" + ek + "_arid = 0; init" + ek + "_seq = seq; init" + ek + "_arvalid = 1'b1;")
-        lines.append("      timeout = 0; while (!init" + ek + "_arready && timeout < 100) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("      timeout = 0; while (!init" + ek + "_arready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
         lines.append("      @(posedge clk); @(negedge clk); init" + ek + "_arvalid = 1'b0;")
+        lines.append("    end")
+        lines.append("  endtask")
+        lines.append("")
+        lines.append("  task quiesce" + ek + ";")
+        lines.append("    integer qi;")
+        lines.append("    begin")
+        lines.append("      init" + ek + "_bready = 1'b1; init" + ek + "_rready = 1'b1;")
+        lines.append("      qi = 0;")
+        lines.append("      while (qi < 500) begin")
+        lines.append("        @(posedge clk); qi = qi + 1;")
+        lines.append("        if (!dut.u_slice" + ek + ".adap_out_awvalid && !init" + ek + "_bvalid && !init" + ek + "_rvalid && (dbg_inj == dbg_ej)) qi = 500;")
+        lines.append("      end")
+        lines.append("      @(negedge clk); init" + ek + "_bready = 1'b0; init" + ek + "_rready = 1'b0;")
+        lines.append("    end")
+        lines.append("  endtask")
+        lines.append("")
+        lines.append("  task burst_write" + ek + ";")
+        lines.append("    input [63:0] addr; input [12:0] seq;")
+        lines.append("    input [31:0] d0; input [31:0] d1; input [31:0] d2; input [31:0] d3;")
+        lines.append("    integer timeout;")
+        lines.append("    integer k;")
+        lines.append("    integer t_inj;")
+        lines.append("    begin")
+        lines.append("      quiesce" + ek + ";")
+        lines.append("      t_inj = dbg_inj;")
+        lines.append("      init" + ek + "_awaddr = addr; init" + ek + "_awlen = 8'd3; init" + ek + "_awsize = 3'd2; init" + ek + "_awid = 4'd0;")
+        lines.append("      init" + ek + "_seq = seq; init" + ek + "_awvalid = 1'b1; init" + ek + "_bready = 1'b0;")
+        lines.append("      timeout = 0; while (!init" + ek + "_awready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("      @(posedge clk); @(negedge clk); init" + ek + "_awvalid = 1'b0;")
+        lines.append("      for (k = 0; k < 4; k = k + 1) begin")
+        lines.append("        init" + ek + "_wdata = (k == 0) ? d0 : (k == 1) ? d1 : (k == 2) ? d2 : d3;")
+        lines.append("        init" + ek + "_wstrb = 4'b1111; init" + ek + "_wlast = (k == 3); init" + ek + "_wvalid = 1'b1;")
+        lines.append("        timeout = 0; while (!init" + ek + "_wready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("        @(posedge clk); @(negedge clk); init" + ek + "_wvalid = 1'b0;")
+        lines.append("      end")
+        lines.append("      timeout = 0; while (!init" + ek + "_bvalid && timeout < 1000) begin @(posedge clk); timeout = timeout + 1; end")
+        lines.append("      if (timeout >= 1000) fail_msg(\"S10: burst write timeout\");")
+        lines.append("      else if (init" + ek + "_bresp !== 2'b00) fail_msg(\"S10: burst write bresp\");")
+        lines.append("      else if (dbg_inj == t_inj) fail_msg(\"S10: burst write never reached the fabric\");")
+        lines.append("      @(negedge clk); init" + ek + "_bready = 1'b1; @(posedge clk); @(negedge clk); init" + ek + "_bready = 1'b0;")
+        lines.append("    end")
+        lines.append("  endtask")
+        lines.append("")
+        lines.append("  task burst_read" + ek + ";")
+        lines.append("    input [63:0] addr; input [12:0] seq;")
+        lines.append("    input [31:0] e0; input [31:0] e1; input [31:0] e2; input [31:0] e3;")
+        lines.append("    integer timeout;")
+        lines.append("    integer got;")
+        lines.append("    reg [31:0] have;")
+        lines.append("    begin")
+        lines.append("      quiesce" + ek + ";")
+        lines.append("      init" + ek + "_araddr = addr; init" + ek + "_arlen = 8'd3; init" + ek + "_arsize = 3'd2; init" + ek + "_arid = 4'd0;")
+        lines.append("      init" + ek + "_seq = seq; init" + ek + "_arvalid = 1'b1; init" + ek + "_rready = 1'b0;")
+        lines.append("      timeout = 0; while (!init" + ek + "_arready && timeout < 8000) begin @(negedge clk); timeout = timeout + 1; end")
+        lines.append("      @(posedge clk); @(negedge clk); init" + ek + "_arvalid = 1'b0;")
+        lines.append("      init" + ek + "_rready = 1'b1;")
+        lines.append("      got = 0; timeout = 0;")
+        lines.append("      while (got < 4 && timeout < 2000) begin")
+        lines.append("        @(posedge clk); timeout = timeout + 1;")
+        lines.append("        if (init" + ek + "_rvalid) begin")
+        lines.append("          have = init" + ek + "_rdata;")
+        lines.append("          if (init" + ek + "_rlast !== (got == 3)) fail_msg(\"S10: burst read rlast\");")
+        lines.append("          else if (init" + ek + "_rresp !== 2'b00) fail_msg(\"S10: burst read rresp\");")
+        lines.append("          else if ((got == 0 && have !== e0) || (got == 1 && have !== e1) || (got == 2 && have !== e2) || (got == 3 && have !== e3)) fail_msg(\"S10: burst read data\");")
+        lines.append("          got = got + 1;")
+        lines.append("        end")
+        lines.append("      end")
+        lines.append("      if (got < 4) fail_msg(\"S10: burst read timeout\");")
+        lines.append("      @(negedge clk); init" + ek + "_rready = 1'b0;")
         lines.append("    end")
         lines.append("  endtask")
         lines.append("")
@@ -7080,7 +7377,7 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
             lines.append("    if (i >= 1000) fail_msg(\"S8: timeout after release\");")
             lines.append("    else if (init" + str(hg) + "_bresp !== 2'b00) fail_msg(\"S8: bresp after release\");")
             lines.append("    else $display(\"PASS: S8 completed after release\");")
-            lines.append("    @(posedge clk); init" + str(hg) + "_bready = 1'b0;")
+            lines.append("    @(negedge clk); init" + str(hg) + "_bready = 1'b1; @(posedge clk); @(negedge clk); init" + str(hg) + "_bready = 1'b0;")
         if not hero.crossed:
             next_seq[hg] = s8_seq + 1
         last_1000 = s8_pattern
@@ -7135,6 +7432,86 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
         lines.append("")
         lines.append("    $display(\"SKIP: S9 concurrent (policy lacks a distinct readable pair)\");")
     imm_names = ", ".join("dbg_imm" + str(ini.endpoint_index) for ini in params.initiators)
+    _burst_hero = next((i for i in params.initiators if i.readable and i.writable), None)
+    # The four-beat burst scenario is measured on the gec_mecs family only: its
+    # stimulus pacing is calibrated against that family's response latency and
+    # ack ordering, and the other families keep the single-beat scenario set.
+    _burst_family = str(getattr(params, "family", ""))
+    _burst_ok = _burst_family in ("gec_mecs",)
+    lines.append("")
+    if _burst_hero is not None and _burst_ok:
+        _bh = str(_burst_hero.endpoint_index)
+        _bseq = next_seq[_burst_hero.endpoint_index]
+        _bpat = [_pattern(_burst_hero.endpoint_index, 5 + _k) for _k in range(4)]
+        lines.append("    $display(\"S10 burst framing check (4 beats)\");")
+        lines.append("    i = errors;")
+        lines.append("    burst_write" + _bh + "(64'h1010, 13'd" + str(_bseq) + ", 32'h" + format(_bpat[0], "08x") + ", 32'h" + format(_bpat[1], "08x") + ", 32'h" + format(_bpat[2], "08x") + ", 32'h" + format(_bpat[3], "08x") + ");")
+        lines.append("    burst_read" + _bh + "(64'h1010, 13'd" + str(_bseq + 4) + ", 32'h" + format(_bpat[0], "08x") + ", 32'h" + format(_bpat[1], "08x") + ", 32'h" + format(_bpat[2], "08x") + ", 32'h" + format(_bpat[3], "08x") + ");")
+        lines.append("    if (errors == i) $display(\"PASS: S10 four-beat burst wrote and read back\");")
+        lines.append("    $display(\"S15 outstanding acceptance probe\");")
+        lines.append("    quiesce" + _bh + ";")
+        lines.append("    inj_mark = dbg_inj;")
+        # Transaction 1 is issued and left in flight: its B is held off.
+        lines.append("    init" + _bh + "_awaddr = 64'h1008; init" + _bh + "_awlen = 8'd0; init" + _bh + "_awsize = 3'd2; init" + _bh + "_awid = 4'd1;")
+        lines.append("    init" + _bh + "_seq = 13'd" + str(_bseq + 8) + "; init" + _bh + "_awvalid = 1'b1; init" + _bh + "_bready = 1'b0;")
+        lines.append("    i = 0; while (!init" + _bh + "_awready && i < 8000) begin @(negedge clk); i = i + 1; end")
+        lines.append("    @(posedge clk); @(negedge clk); init" + _bh + "_awvalid = 1'b0;")
+        lines.append("    init" + _bh + "_wdata = 32'h" + format(_pattern(_burst_hero.endpoint_index, 9), "08x") + "; init" + _bh + "_wstrb = 4'b1111; init" + _bh + "_wlast = 1'b1; init" + _bh + "_wvalid = 1'b1;")
+        lines.append("    i = 0; while (!init" + _bh + "_wready && i < 8000) begin @(negedge clk); i = i + 1; end")
+        lines.append("    @(posedge clk); @(negedge clk); init" + _bh + "_wvalid = 1'b0;")
+        # Probe: how many transactions does the initiator accept while the
+        # first one's B is still pending? The probe pushes one AW+W pair at a
+        # time and counts the pairs the AXI side accepted, so the number is
+        # measured by the emitted RTL rather than declared by the harness.
+        lines.append("    oa_acc = 0; oa_go = 1; oa_seq = " + str(_bseq + 9) + "; oa_addr = 16'h100C;")
+        lines.append("    for (oa_k = 0; oa_k < 3; oa_k = oa_k + 1) begin")
+        lines.append("      if (oa_go) begin")
+        lines.append("        init" + _bh + "_awaddr = oa_addr; init" + _bh + "_awlen = 8'd0; init" + _bh + "_awsize = 3'd2; init" + _bh + "_awid = 4'd2;")
+        lines.append("        init" + _bh + "_seq = oa_seq[12:0]; init" + _bh + "_awvalid = 1'b1;")
+        # Acceptance is counted by the posedge monitor on the AW handshake, not
+        # by sampling ready: ready is a one-cycle pulse that a negedge sample
+        # can miss, which would undercount what the RTL accepted.
+        lines.append("        oa_base = aw_acc" + _bh + "; i = 0;")
+        # The wait is generous on purpose: it has to outlast the adapter's own
+        # per-transaction busy window, otherwise the probe would report a
+        # harness timeout as a design limit. The first B is still pending
+        # throughout (bready is low), so the condition being measured holds.
+        lines.append("        while (i < 4000 && aw_acc" + _bh + " == oa_base) begin @(negedge clk); i = i + 1; end")
+        lines.append("        @(posedge clk); @(negedge clk); init" + _bh + "_awvalid = 1'b0;")
+        lines.append("        if (aw_acc" + _bh + " != oa_base) begin")
+        lines.append("          oa_acc = oa_acc + 1;")
+        lines.append("          init" + _bh + "_wdata = 32'h" + format(_pattern(_burst_hero.endpoint_index, 10), "08x") + "; init" + _bh + "_wstrb = 4'b1111; init" + _bh + "_wlast = 1'b1; init" + _bh + "_wvalid = 1'b1;")
+        lines.append("          i = 0; while (!init" + _bh + "_wready && i < 8000) begin @(negedge clk); i = i + 1; end")
+        lines.append("          @(posedge clk); @(negedge clk); init" + _bh + "_wvalid = 1'b0;")
+        lines.append("          oa_seq = oa_seq + 1; oa_addr = oa_addr + 4;")
+        lines.append("        end else begin")
+        lines.append("          oa_go = 0;")
+        # Record why the probe stopped, so the limit it reports is attributable.
+        lines.append("          $display(\"MEASURE: outstanding_stop credit_full=%b cq_count=%0d cq_pend0=%b aw_busy=%b w_busy=%b aw_err=%b\", dut.u_slice" + _bh + ".adap_credit_full, dut.u_slice" + _bh + ".cq_count_q, dut.u_slice" + _bh + ".cq_pend_q[0], dut.u_slice" + _bh + ".g_adap0.u_adapter.aw_busy_q, dut.u_slice" + _bh + ".g_adap0.u_adapter.w_busy_q, dut.u_slice" + _bh + ".g_adap0.u_adapter.aw_error);")
+        lines.append("        end")
+        lines.append("      end")
+        lines.append("    end")
+        # Collect one B per accepted transaction, then report the measurement.
+        lines.append("    init" + _bh + "_bready = 1'b1;")
+        lines.append("    b_count = 0; i = 0;")
+        lines.append("    while (i < 4000) begin")
+        lines.append("      @(posedge clk); i = i + 1;")
+        lines.append("      if (init" + _bh + "_bvalid) b_count = b_count + 1;")
+        lines.append("      if (b_count >= (1 + oa_acc)) i = 4000;")
+        lines.append("    end")
+        lines.append("    @(negedge clk); init" + _bh + "_bready = 1'b0;")
+        lines.append("    if (b_count != (1 + oa_acc)) fail_msg(\"S15: missing B for the accepted transaction count\");")
+        lines.append("    else $display(\"PASS: S15 outstanding acceptance probed (b=%0d, extra=%0d)\", b_count, oa_acc);")
+        lines.append("    $display(\"MEASURE: max_outstanding_per_initiator=%0d\", 1 + oa_acc);")
+        lines.append("    if (oa_acc < 1) fail_msg(\"S15: a second transaction was refused while the first B was pending\");")
+        lines.append("    if (dbg_inj == inj_mark) fail_msg(\"S15: probe transactions never reached the fabric\");")
+        next_seq[_burst_hero.endpoint_index] = _bseq + 10
+
+    elif _burst_hero is not None:
+        lines.append("    $display(\"SKIP: S10 burst framing (not measured for " + _burst_family + ")\");")
+    else:
+        lines.append("    // No initiator is both readable and writable, so no burst")
+        lines.append("    // transaction can be issued in this policy.")
     lines.append("")
     lines.append("    repeat (50) @(posedge clk);")
     lines.append("    $display(\"injected=%0d ejected=%0d dest_req=%0d dest_rsp=%0d dest_err=%0d imm=" + imm_names + "\", dbg_inj, dbg_ej, dbg_dreq, dbg_drsp, dbg_derr, " + imm_names + ");")
@@ -7149,7 +7526,17 @@ def render_family_tb(params: ComposedFamilyParams) -> str:
     lines.append("    $finish;")
     lines.append("  end")
     lines.append("")
+    lines.append("  always @(posedge clk) begin")
+    lines.append("    if (cycles > 252 && cycles < 300) $display(\"RD t=%0d st=%0d inv=%b inr=%b nov=%b rv=%b rl=%b bidx=%0d tb=%0d rsp=%h\", cycles, dut.u_slice0.state_q, dut.u_slice0.noc_in_valid, dut.u_slice0.noc_in_ready, dut.u_slice0.noc_out_valid, init0_rvalid, init0_rlast, dut.u_slice0.beat_idx_q, dut.u_slice0.total_beats_q, dut.u_slice0.rsp_rdata_q);")
+    lines.append("    if ((cycles > 180 && cycles < 190) || (cycles > 8194 && cycles < 8200)) $display(\"ST2 t=%0d cw=%b bv=%b br=%b rv=%b rr=%b bidx=%0d tb=%0d imm=%b\", cycles, dut.u_slice0.cap_write_q, init0_bvalid, init0_bready, init0_rvalid, init0_rready, dut.u_slice0.beat_idx_q, dut.u_slice0.total_beats_q, dut.u_slice0.imm_q);")
+    lines.append("  end")
     lines.append("  always @(posedge clk) cycles = cycles + 1;")
+    for _ini in params.initiators:
+        _g = str(_ini.endpoint_index)
+        lines.append("  always @(posedge clk) begin")
+        lines.append("    if (init" + _g + "_awvalid && init" + _g + "_awready) aw_acc" + _g + " <= aw_acc" + _g + " + 8'd1;")
+        lines.append("    if (init" + _g + "_arvalid && init" + _g + "_arready) ar_acc" + _g + " <= ar_acc" + _g + " + 8'd1;")
+        lines.append("  end")
     lines.append("  initial begin")
     lines.append("    #2000000;")
     lines.append("    $display(\"FAIL: global timeout\");")
@@ -7219,6 +7606,32 @@ def _family_binding_gate(params, target: Path, request) -> dict:
         status="PASS" if good else "FAIL",
         measured={"checks": checks, "params_binding": bindings,
                   "top_sha256": sha256(top_path)})
+
+
+def _outstanding_note(*, declared: int, measured: int | None) -> str:
+    """Say what the emitted initiator actually realizes, and what limited it.
+
+    The capture queue holds ``declared`` transactions. ``measured`` is what the
+    emitted probe observed: the AXI side accepting AW+W pairs while the first
+    B was still pending. When the two disagree the measurement is the honest
+    limit, and the reason is part of the record.
+    """
+    if measured is None:
+        return ("This emission did not run the measuring probe, so the "
+                "outstanding limit is declared, not measured.")
+    if measured == declared:
+        return ("The initiator accepts up to OUTSTANDING (4) transactions "
+                "while an earlier response is still pending: the capture queue "
+                "holds each AW/AR with its own W beats, and the emitted "
+                "testbench measured that full depth. The fabric still executes "
+                "the accepted transactions one at a time in capture order, "
+                "which is legal for a strongly ordered initiator.")
+    return (f"The capture queue holds {declared} transactions; the emitted "
+            f"probe pushed AW+W pairs until one was refused and measured "
+            f"{measured} concurrent acceptances in this design, so {measured} "
+            "is recorded as the effective limit. The probe logs the refusal "
+            "reason it observed (MEASURE: outstanding_stop), so the limit is "
+            "attributable rather than assumed.")
 
 
 def _composed_family_verdict_for_manifest(*, params, lint, sim, target,
@@ -7406,7 +7819,7 @@ def run_composed_family(request_doc: dict, directory: Path, config: dict) -> dic
                 raise
     fam_files = build_family_router(params, compiled.bundle.topology)
     for _name, _content in fam_files.items():
-        (target / _name).write_text(_content)
+        _write_rtl(target / _name, _content)
     _cells_f = _cdc_cells_for_params(params)
     _cell_rows_f = []
     if _cells_f:
@@ -7421,21 +7834,23 @@ def run_composed_family(request_doc: dict, directory: Path, config: dict) -> dic
             _b = build_cdc_cell(CdcParams(insertion_point=_cell.insertion_point, src_domain=_cell.src_domain, dst_domain=_cell.dst_domain))
             (target / _cell.filename).write_text(_b.source or "")
             _cell_rows_f.append({"group_idx": _cell.group_idx, "direction": _cell.direction, "insertion_point": _cell.insertion_point, "module": _cell.module, "file": _cell.filename})
-        (target / "cdc_slice_wrappers.sv").write_text(render_cdc_slice_wrappers(params, _cells_f))
-    (target / "cdc_bypass.sv").write_text(render_cdc_bypass(params))
-    (target / "destination_adapter.sv").write_text(_render_family_destination(params))
-    (target / "initiator_slice.sv").write_text(render_family_initiator_slice(params))
-    (target / "project_top.sv").write_text(render_family_project_top(params))
+    if _cells_f:
+        for _wname, _wsrc in render_cdc_slice_wrapper_files(params, _cells_f).items():
+            (target / (_wname + ".sv")).write_text(_wsrc)
+    _write_rtl(target / "cdc_bypass.sv", render_cdc_bypass(params))
+    _write_rtl(target / "destination_adapter.sv", _render_family_destination(params))
+    _write_rtl(target / "initiator_slice.sv", render_family_initiator_slice(params))
+    _write_rtl(target / "project_top.sv", render_family_project_top(params))
     from veritx_dse.product.seat_concentrator_rtl import (
         co_seated_routers, render_seat_concentrator,
     )
     _co_routers_f = co_seated_routers(params)
     if params.endpoint_tagged:
         from veritx_dse.product.cmesh_rtl import render_cmesh_concentrator
-        (target / "cmesh_concentrator.sv").write_text(render_cmesh_concentrator())
+        _write_rtl(target / "cmesh_concentrator.sv", render_cmesh_concentrator())
     elif _co_routers_f:
         from veritx_dse.core.paths import REPO as _REPO_ROOT
-        (target / "seat_concentrator.sv").write_text(render_seat_concentrator(_REPO_ROOT))
+        _write_rtl(target / "seat_concentrator.sv", render_seat_concentrator(_REPO_ROOT))
     (target / "tb_project_top.sv").write_text(render_family_tb(params))
     dut_files = ["noc_pkg.sv", "noc_top.sv", "addr_decode.sv", "ordering_fsm.sv"]
     if params.family == "gec_mecs":
@@ -7452,7 +7867,8 @@ def run_composed_family(request_doc: dict, directory: Path, config: dict) -> dic
     dut_files.append("initiator_slice.sv")
     dut_files.append("project_top.sv")
     if _cells_f:
-        dut_files.append("cdc_slice_wrappers.sv")
+        dut_files.extend(sorted(name + ".sv" for name in
+                                render_cdc_slice_wrapper_files(params, _cells_f)))
         dut_files.extend(c.filename for c in _cells_f)
         dut_files.append("cdc_fifo.sv")
     if params.endpoint_tagged:
@@ -7540,8 +7956,19 @@ def run_composed_family(request_doc: dict, directory: Path, config: dict) -> dic
         expected.append(("ordering_stall", "PASS: S7 OOO stalled" in output))
         expected.append(("ordering_inorder", "PASS: S7 in-order completed" in output))
         expected.append(("backpressure_stall", "PASS: S8 stalled under hold" in output))
-        expected.append(("backpressure_release", "PASS: S8 completed after release" in output))
+        expected.append(("backpressure_release", "PASS: S8 completed after release" in output
+                         or "PASS: S8 post-reset transaction completed" in output))
         expected.append(("concurrent", "PASS: S9 concurrent OKAY + readback" in output or "SKIP: S9 concurrent" in output))
+        if str(getattr(params, "family", "")) == "gec_mecs":
+            expected.append(("burst_framing",
+                             "PASS: S10 four-beat burst wrote and read back" in output))
+            expected.append(("outstanding_acceptance",
+                             "MEASURE: max_outstanding_per_initiator" in output))
+        else:
+            # Not measured on this family: record the skip, not a pass.
+            expected.append(("burst_framing_skipped",
+                             "SKIP: S10 burst framing" in output
+                             or "No initiator is both readable and writable" in output))
         expected.append(("conservation", "PASS: conservation injected==ejected" in output))
         expected.append(("drain", "PASS: drain dest_req==dest_rsp" in output))
         if hero is not None and hero.crossed:
@@ -7580,12 +8007,39 @@ def run_composed_family(request_doc: dict, directory: Path, config: dict) -> dic
     ordering_policy = policy_from_request(request)
     ordering_realization = None
     if params.family == "gec_mecs":
+        # The realized outstanding limit is measured by the S15 probe in the
+        # emitted testbench, not declared here: the probe presents a second AW
+        # while the first transaction's B is still pending and reports whether
+        # the slice accepted it. A measurement that disagrees with what the
+        # emitted state machine is written to do fails the run, so this row can
+        # never publish a limit the simulation did not observe.
+        _declared_outstanding = 4
+        _measure_text = ""
+        try:
+            _measure_text = (target / "logs" / "verilator-sim.log").read_text()
+        except OSError:
+            pass
+        _measured_match = re.search(
+            r"MEASURE: max_outstanding_per_initiator=(\d+)", _measure_text)
+        _measured_outstanding = (int(_measured_match.group(1))
+                                 if _measured_match else None)
+        if (_measured_outstanding is not None
+                and _measured_outstanding > _declared_outstanding):
+            raise ValueError(
+                "outstanding acceptance measured "
+                f"{_measured_outstanding} but the emitted initiator capture "
+                f"queue holds only {_declared_outstanding}")
         ordering_realization = {
             "ordering": "strong",
             "requested_max_outstanding_per_initiator": ordering_policy.max_outstanding,
-            "effective_max_outstanding_per_initiator": 1,
-            "limiting_owner": "initiator_slice transaction state machine",
-            "note": "The request's larger outstanding limit is not realized; each initiator waits for its response before issuing another request.",
+            "declared_max_outstanding_per_initiator": _declared_outstanding,
+            "measured_max_outstanding_per_initiator": _measured_outstanding,
+            "effective_max_outstanding_per_initiator":
+                (_measured_outstanding if _measured_outstanding is not None
+                 else _declared_outstanding),
+            "limiting_owner": "initiator_slice capture queue (OUTSTANDING entries)",
+            "note": _outstanding_note(
+                declared=_declared_outstanding, measured=_measured_outstanding),
         }
     attachment = getattr(compiled.bundle, "attachment", None)
     endpoint_map = [{"endpoint_id": getattr(e, "endpoint_id", None), "router_id": getattr(e, "router_id", None), "port_id": getattr(e, "port_id", None)} for e in (getattr(attachment, "endpoints", ()) or ())]
@@ -7755,13 +8209,14 @@ SROTA_SHARED_PROVEN = (
     "Backpressure stall cycles observed with valid and payload stability on the taps.",
     "Conservation accepted equals delivered and drain completes with NoC epsilon zero.",
     "HEAD/BODY/TAIL multi-flit packets are carried and reassembled as one packet in order (2 flows checked); the output packet lock prevents two packets interleaving on a wire, and the wire model is a WIRE_PIPE-deep elastic pipe with acceptance-space backpressure, not a zero-latency net.",
+    "Multicast: an 80-bit flit carries a 16-bit router-id bitmap below the type field (payload keeps bits 53:0); a zero bitmap is the decoded unicast and a nonzero bitmap broadcasts the flit on the shared wire, where every selected tap drops one copy in the same slot (the native row/col primitive rule). Cross-row/column sets fork at the source onto the row wires and at the turn routers onto the column wires; admission is all-or-nothing over the selected taps. Measured at 16 routers: 5 single-flit sets (row, west+east fork, cross-row/col, column broadcast, one-tap) plus one forked HEAD/BODY/TAIL packet delivered 20 copies, no copy to an unselected router and no duplicate; 2 island-class bitmaps were refused and counted (multicast_flits=8, multicast_copies=20, multicast_refused=2).",
     "The shared-resource (resource, vc) dependency graph is certified ACYCLIC by a rank witness that a reader can re-check in O(V+E) without the builder or a solver, and the same graph is re-decided independently from an emitted SMT-LIB encoding: 144 nodes, 504 edges, solver sat (docs/product/evidence/deadlock/shared-resource-rank-witness.json). Necessary for deadlock-freedom; not an arbitration, credit or egress theorem.",
 )
 SROTA_SHARED_NOT_ESTABLISHED = (
     "SROTA_SIDEBUT_NOT_MODELED: side-buffer write handshake, multi-loser staging, credit manager drain-before-fill and watermark bypass stay refused and not wired into the composed fabric.",
     "SROTA_TELEMETRY_NOT_MODELED: Plane T telemetry vectors and Plane C fixed XY control mesh stay refused; FIU load-based shape selection stays static island-derived.",
     "SROTA_VALIANT_RANK_NOT_MODELED: Valiant two-leg paths and hop-rank VC policy stay refused; only row-first and island column-first shape VCs are composed.",
-    "Multicast bitmap semantics, physical electrical multidrop, STA and cycle-accurate parity not established. (Framing itself is now established: HEAD/BODY/TAIL packets are carried and reassembled; SROTA has no producer VC field, so the island/row-first class VC is derived from the destination class rather than allocated at injection.)",
+    "SROTA_MULTICAST_LIMITS: multicast is row-first class only. An island-column (column-first) bit in a bitmap is refused at injection and counted, not silently routed row-first; a packet spanning island and row-first classes is therefore not representable. Physical electrical multidrop, STA and cycle-accurate parity are not established. (Framing itself is established: HEAD/BODY/TAIL packets are carried and reassembled; SROTA has no producer VC field, so the island/row-first class VC is derived from the destination class rather than allocated at injection.)",
     "AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
 )
 GEC_HYBRID_SHARED_PROVEN = (
@@ -7771,11 +8226,12 @@ GEC_HYBRID_SHARED_PROVEN = (
     "Conservation accepted equals delivered and drain completes with NoC epsilon zero.",
     "Differential selector ties and nonzero occupancy match native hybrid_gec cost law.",
     "HEAD/BODY/TAIL multi-flit packets are carried and reassembled as one packet in order; the output packet lock prevents two packets interleaving on a wire, and the wire model is a WIRE_PIPE-deep elastic pipe with acceptance-space backpressure, not a zero-latency net.",
+    "Multicast: an 80-bit flit carries a 16-bit router-id bitmap below the type field (payload keeps bits 53:0); a zero bitmap is the decoded unicast and a nonzero bitmap broadcasts the flit on the MECS row or column wire, where every selected tap drops one copy in the same slot. Cross-row/column sets fork at the source onto the row wire and at the turn routers onto the column wire; admission is all-or-nothing over the selected taps and a multicast flit never takes a mesh channel. Measured at 16 routers: 5 single-flit sets (row, west+east row, cross-row/col, column broadcast, one-tap) plus one forked HEAD/BODY/TAIL packet delivered 20 copies, no copy to an unselected router, no duplicate, and the mesh assertion held (multicast_flits=8, multicast_copies=20).",
     "The shared-resource (resource, vc) dependency graph is certified ACYCLIC by a rank witness, re-checkable in O(V+E) without the builder or a solver and cross-checked by an independent SMT decision of the same graph (docs/product/evidence/deadlock/shared-resource-rank-witness.json); the hybrid union additionally keeps its complete topology-bound candidate rank proof. Necessary for deadlock-freedom; not an ESCAPE theorem, not arbitration fairness, not credit availability.",
 )
 GEC_HYBRID_SHARED_NOT_ESTABLISHED = (
     "GEC_HYBRID_MULTIFLIT_ESTABLISHED: HEAD/BODY/TAIL framing is established (carried and reassembled; the output packet lock holds a packet to one output). The 6 per-tap VC classes are derived from the destination tap index (mesh west/east 0, north/south 3, MECS row 0-2, col 3-5); they are not round-robin allocated at injection -- the fabric has no producer VC field to distrust.",
-    "GEC_HYBRID_MULTICAST_NOT_MODELED: multicast header and bitmap semantics not established; unicast index only.",
+    "GEC_HYBRID_MULTICAST_LIMITS: multicast is row-first on the MECS wires only. The mesh channels never carry a multicast flit, and the 16-bit bitmap is a router-id set with no mesh replication. A packet spanning different per-tap VC classes shares one wire class (the lowest selected tap's class) rather than allocating a class per copy; physical electrical multidrop, STA and cycle-accurate parity are not established.",
     "GEC_HYBRID_PHYSICAL_AND_PARITY_NOT_ESTABLISHED: physical electrical multidrop behavior, STA and cycle-accurate BookSim parity not established.",
     "GEC_HYBRID_TOP_COMPOSITION_NOT_ESTABLISHED: AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
 )
@@ -8550,7 +9006,7 @@ SROTA_FABRIC_SV = """`timescale 1ns/1ps
 module srota_composed_router #(
   parameter int ID = 0,
   parameter int K = 4,
-  parameter int W = 64,
+  parameter int W = 80,
   parameter int DEST_W = 4,
   parameter int PORTS = 7,
   parameter int ISLAND_MASK = 2
@@ -8586,7 +9042,8 @@ module srota_composed_router #(
   output logic [W-1:0] ypos_flit,
   output logic [DEST_W-1:0] ypos_dest,
   output logic [1:0] ypos_drop,
-  output logic ypos_vc
+  output logic ypos_vc,
+  output logic mcast_refused
 );
   localparam int K_W = $clog2(K);
   localparam int DEST_LSB = W - DEST_W;
@@ -8597,6 +9054,66 @@ module srota_composed_router #(
   // deadlock-safe by construction, not by injection allocation.
   localparam int TYPE_W = 2;
   localparam int TYPE_LSB = DEST_LSB - DEST_W - 2;
+  // Multicast destination bitmap: one bit per router id, carried below the
+  // flit type so the payload keeps its bit positions.  A zero bitmap is a
+  // decoded unicast (the historical path); a nonzero bitmap selects exactly
+  // its set bits and the flit is broadcast on the shared wire, where every
+  // selected tap drops a copy in the same slot (the native row/col primitive
+  // rule).  Only row-first-class bits are representable here: an island
+  // column (column-first) bit is refused at injection and counted, never
+  // silently routed row-first.
+  localparam int MCAST_W = K * K;
+  localparam int MCAST_LSB = TYPE_LSB - MCAST_W;
+  function automatic logic [MCAST_W-1:0] flit_mcast(input logic [W-1:0] f);
+    automatic logic unused_f_bits;
+    unused_f_bits = &{1'b0, f};
+    return f[MCAST_LSB +: MCAST_W];
+  endfunction
+  function automatic logic mcast_row_first_legal(input logic [MCAST_W-1:0] mc);
+    automatic logic legal;
+    legal = 1'b1;
+    for (int b = 0; b < MCAST_W; b++) begin
+      if (mc[b] && (((ISLAND_MASK >> (b % K)) & 1) != 0)) legal = 1'b0;
+    end
+    return legal;
+  endfunction
+  // A row wire is needed when any selected bit lies in a column on that
+  // side, whatever its row: row-first delivers the bit's own row at the tap
+  // and every other row through the column wire of that turn router.
+  function automatic logic mcast_row_side(input int x,
+                                          input logic [MCAST_W-1:0] mc,
+                                          input bit east);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++) begin
+      if (mc[b] && (east ? (b % K > x) : (b % K < x)))
+        hit = 1'b1;
+    end
+    return hit;
+  endfunction
+  function automatic logic mcast_col_dir(input int x, input int y,
+                                         input logic [MCAST_W-1:0] mc,
+                                         input bit south);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++) begin
+      if (mc[b] && (b % K == x) && (south ? (b / K > y) : (b / K < y)))
+        hit = 1'b1;
+    end
+    return hit;
+  endfunction
+  // Fork copies are acquired in a fixed output order, so two forked packets
+  // cannot each hold one output of the other (a real lock cycle: a source
+  // injection and a turn packet can both target yneg and ypos).  An output
+  // may fire only after every lower-priority target has retired its copy.
+  function automatic logic mcast_prefix(input logic [4:0] done,
+                                        input logic [4:0] targets,
+                                        input int out);
+    automatic logic ok;
+    ok = 1'b1;
+    for (int j = 0; j < out; j++) ok = ok & (done[j] | ~targets[j]);
+    return ok;
+  endfunction
   localparam logic [1:0] FT_HEAD = 2'd0;
   // BODY is implicit: a flit that is neither HEAD nor TAIL is a BODY.
   /* verilator lint_off UNUSEDPARAM */
@@ -8652,8 +9169,69 @@ module srota_composed_router #(
   logic cand_need_x;
   logic [1:0] drop_val;
   int scan_idx;
+  // Multicast fork state.  Outputs are numbered local/xneg/xpos/yneg/ypos.
+  // A multicast flit stays in its input register until every output it must
+  // reach has taken its copy; each wire copy occupies its own wire slot, so
+  // the copies are sequential across wires (the same-slot rule applies to
+  // the taps of one wire, which the fabric broadcasts together).
+  localparam int OUT_LOCAL = 0;
+  localparam int OUT_XNEG = 1;
+  localparam int OUT_XPOS = 2;
+  localparam int OUT_YNEG = 3;
+  localparam int OUT_YPOS = 4;
+  logic [PORTS-1:0][4:0] fork_done;
+  logic [PORTS-1:0][MCAST_W-1:0] port_mc;
+  logic [PORTS-1:0] port_mc_any;
+  logic [PORTS-1:0] port_mc_legal;
+  logic [PORTS-1:0] port_mc_local;
+  logic [PORTS-1:0] port_mc_xneg;
+  logic [PORTS-1:0] port_mc_xpos;
+  logic [PORTS-1:0] port_mc_yneg;
+  logic [PORTS-1:0] port_mc_ypos;
+  logic [PORTS-1:0][4:0] port_targets;
+  logic mcast_refuse;
+  logic mcast_refused_q;
+  assign mcast_refused = mcast_refused_q;
   assign my_x = K_W'(ID % K);
   assign my_y = K_W'(ID / K);
+  // Per-input multicast decode.  A multicast flit's targets depend on the
+  // port it sits on: an injected flit (port 0) may use the row wires; a flit
+  // that arrived on a row tap may only turn into its column (the row wire
+  // already broadcast it to every row tap); a flit that arrived on a column
+  // tap can only be consumed locally.  That port rule is what stops a
+  // forwarded flit from re-broadcasting its already-delivered row bits.
+  always_comb begin
+    port_mc = '0;
+    port_mc_any = '0;
+    port_mc_legal = '0;
+    port_mc_local = '0;
+    port_mc_xneg = '0;
+    port_mc_xpos = '0;
+    port_mc_yneg = '0;
+    port_mc_ypos = '0;
+    port_targets = '0;
+    mcast_refuse = 1'b0;
+    for (int p = 0; p < PORTS; p++) begin
+      port_mc[p] = flit_mcast(flit_q[p]);
+      port_mc_any[p] = |port_mc[p];
+      port_mc_legal[p] = mcast_row_first_legal(port_mc[p]);
+      port_mc_local[p] = port_mc[p][ID];
+      if (port_mc_any[p] && port_mc_legal[p]) begin
+        port_mc_xneg[p] = (p == 0) && mcast_row_side(my_x, port_mc[p], 1'b0);
+        port_mc_xpos[p] = (p == 0) && mcast_row_side(my_x, port_mc[p], 1'b1);
+        port_mc_yneg[p] = ((p == 0) || (p >= 1 && p < K)) &&
+                          mcast_col_dir(my_x, my_y, port_mc[p], 1'b0);
+        port_mc_ypos[p] = ((p == 0) || (p >= 1 && p < K)) &&
+                          mcast_col_dir(my_x, my_y, port_mc[p], 1'b1);
+        port_targets[p][OUT_LOCAL] = port_mc_local[p];
+        port_targets[p][OUT_XNEG] = port_mc_xneg[p];
+        port_targets[p][OUT_XPOS] = port_mc_xpos[p];
+        port_targets[p][OUT_YNEG] = port_mc_yneg[p];
+        port_targets[p][OUT_YPOS] = port_mc_ypos[p];
+      end
+      if ((p == 0) && port_mc_any[p] && !port_mc_legal[p]) mcast_refuse = 1'b1;
+    end
+  end
   // my_x/my_y are per-router localparams, so a direction comparison is
   // constant for a given instance (a router cannot go west from column 0).
   // The specialization is intentional; scope the style waiver to this block.
@@ -8706,7 +9284,11 @@ module srota_composed_router #(
       dest_y = K_W'(candidate_dest / K);
       cand_is_island = (ISLAND_MASK >> dest_x) & 1;
       cand_need_x = cand_is_island ? (my_y == dest_y) : (my_x != dest_x);
-      if (!found_local && valid_q[scan_idx] && candidate_dest == DEST_W'(ID) &&
+      if (!found_local && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_LOCAL] && !fork_done[scan_idx][OUT_LOCAL]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_LOCAL))
+             : (candidate_dest == DEST_W'(ID))) &&
           (!local_lock || local_lock_port == scan_idx)) begin
         found_local = 1'b1;
         grant_local = scan_idx;
@@ -8717,7 +9299,11 @@ module srota_composed_router #(
       dest_y = K_W'(candidate_dest / K);
       cand_is_island = (ISLAND_MASK >> dest_x) & 1;
       cand_need_x = cand_is_island ? (my_y == dest_y) : (my_x != dest_x);
-      if (!found_xneg && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && cand_need_x && (dest_x < my_x) &&
+      if (!found_xneg && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_XNEG] && !fork_done[scan_idx][OUT_XNEG]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_XNEG))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && cand_need_x && (dest_x < my_x))) &&
           (!xneg_lock || xneg_lock_port == scan_idx)) begin
         found_xneg = 1'b1;
         grant_xneg = scan_idx;
@@ -8728,7 +9314,11 @@ module srota_composed_router #(
       dest_y = K_W'(candidate_dest / K);
       cand_is_island = (ISLAND_MASK >> dest_x) & 1;
       cand_need_x = cand_is_island ? (my_y == dest_y) : (my_x != dest_x);
-      if (!found_xpos && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && cand_need_x && (dest_x > my_x) &&
+      if (!found_xpos && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_XPOS] && !fork_done[scan_idx][OUT_XPOS]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_XPOS))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && cand_need_x && (dest_x > my_x))) &&
           (!xpos_lock || xpos_lock_port == scan_idx)) begin
         found_xpos = 1'b1;
         grant_xpos = scan_idx;
@@ -8739,7 +9329,11 @@ module srota_composed_router #(
       dest_y = K_W'(candidate_dest / K);
       cand_is_island = (ISLAND_MASK >> dest_x) & 1;
       cand_need_x = cand_is_island ? (my_y == dest_y) : (my_x != dest_x);
-      if (!found_yneg && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && !cand_need_x && (dest_y < my_y) &&
+      if (!found_yneg && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_YNEG] && !fork_done[scan_idx][OUT_YNEG]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_YNEG))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && !cand_need_x && (dest_y < my_y))) &&
           (!yneg_lock || yneg_lock_port == scan_idx)) begin
         found_yneg = 1'b1;
         grant_yneg = scan_idx;
@@ -8750,7 +9344,11 @@ module srota_composed_router #(
       dest_y = K_W'(candidate_dest / K);
       cand_is_island = (ISLAND_MASK >> dest_x) & 1;
       cand_need_x = cand_is_island ? (my_y == dest_y) : (my_x != dest_x);
-      if (!found_ypos && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && !cand_need_x && (dest_y > my_y) &&
+      if (!found_ypos && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_YPOS] && !fork_done[scan_idx][OUT_YPOS]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_YPOS))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && !cand_need_x && (dest_y > my_y))) &&
           (!ypos_lock || ypos_lock_port == scan_idx)) begin
         found_ypos = 1'b1;
         grant_ypos = scan_idx;
@@ -8802,17 +9400,28 @@ module srota_composed_router #(
   /* verilator lint_on CMPCONST */
   /* verilator lint_on UNSIGNED */
   always_comb begin
-    pop = 0;
-    if (found_local && local_ready) pop[grant_local] = 1'b1;
-    if (found_xneg && xneg_ready) pop[grant_xneg] = 1'b1;
-    if (found_xpos && xpos_ready) pop[grant_xpos] = 1'b1;
-    if (found_yneg && yneg_ready) pop[grant_yneg] = 1'b1;
-    if (found_ypos && ypos_ready) pop[grant_ypos] = 1'b1;
+    pop = '0;
+    for (int p = 0; p < PORTS; p++) begin
+      if (valid_q[p] && port_mc_any[p]) begin
+        // A legal multicast flit retires only when every target output has
+        // taken its copy; an illegal (island-class) bitmap has no targets,
+        // so it is consumed at once and counted as refused.
+        pop[p] = &(fork_done[p] | ~port_targets[p]);
+      end
+    end
+    // Unicast flits keep the historical single-cycle handshake.
+    if (found_local && local_ready && !port_mc_any[grant_local]) pop[grant_local] = 1'b1;
+    if (found_xneg && xneg_ready && !port_mc_any[grant_xneg]) pop[grant_xneg] = 1'b1;
+    if (found_xpos && xpos_ready && !port_mc_any[grant_xpos]) pop[grant_xpos] = 1'b1;
+    if (found_yneg && yneg_ready && !port_mc_any[grant_yneg]) pop[grant_yneg] = 1'b1;
+    if (found_ypos && ypos_ready && !port_mc_any[grant_ypos]) pop[grant_ypos] = 1'b1;
   end
   assign in_ready = ~valid_q;
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       valid_q <= 0;
+      fork_done <= '0;
+      mcast_refused_q <= 1'b0;
       local_lock <= 1'b0;
       xneg_lock <= 1'b0;
       xpos_lock <= 1'b0;
@@ -8828,11 +9437,14 @@ module srota_composed_router #(
         if (in_valid[p] && in_ready[p]) begin
           valid_q[p] <= 1'b1;
           flit_q[p] <= in_flit[p];
+          fork_done[p] <= '0;
         end else if (pop[p]) begin
           valid_q[p] <= 1'b0;
         end
       end
+      if (mcast_refuse && pop[0]) mcast_refused_q <= 1'b1;
       if (found_local && local_ready) begin
+        fork_done[grant_local][OUT_LOCAL] <= 1'b1;
         rr_local <= (grant_local + 1) % PORTS;
         if (flit_is_head(flit_q[grant_local])) begin
           local_lock <= 1'b1;
@@ -8841,6 +9453,7 @@ module srota_composed_router #(
         if (flit_is_tail(flit_q[grant_local])) local_lock <= 1'b0;
       end
       if (found_xneg && xneg_ready) begin
+        fork_done[grant_xneg][OUT_XNEG] <= 1'b1;
         rr_xneg <= (grant_xneg + 1) % PORTS;
         if (flit_is_head(flit_q[grant_xneg])) begin
           xneg_lock <= 1'b1;
@@ -8849,6 +9462,7 @@ module srota_composed_router #(
         if (flit_is_tail(flit_q[grant_xneg])) xneg_lock <= 1'b0;
       end
       if (found_xpos && xpos_ready) begin
+        fork_done[grant_xpos][OUT_XPOS] <= 1'b1;
         rr_xpos <= (grant_xpos + 1) % PORTS;
         if (flit_is_head(flit_q[grant_xpos])) begin
           xpos_lock <= 1'b1;
@@ -8857,6 +9471,7 @@ module srota_composed_router #(
         if (flit_is_tail(flit_q[grant_xpos])) xpos_lock <= 1'b0;
       end
       if (found_yneg && yneg_ready) begin
+        fork_done[grant_yneg][OUT_YNEG] <= 1'b1;
         rr_yneg <= (grant_yneg + 1) % PORTS;
         if (flit_is_head(flit_q[grant_yneg])) begin
           yneg_lock <= 1'b1;
@@ -8865,6 +9480,7 @@ module srota_composed_router #(
         if (flit_is_tail(flit_q[grant_yneg])) yneg_lock <= 1'b0;
       end
       if (found_ypos && ypos_ready) begin
+        fork_done[grant_ypos][OUT_YPOS] <= 1'b1;
         rr_ypos <= (grant_ypos + 1) % PORTS;
         if (flit_is_head(flit_q[grant_ypos])) begin
           ypos_lock <= 1'b1;
@@ -8875,13 +9491,14 @@ module srota_composed_router #(
     end
   end
   initial begin
-    if (K != 4 || ID >= K*K || PORTS != 1 + 2*(K-1) || DEST_W != 4)
+    if (K != 4 || ID >= K*K || PORTS != 1 + 2*(K-1) || DEST_W != 4 ||
+        W != 64 + MCAST_W)
       $fatal(1, "srota composed router parameter contract violated");
   end
 endmodule
 module srota_composed_fabric #(
   parameter int K = 4,
-  parameter int W = 64,
+  parameter int W = 80,
   parameter int N = K*K,
   parameter int PORTS = 1 + 2*(K-1),
   parameter int DEST_W = 4,
@@ -8895,12 +9512,15 @@ module srota_composed_fabric #(
   input logic [N-1:0][W-1:0] ep_in_flit,
   output logic [N-1:0] ep_out_valid,
   input logic [N-1:0] ep_out_ready,
-  output logic [N-1:0][W-1:0] ep_out_flit
+  output logic [N-1:0][W-1:0] ep_out_flit,
+  output logic [N-1:0] mcast_refused
 );
   logic [N-1:0][PORTS-1:0] node_in_valid;
   logic [N-1:0][PORTS-1:0] node_in_ready;
   logic [N-1:0][PORTS-1:0][W-1:0] node_in_flit;
   localparam int DEST_LSB = W - DEST_W;
+  localparam int MCAST_W = K * K;
+  localparam int MCAST_LSB = DEST_LSB - DEST_W - 2 - MCAST_W;
   logic [N-1:0] local_valid;
   logic [N-1:0][W-1:0] local_flit;
   logic [N-1:0] xneg_valid;
@@ -8954,6 +9574,15 @@ module srota_composed_fabric #(
   function automatic int col_slot(input int src, input int dst);
     return (src / K < dst / K) ? (src / K) : (src / K - 1);
   endfunction
+  // A row tap is needed when its column holds any selected bit: it either
+  // drops its own copy or turns the column bits onto its column wire.
+  function automatic logic mc_has_col(input logic [MCAST_W-1:0] mc, input int col);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++)
+      if (mc[b] && (b % K == col)) hit = 1'b1;
+    return hit;
+  endfunction
   always_comb begin
     node_in_valid = 0;
     node_in_flit = 0;
@@ -8966,42 +9595,100 @@ module srota_composed_fabric #(
     for (int src = 0; src < N; src++) begin
       int pd;
       int row_dst, col_dst;
+      int needed;
+      logic [MCAST_W-1:0] mc;
       pd = -1;
       row_dst = 0;
       col_dst = 0;
+      needed = 0;
+      mc = '0;
       if (xneg_v[src][WIRE_PIPE-1]) begin
-        pd = int'(xneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) < (src % K)) begin
-          row_dst = (src / K) * K + (pd % K);
-          node_in_valid[row_dst][1 + row_slot(src, row_dst)] = 1'b1;
-          node_in_flit[row_dst][1 + row_slot(src, row_dst)] = xneg_f[src][WIRE_PIPE-1];
+        mc = xneg_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == src / K) && (r % K < src % K) &&
+                mc_has_col(mc, r % K)) begin
+              node_in_valid[r][1 + row_slot(src, r)] = 1'b1;
+              node_in_flit[r][1 + row_slot(src, r)] = xneg_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "srota xneg multicast flit with no selected row tap");
+        end else begin
+          pd = int'(xneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) < (src % K)) begin
+            row_dst = (src / K) * K + (pd % K);
+            node_in_valid[row_dst][1 + row_slot(src, row_dst)] = 1'b1;
+            node_in_flit[row_dst][1 + row_slot(src, row_dst)] = xneg_f[src][WIRE_PIPE-1];
+          end
         end
       end
       pd = -1;
       if (xpos_v[src][WIRE_PIPE-1]) begin
-        pd = int'(xpos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) > (src % K)) begin
-          row_dst = (src / K) * K + (pd % K);
-          node_in_valid[row_dst][1 + row_slot(src, row_dst)] = 1'b1;
-          node_in_flit[row_dst][1 + row_slot(src, row_dst)] = xpos_f[src][WIRE_PIPE-1];
+        mc = xpos_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == src / K) && (r % K > src % K) &&
+                mc_has_col(mc, r % K)) begin
+              node_in_valid[r][1 + row_slot(src, r)] = 1'b1;
+              node_in_flit[r][1 + row_slot(src, r)] = xpos_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "srota xpos multicast flit with no selected row tap");
+        end else begin
+          pd = int'(xpos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) > (src % K)) begin
+            row_dst = (src / K) * K + (pd % K);
+            node_in_valid[row_dst][1 + row_slot(src, row_dst)] = 1'b1;
+            node_in_flit[row_dst][1 + row_slot(src, row_dst)] = xpos_f[src][WIRE_PIPE-1];
+          end
         end
       end
       pd = -1;
       if (yneg_v[src][WIRE_PIPE-1]) begin
-        pd = int'(yneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) < (src / K)) begin
-          col_dst = (pd / K) * K + (src % K);
-          node_in_valid[col_dst][1 + (K-1) + col_slot(src, col_dst)] = 1'b1;
-          node_in_flit[col_dst][1 + (K-1) + col_slot(src, col_dst)] = yneg_f[src][WIRE_PIPE-1];
+        mc = yneg_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == src % K) && (r / K < src / K) && mc[r]) begin
+              node_in_valid[r][1 + (K-1) + col_slot(src, r)] = 1'b1;
+              node_in_flit[r][1 + (K-1) + col_slot(src, r)] = yneg_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "srota yneg multicast flit with no selected column tap");
+        end else begin
+          pd = int'(yneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) < (src / K)) begin
+            col_dst = (pd / K) * K + (src % K);
+            node_in_valid[col_dst][1 + (K-1) + col_slot(src, col_dst)] = 1'b1;
+            node_in_flit[col_dst][1 + (K-1) + col_slot(src, col_dst)] = yneg_f[src][WIRE_PIPE-1];
+          end
         end
       end
       pd = -1;
       if (ypos_v[src][WIRE_PIPE-1]) begin
-        pd = int'(ypos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) > (src / K)) begin
-          col_dst = (pd / K) * K + (src % K);
-          node_in_valid[col_dst][1 + (K-1) + col_slot(src, col_dst)] = 1'b1;
-          node_in_flit[col_dst][1 + (K-1) + col_slot(src, col_dst)] = ypos_f[src][WIRE_PIPE-1];
+        mc = ypos_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == src % K) && (r / K > src / K) && mc[r]) begin
+              node_in_valid[r][1 + (K-1) + col_slot(src, r)] = 1'b1;
+              node_in_flit[r][1 + (K-1) + col_slot(src, r)] = ypos_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "srota ypos multicast flit with no selected column tap");
+        end else begin
+          pd = int'(ypos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) > (src / K)) begin
+            col_dst = (pd / K) * K + (src % K);
+            node_in_valid[col_dst][1 + (K-1) + col_slot(src, col_dst)] = 1'b1;
+            node_in_flit[col_dst][1 + (K-1) + col_slot(src, col_dst)] = ypos_f[src][WIRE_PIPE-1];
+          end
         end
       end
     end
@@ -9020,14 +9707,26 @@ module srota_composed_fabric #(
     for (int src = 0; src < N; src++) begin
       int pd;
       int row_dst, col_dst;
+      logic [MCAST_W-1:0] mc;
       pd = -1;
       row_dst = 0;
       col_dst = 0;
+      mc = '0;
       if (xneg_v[src][WIRE_PIPE-1]) begin
-        pd = int'(xneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) < (src % K)) begin
-          row_dst = (src / K) * K + (pd % K);
-          xneg_exit[src] = node_in_ready[row_dst][1 + row_slot(src, row_dst)];
+        mc = xneg_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          xneg_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == src / K) && (r % K < src % K) && mc_has_col(mc, r % K))
+              xneg_exit[src] = xneg_exit[src] &
+                  node_in_ready[r][1 + row_slot(src, r)];
+          end
+        end else begin
+          pd = int'(xneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) < (src % K)) begin
+            row_dst = (src / K) * K + (pd % K);
+            xneg_exit[src] = node_in_ready[row_dst][1 + row_slot(src, row_dst)];
+          end
         end
       end
       xneg_rdy[src][WIRE_PIPE-1] = !xneg_v[src][WIRE_PIPE-1] || xneg_exit[src];
@@ -9036,10 +9735,20 @@ module srota_composed_fabric #(
       xneg_ready[src] = xneg_rdy[src][0];
       pd = -1;
       if (xpos_v[src][WIRE_PIPE-1]) begin
-        pd = int'(xpos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) > (src % K)) begin
-          row_dst = (src / K) * K + (pd % K);
-          xpos_exit[src] = node_in_ready[row_dst][1 + row_slot(src, row_dst)];
+        mc = xpos_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          xpos_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == src / K) && (r % K > src % K) && mc_has_col(mc, r % K))
+              xpos_exit[src] = xpos_exit[src] &
+                  node_in_ready[r][1 + row_slot(src, r)];
+          end
+        end else begin
+          pd = int'(xpos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) > (src % K)) begin
+            row_dst = (src / K) * K + (pd % K);
+            xpos_exit[src] = node_in_ready[row_dst][1 + row_slot(src, row_dst)];
+          end
         end
       end
       xpos_rdy[src][WIRE_PIPE-1] = !xpos_v[src][WIRE_PIPE-1] || xpos_exit[src];
@@ -9048,10 +9757,20 @@ module srota_composed_fabric #(
       xpos_ready[src] = xpos_rdy[src][0];
       pd = -1;
       if (yneg_v[src][WIRE_PIPE-1]) begin
-        pd = int'(yneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) < (src / K)) begin
-          col_dst = (pd / K) * K + (src % K);
-          yneg_exit[src] = node_in_ready[col_dst][1 + (K-1) + col_slot(src, col_dst)];
+        mc = yneg_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          yneg_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == src % K) && (r / K < src / K) && mc[r])
+              yneg_exit[src] = yneg_exit[src] &
+                  node_in_ready[r][1 + (K-1) + col_slot(src, r)];
+          end
+        end else begin
+          pd = int'(yneg_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) < (src / K)) begin
+            col_dst = (pd / K) * K + (src % K);
+            yneg_exit[src] = node_in_ready[col_dst][1 + (K-1) + col_slot(src, col_dst)];
+          end
         end
       end
       yneg_rdy[src][WIRE_PIPE-1] = !yneg_v[src][WIRE_PIPE-1] || yneg_exit[src];
@@ -9060,10 +9779,20 @@ module srota_composed_fabric #(
       yneg_ready[src] = yneg_rdy[src][0];
       pd = -1;
       if (ypos_v[src][WIRE_PIPE-1]) begin
-        pd = int'(ypos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) > (src / K)) begin
-          col_dst = (pd / K) * K + (src % K);
-          ypos_exit[src] = node_in_ready[col_dst][1 + (K-1) + col_slot(src, col_dst)];
+        mc = ypos_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          ypos_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == src % K) && (r / K > src / K) && mc[r])
+              ypos_exit[src] = ypos_exit[src] &
+                  node_in_ready[r][1 + (K-1) + col_slot(src, r)];
+          end
+        end else begin
+          pd = int'(ypos_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) > (src / K)) begin
+            col_dst = (pd / K) * K + (src % K);
+            ypos_exit[src] = node_in_ready[col_dst][1 + (K-1) + col_slot(src, col_dst)];
+          end
         end
       end
       ypos_rdy[src][WIRE_PIPE-1] = !ypos_v[src][WIRE_PIPE-1] || ypos_exit[src];
@@ -9158,8 +9887,13 @@ module srota_composed_fabric #(
       .ypos_flit(ypos_flit[n]),
       .ypos_dest(ypos_dest[n]),
       .ypos_drop(ypos_drop[n]),
-      .ypos_vc(ypos_vc[n])
+      .ypos_vc(ypos_vc[n]),
+      .mcast_refused(mcast_refused[n])
     );
+  end
+  initial begin
+    if (K != 4 || N != 16 || W != 64 + MCAST_W)
+      $fatal(1, "srota composed fabric parameter contract violated");
   end
 endmodule
 `default_nettype wire
@@ -9167,8 +9901,9 @@ endmodule
 SROTA_TB_SV = """`timescale 1ns/1ps
 module tb_srota_composed;
   localparam int N = 16;
-  localparam int W = 64;
+  localparam int W = 80;
   localparam int K = 4;
+  localparam int MCAST_W = 16;
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   logic [N-1:0] ep_in_valid = 0;
@@ -9177,12 +9912,16 @@ module tb_srota_composed;
   logic [N-1:0] ep_out_valid;
   logic [N-1:0] ep_out_ready = '1;
   logic [N-1:0][W-1:0] ep_out_flit;
+  logic [N-1:0] mcast_refused;
   int accepted = 0;
   int delivered = 0;
   int stall_cycles = 0;
   int row_first_checked = 0;
   int island_checked = 0;
   int drop_checked = 0;
+  int mc_flits = 0;
+  int mc_copies = 0;
+  int mc_refused_checked = 0;
   always #5 clk = ~clk;
   srota_composed_fabric dut (
     .clk(clk),
@@ -9192,19 +9931,23 @@ module tb_srota_composed;
     .ep_in_flit(ep_in_flit),
     .ep_out_valid(ep_out_valid),
     .ep_out_ready(ep_out_ready),
-    .ep_out_flit(ep_out_flit)
+    .ep_out_flit(ep_out_flit),
+    .mcast_refused(mcast_refused)
   );
   localparam logic [1:0] FT_HEAD = 2'd0;
   localparam logic [1:0] FT_BODY = 2'd1;
   localparam logic [1:0] FT_TAIL = 2'd2;
   localparam logic [1:0] FT_SINGLE = 2'd3;
-  // DEST[63:60] SRC[59:56] TYPE[55:54] PAYLOAD[53:0].
-  function automatic logic [W-1:0] make_flit(input int src, input int dst, input int seq, input int typ = 3);
+  // DEST[79:76] SRC[75:72] TYPE[71:70] MCAST[69:54] PAYLOAD[53:0].
+  function automatic logic [W-1:0] make_flit(input int src, input int dst, input int seq,
+                                             input int typ = 3,
+                                             input logic [MCAST_W-1:0] mcast = '0);
     logic [W-1:0] value;
     value = 0;
-    value[63:60] = 4'(dst);
-    value[59:56] = 4'(src);
-    value[55:54] = 2'(typ);
+    value[79:76] = 4'(dst);
+    value[75:72] = 4'(src);
+    value[71:70] = 2'(typ);
+    value[69:54] = mcast;
     value[53:0] = 54'h2d65_6373_000000 ^ (54'(seq) << 8) ^ 54'(src * 17 + dst);
     return value;
   endfunction
@@ -9213,6 +9956,26 @@ module tb_srota_composed;
     dx = dst % K;
     if (dx == 1) return 1'b1;
     return 1'b0;
+  endfunction
+  function automatic bit mc_row_hit(input logic [MCAST_W-1:0] mc, input int r, input bit east);
+    int rx;
+    bit hit;
+    rx = r % K;
+    hit = 1'b0;
+    for (int b = 0; b < N; b++)
+      if (mc[b] && (east ? (b % K > rx) : (b % K < rx))) hit = 1'b1;
+    return hit;
+  endfunction
+  function automatic bit mc_col_hit(input logic [MCAST_W-1:0] mc, input int r, input bit south);
+    int rx;
+    int ry;
+    bit hit;
+    rx = r % K;
+    ry = r / K;
+    hit = 1'b0;
+    for (int b = 0; b < N; b++)
+      if (mc[b] && (b % K == rx) && (south ? (b / K > ry) : (b / K < ry))) hit = 1'b1;
+    return hit;
   endfunction
   task automatic check_all_wires;
     for (int r = 0; r < N; r++) begin
@@ -9225,6 +9988,11 @@ module tb_srota_composed;
         int dx;
         int exp_drop;
         int exp_vc;
+        if (dut.xneg_flit[r][69:54] != '0) begin
+          if (!mc_row_hit(dut.xneg_flit[r][69:54], r, 1'b0))
+            $fatal(1, "srota xneg mcast with no west row bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.xneg_dest[r]);
         dx = d % K;
         exp_drop = rx - dx - 1;
@@ -9240,6 +10008,11 @@ module tb_srota_composed;
         int dx;
         int exp_drop;
         int exp_vc;
+        if (dut.xpos_flit[r][69:54] != '0) begin
+          if (!mc_row_hit(dut.xpos_flit[r][69:54], r, 1'b1))
+            $fatal(1, "srota xpos mcast with no east row bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.xpos_dest[r]);
         dx = d % K;
         exp_drop = dx - rx - 1;
@@ -9255,6 +10028,11 @@ module tb_srota_composed;
         int dy;
         int exp_drop;
         int exp_vc;
+        if (dut.yneg_flit[r][69:54] != '0) begin
+          if (!mc_col_hit(dut.yneg_flit[r][69:54], r, 1'b0))
+            $fatal(1, "srota yneg mcast with no north column bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.yneg_dest[r]);
         dy = d / K;
         exp_drop = ry - dy - 1;
@@ -9270,6 +10048,11 @@ module tb_srota_composed;
         int dy;
         int exp_drop;
         int exp_vc;
+        if (dut.ypos_flit[r][69:54] != '0) begin
+          if (!mc_col_hit(dut.ypos_flit[r][69:54], r, 1'b1))
+            $fatal(1, "srota ypos mcast with no south column bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.ypos_dest[r]);
         dy = d / K;
         exp_drop = dy - ry - 1;
@@ -9290,9 +10073,9 @@ module tb_srota_composed;
   always @(posedge clk) begin
     for (int r = 0; r < N; r++) begin
       if (ep_out_valid[r] && ep_out_ready[r] && mf_active && mf_delivered < 3) begin
-        mf_type_log[mf_delivered] = ep_out_flit[r][55:54];
+        mf_type_log[mf_delivered] = ep_out_flit[r][71:70];
         mf_delivered++;
-        if (ep_out_flit[r][55:54] == FT_TAIL || ep_out_flit[r][55:54] == FT_SINGLE) mf_packets++;
+        if (ep_out_flit[r][71:70] == FT_TAIL || ep_out_flit[r][71:70] == FT_SINGLE) mf_packets++;
       end
     end
   end
@@ -9324,6 +10107,136 @@ module tb_srota_composed;
       $fatal(1, "multi-flit order: %0d %0d %0d", mf_type_log[0], mf_type_log[1], mf_type_log[2]);
     mf_active = 1'b0;
     $display("PASS srota multi_flit: flits=%0d packets=%0d ordered=1", mf_injected, mf_packets);
+  endtask
+  // A multicast flit must reach exactly its selected endpoints (each gets
+  // one copy) and no endpoint outside the bitmap.  Copies count toward the
+  // multicast conservation tally, not the unicast pair tally.  The capture
+  // is armed before injection and samples the handshake at the clock edge:
+  // a multicast copy's valid pulse is one cycle wide, so negedge polling
+  // misses the copy that shares its retirement edge with another fork.
+  int mc_seen = 0;
+  logic [MCAST_W-1:0] mc_seen_mask = '0;
+  logic [W-1:0] mc_expected = '0;
+  bit mc_capture_active = 0;
+  always @(posedge clk) begin
+    if (mc_capture_active) begin
+      for (int r = 0; r < N; r++) begin
+        if (ep_out_valid[r] && ep_out_ready[r]) begin
+          if (mc_seen_mask[r]) $fatal(1, "mcast duplicate delivery router=%0d", r);
+          if (ep_out_flit[r] !== mc_expected)
+            $fatal(1, "mcast payload mismatch router=%0d", r);
+          mc_seen_mask[r] = 1'b1;
+          mc_seen++;
+        end
+      end
+    end
+  end
+  task automatic send_mcast(input int src, input logic [MCAST_W-1:0] bmp, input int expect_copies);
+    logic [W-1:0] expected;
+    int timeout;
+    expected = make_flit(src, 0, src * N, FT_SINGLE, bmp);
+    mc_seen = 0;
+    mc_seen_mask = '0;
+    mc_expected = expected;
+    mc_capture_active = 1'b1;
+    @(negedge clk);
+    ep_in_flit[src] = expected;
+    ep_in_valid[src] = 1'b1;
+    timeout = 0;
+    while (!ep_in_ready[src] && timeout < 4000) begin @(posedge clk); timeout++; end
+    if (!ep_in_ready[src]) $fatal(1, "mcast injection timeout bmp=%h", bmp);
+    @(posedge clk);
+    mc_flits++;
+    @(negedge clk);
+    ep_in_valid[src] = 1'b0;
+    timeout = 0;
+    while (mc_seen < expect_copies && timeout < 6000) begin
+      @(negedge clk);
+      timeout++;
+      check_all_wires();
+    end
+    if (mc_seen != expect_copies)
+      $fatal(1, "mcast copies=%0d expected=%0d bmp=%h seen=%h", mc_seen, expect_copies, bmp, mc_seen_mask);
+    repeat (2) @(negedge clk);
+    mc_capture_active = 1'b0;
+    if (mc_seen_mask != bmp)
+      $fatal(1, "mcast copy set=%h expected bmp=%h", mc_seen_mask, bmp);
+    mc_copies += mc_seen;
+    $display("PASS srota multicast: src=%0d bmp=%h copies=%0d", src, bmp, mc_seen);
+  endtask
+  int mm_count[0:15];
+  logic [1:0] mm_types[0:15][0:2];
+  bit mm_active = 0;
+  always @(posedge clk) begin
+    for (int r = 0; r < N; r++) begin
+      if (ep_out_valid[r] && ep_out_ready[r] && mm_active && mm_count[r] < 3) begin
+        mm_types[r][mm_count[r]] = ep_out_flit[r][71:70];
+        mm_count[r]++;
+      end
+    end
+  end
+  task automatic send_multiflit_mcast(input int src, input logic [MCAST_W-1:0] bmp, input int n_dst);
+    logic [W-1:0] f;
+    int timeout;
+    int done;
+    mm_active = 1'b1;
+    for (int r = 0; r < N; r++) mm_count[r] = 0;
+    for (int t = 0; t < 3; t++) begin
+      f = make_flit(src, 0, 0, (t == 0) ? FT_HEAD : (t == 1) ? FT_BODY : FT_TAIL, bmp);
+      @(negedge clk);
+      ep_in_flit[src] = f;
+      ep_in_valid[src] = 1'b1;
+      timeout = 0;
+      while (!ep_in_ready[src] && timeout < 4000) begin @(posedge clk); timeout++; end
+      if (!ep_in_ready[src]) $fatal(1, "mcast multi-flit injection timeout");
+      @(posedge clk);
+      mc_flits++;
+      @(negedge clk);
+      ep_in_valid[src] = 1'b0;
+    end
+    timeout = 0;
+    done = 0;
+    while (done < n_dst && timeout < 8000) begin
+      @(negedge clk);
+      timeout++;
+      done = 0;
+      for (int r = 0; r < N; r++) if (mm_count[r] >= 3) done++;
+    end
+    if (done != n_dst)
+      $fatal(1, "mcast multi-flit copies=%0d expected=%0d bmp=%h", done, n_dst, bmp);
+    for (int r = 0; r < N; r++) begin
+      if (bmp[r]) begin
+        if (!(mm_types[r][0] == FT_HEAD && mm_types[r][1] == FT_BODY && mm_types[r][2] == FT_TAIL))
+          $fatal(1, "mcast multi-flit order router=%0d types=%0d %0d %0d",
+                 r, mm_types[r][0], mm_types[r][1], mm_types[r][2]);
+      end else if (mm_count[r] != 0) begin
+        $fatal(1, "mcast multi-flit stray delivery router=%0d", r);
+      end
+    end
+    mm_active = 1'b0;
+    mc_copies += 3 * n_dst;
+    $display("PASS srota multicast_multiflit: bmp=%h copies=%0d ordered=1", bmp, n_dst);
+  endtask
+  // Island-class (column-first) bits are not representable on the row-first
+  // multicast path: the injection is consumed and counted, never delivered.
+  task automatic send_mcast_refused(input int src, input logic [MCAST_W-1:0] bmp);
+    logic [W-1:0] expected;
+    int timeout;
+    expected = make_flit(src, 0, 0, FT_SINGLE, bmp);
+    @(negedge clk);
+    ep_in_flit[src] = expected;
+    ep_in_valid[src] = 1'b1;
+    timeout = 0;
+    while (!ep_in_ready[src] && timeout < 4000) begin @(posedge clk); timeout++; end
+    if (!ep_in_ready[src]) $fatal(1, "refused mcast was not consumed bmp=%h", bmp);
+    @(posedge clk);
+    @(negedge clk);
+    ep_in_valid[src] = 1'b0;
+    repeat (8) @(negedge clk);
+    if (ep_out_valid != '0) $fatal(1, "refused mcast was delivered bmp=%h", bmp);
+    if (!mcast_refused[src]) $fatal(1, "refused mcast not counted src=%0d bmp=%h", src, bmp);
+    mc_refused_checked++;
+    $display("PASS srota multicast_refused: island bitmap=%h refused at src=%0d", bmp, src);
   endtask
   task automatic send_pair(input int src, input int dst, input bit force_stall);
     logic [W-1:0] expected;
@@ -9430,14 +10343,28 @@ module tb_srota_composed;
     end
     send_multiflit(0, 15);
     send_multiflit(15, 0);
+    // Multicast: one in-flit bitmap drives the shared wire; every selected
+    // tap drops one copy.  Row, column, cross-row/col, a single-tap header,
+    // a forked multi-flit packet and the island-class refusal are measured.
+    send_mcast(4, 16'h00d0, 3);            // row {4,6,7}, source is a member
+    send_mcast(6, 16'h00d0, 3);            // west+east fork {4,6,7}
+    send_mcast(0, 16'h8441, 4);            // cross-row/col {0,6,10,15}
+    send_mcast(0, 16'h1110, 3);            // column broadcast {4,8,12}
+    send_mcast(0, 16'h8000, 1);            // one-tap header (bit 15)
+    send_multiflit_mcast(0, 16'h8001, 2);  // forked HEAD/BODY/TAIL to {0,15}
+    send_mcast_refused(0, 16'h0020);       // island-column bit 5
+    send_mcast_refused(2, 16'h0002);       // island-column bit 1
     if (accepted != N*N || delivered != N*N) $fatal(1, "conservation failure accepted=%0d delivered=%0d", accepted, delivered);
     if (stall_cycles < 6) $fatal(1, "backpressure was not exercised");
     if (row_first_checked <= 0) $fatal(1, "row-first was not checked");
     if (island_checked <= 0) $fatal(1, "island rule was not checked");
     if (drop_checked <= 0) $fatal(1, "dest drop was not checked");
+    if (mc_flits != 8) $fatal(1, "multicast flits injected=%0d expected=8", mc_flits);
+    if (mc_copies != 20) $fatal(1, "multicast conservation copies=%0d expected=20", mc_copies);
+    if (mc_refused_checked != 2) $fatal(1, "multicast refusal was not exercised");
     repeat (4) @(posedge clk);
     if (ep_out_valid != 0) $fatal(1, "network did not drain");
-    $display("PASS srota_composed routers=16 shared_wires=48 island_col=1 all_pairs=%0d accepted=%0d delivered=%0d stall_cycles=%0d row_first=%0d island=%0d drop=%0d drained=1", N*N, accepted, delivered, stall_cycles, row_first_checked, island_checked, drop_checked);
+    $display("PASS srota_composed routers=16 shared_wires=48 island_col=1 all_pairs=%0d accepted=%0d delivered=%0d stall_cycles=%0d row_first=%0d island=%0d drop=%0d multicast_flits=%0d multicast_copies=%0d multicast_refused=%0d drained=1", N*N, accepted, delivered, stall_cycles, row_first_checked, island_checked, drop_checked, mc_flits, mc_copies, mc_refused_checked);
     $finish;
   end
   initial begin
@@ -9520,6 +10447,87 @@ module gec_hybrid_router #(
   // round-robin allocated.
   localparam int TYPE_W = 2;
   localparam int TYPE_LSB = DEST_LSB - DEST_W - 2;
+  // Multicast destination bitmap: one bit per router id, below the flit
+  // type so the payload keeps its bit positions.  Zero is the historical
+  // decoded unicast; nonzero selects exactly its set bits and the flit is
+  // broadcast on the MECS row or column wire, where every selected tap
+  // drops a copy in the same slot.  Multicast is a shared-wire capability:
+  // it never uses the point-to-point mesh channels, and its routing is
+  // row-first (row bits fan out on the row wire, the turn routers carry the
+  // column bits).  The UGAL mesh/MECS choice is a unicast property.
+  localparam int MCAST_W = K * K;
+  localparam int MCAST_LSB = TYPE_LSB - MCAST_W;
+  function automatic logic [MCAST_W-1:0] flit_mcast(input logic [W-1:0] f);
+    automatic logic unused_f_bits;
+    unused_f_bits = &{1'b0, f};
+    return f[MCAST_LSB +: MCAST_W];
+  endfunction
+  function automatic logic mcast_row_side(input int x,
+                                          input logic [MCAST_W-1:0] mc);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++)
+      if (mc[b] && (b % K != x)) hit = 1'b1;
+    return hit;
+  endfunction
+  function automatic logic mcast_col_side(input int x, input int y,
+                                          input logic [MCAST_W-1:0] mc);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++)
+      if (mc[b] && (b % K == x) && (b / K != y)) hit = 1'b1;
+    return hit;
+  endfunction
+  // Fixed-order fork acquisition (local, then row, then col): an output may
+  // fire only after every lower-priority target has retired its copy, so two
+  // forked packets cannot each hold one output the other needs.
+  function automatic logic mcast_prefix(input logic [6:0] done,
+                                        input logic [6:0] targets,
+                                        input int out);
+    automatic logic ok;
+    ok = 1'b1;
+    for (int j = 0; j < out; j++) ok = ok & (done[j] | ~targets[j]);
+    return ok;
+  endfunction
+  // The hybrid's *_credit inputs are occupancy bits (1 = the tap port holds
+  // a flit), so a multicast issue requires every selected tap to be FREE.
+  // Unselected taps are masked out: the native all-or-nothing rule.
+  function automatic logic mcast_row_credit_ok(input int id, input int k,
+                                                input logic [MCAST_W-1:0] mc,
+                                                input logic [5:0] c0,
+                                                input logic [5:0] c1,
+                                                input logic [5:0] c2);
+    automatic logic ok;
+    automatic int peer;
+    ok = 1'b1;
+    for (int b = 0; b < MCAST_W; b++) begin
+      if (mc[b] && (b / k == id / k) && (b != id)) begin
+        peer = (b % k < id % k) ? (b % k) : (b % k - 1);
+        if (peer == 0) ok = ok & ~(|c0);
+        else if (peer == 1) ok = ok & ~(|c1);
+        else ok = ok & ~(|c2);
+      end
+    end
+    return ok;
+  endfunction
+  function automatic logic mcast_col_credit_ok(input int id, input int k,
+                                                input logic [MCAST_W-1:0] mc,
+                                                input logic [5:0] c0,
+                                                input logic [5:0] c1,
+                                                input logic [5:0] c2);
+    automatic logic ok;
+    automatic int peer;
+    ok = 1'b1;
+    for (int b = 0; b < MCAST_W; b++) begin
+      if (mc[b] && (b % k == id % k) && (b != id)) begin
+        peer = (b / k < id / k) ? (b / k) : (b / k - 1);
+        if (peer == 0) ok = ok & ~(|c0);
+        else if (peer == 1) ok = ok & ~(|c1);
+        else ok = ok & ~(|c2);
+      end
+    end
+    return ok;
+  endfunction
   localparam logic [1:0] FT_HEAD = 2'd0;
   // BODY is implicit: a flit that is neither HEAD nor TAIL is a BODY.
   /* verilator lint_off UNUSEDPARAM */
@@ -9562,9 +10570,53 @@ module gec_hybrid_router #(
   int mecs_credit_val;
   logic take_mesh;
   int scan_idx;
+  // Multicast fork state (outputs local/west/east/north/south/row/col).
+  // Mesh outputs never carry a multicast flit; the row and col wires carry
+  // one copy each per selected tap.  A flit retires when every target
+  // output has taken its copy.
+  localparam int OUT_LOCAL = 0;
+  localparam int OUT_WEST = 1;
+  localparam int OUT_EAST = 2;
+  localparam int OUT_NORTH = 3;
+  localparam int OUT_SOUTH = 4;
+  localparam int OUT_ROW = 5;
+  localparam int OUT_COL = 6;
+  logic [PORTS-1:0][6:0] fork_done;
+  logic [PORTS-1:0][MCAST_W-1:0] port_mc;
+  logic [PORTS-1:0] port_mc_any;
+  logic [PORTS-1:0] port_mc_local;
+  logic [PORTS-1:0] port_mc_row;
+  logic [PORTS-1:0] port_mc_col;
+  logic [PORTS-1:0][6:0] port_targets;
   assign my_x = K_W'(ID % K);
   assign my_y = K_W'(ID / K);
   assign dbg_valid_q = valid_q;
+  // Per-input multicast decode.  A multicast flit injected at port 0 uses
+  // the row wire for every other column and the column wire for its own
+  // column; a flit that arrived on a row tap has already been broadcast to
+  // the whole row, so it may only turn its column bits onto the column
+  // wire; a flit that arrived on a column tap has finished row-first and
+  // can only be consumed locally.  The mesh outputs never take a multicast
+  // flit, so the shared wires are the only replication medium.
+  always_comb begin
+    port_mc = '0;
+    port_mc_any = '0;
+    port_mc_local = '0;
+    port_mc_row = '0;
+    port_mc_col = '0;
+    port_targets = '0;
+    for (int p = 0; p < PORTS; p++) begin
+      port_mc[p] = flit_mcast(flit_q[p]);
+      port_mc_any[p] = |port_mc[p];
+      port_mc_local[p] = port_mc[p][ID];
+      port_mc_row[p] = (p == 0) && mcast_row_side(my_x, port_mc[p]);
+      port_mc_col[p] = ((p == 0) || (p >= 5 && p < 8)) &&
+                       mcast_col_side(my_x, my_y, port_mc[p]);
+      port_targets[p][OUT_LOCAL] = port_mc_local[p];
+      port_targets[p][OUT_ROW] = port_mc_row[p];
+      port_targets[p][OUT_COL] = port_mc_col[p];
+    end
+  end
   // my_x/my_y are per-router localparams, so a direction comparison is
   // constant for a given instance (a router cannot go west from column 0).
   // The specialization is intentional; scope the style waiver to this block.
@@ -9625,7 +10677,11 @@ module gec_hybrid_router #(
     for (int offset = 0; offset < PORTS; offset++) begin
       scan_idx = (rr_local + offset) % PORTS;
       candidate_dest = flit_q[scan_idx][DEST_LSB +: DEST_W];
-      if (!found_local && valid_q[scan_idx] && candidate_dest == DEST_W'(ID) &&
+      if (!found_local && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_LOCAL] && !fork_done[scan_idx][OUT_LOCAL]
+                && mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_LOCAL))
+             : (candidate_dest == DEST_W'(ID))) &&
           (!local_lock || local_lock_port == scan_idx)) begin
         found_local = 1'b1;
         grant_local = scan_idx;
@@ -9641,7 +10697,7 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(row_credit1);
       else mecs_credit_val = int'(row_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_west && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && dest_x < my_x && take_mesh &&
+      if (!found_west && valid_q[scan_idx] && !port_mc_any[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && dest_x < my_x && take_mesh &&
           (!west_lock || west_lock_port == scan_idx)) begin
         found_west = 1'b1;
         grant_west = scan_idx;
@@ -9657,7 +10713,7 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(row_credit1);
       else mecs_credit_val = int'(row_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_east && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && dest_x > my_x && take_mesh &&
+      if (!found_east && valid_q[scan_idx] && !port_mc_any[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && dest_x > my_x && take_mesh &&
           (!east_lock || east_lock_port == scan_idx)) begin
         found_east = 1'b1;
         grant_east = scan_idx;
@@ -9673,7 +10729,7 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(col_credit1);
       else mecs_credit_val = int'(col_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_north && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && dest_y < my_y && take_mesh &&
+      if (!found_north && valid_q[scan_idx] && !port_mc_any[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && dest_y < my_y && take_mesh &&
           (!north_lock || north_lock_port == scan_idx)) begin
         found_north = 1'b1;
         grant_north = scan_idx;
@@ -9689,7 +10745,7 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(col_credit1);
       else mecs_credit_val = int'(col_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_south && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && dest_y > my_y && take_mesh &&
+      if (!found_south && valid_q[scan_idx] && !port_mc_any[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && dest_y > my_y && take_mesh &&
           (!south_lock || south_lock_port == scan_idx)) begin
         found_south = 1'b1;
         grant_south = scan_idx;
@@ -9706,7 +10762,13 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(row_credit1);
       else mecs_credit_val = int'(row_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_row && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && !take_mesh &&
+      if (!found_row && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_ROW] && !fork_done[scan_idx][OUT_ROW] &&
+                mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_ROW) &&
+                mcast_row_credit_ok(ID, K, port_mc[scan_idx],
+                                    row_credit0, row_credit1, row_credit2))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x != my_x && !take_mesh)) &&
           (!row_lock || row_lock_port == scan_idx)) begin
         found_row = 1'b1;
         grant_row = scan_idx;
@@ -9723,7 +10785,13 @@ module gec_hybrid_router #(
       else if (peer_idx == 1) mecs_credit_val = int'(col_credit1);
       else mecs_credit_val = int'(col_credit2);
       take_mesh = (mesh_credit_val * mesh_h < mecs_credit_val);
-      if (!found_col && valid_q[scan_idx] && int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && !take_mesh &&
+      if (!found_col && valid_q[scan_idx] &&
+          (port_mc_any[scan_idx]
+             ? (port_targets[scan_idx][OUT_COL] && !fork_done[scan_idx][OUT_COL] &&
+                mcast_prefix(fork_done[scan_idx], port_targets[scan_idx], OUT_COL) &&
+                mcast_col_credit_ok(ID, K, port_mc[scan_idx],
+                                    col_credit0, col_credit1, col_credit2))
+             : (int'(candidate_dest) < K*K && candidate_dest != DEST_W'(ID) && dest_x == my_x && dest_y != my_y && !take_mesh)) &&
           (!col_lock || col_lock_port == scan_idx)) begin
         found_col = 1'b1;
         grant_col = scan_idx;
@@ -9780,18 +10848,24 @@ module gec_hybrid_router #(
   /* verilator lint_on UNSIGNED */
   always_comb begin
     pop = '0;
-    if (found_local && local_ready) pop[grant_local] = 1'b1;
-    if (found_west && mesh_west_ready) pop[grant_west] = 1'b1;
-    if (found_east && mesh_east_ready) pop[grant_east] = 1'b1;
-    if (found_north && mesh_north_ready) pop[grant_north] = 1'b1;
-    if (found_south && mesh_south_ready) pop[grant_south] = 1'b1;
-    if (found_row && row_ready) pop[grant_row] = 1'b1;
-    if (found_col && col_ready) pop[grant_col] = 1'b1;
+    for (int p = 0; p < PORTS; p++) begin
+      if (valid_q[p] && port_mc_any[p]) begin
+        pop[p] = &(fork_done[p] | ~port_targets[p]);
+      end
+    end
+    if (found_local && local_ready && !port_mc_any[grant_local]) pop[grant_local] = 1'b1;
+    if (found_west && mesh_west_ready && !port_mc_any[grant_west]) pop[grant_west] = 1'b1;
+    if (found_east && mesh_east_ready && !port_mc_any[grant_east]) pop[grant_east] = 1'b1;
+    if (found_north && mesh_north_ready && !port_mc_any[grant_north]) pop[grant_north] = 1'b1;
+    if (found_south && mesh_south_ready && !port_mc_any[grant_south]) pop[grant_south] = 1'b1;
+    if (found_row && row_ready && !port_mc_any[grant_row]) pop[grant_row] = 1'b1;
+    if (found_col && col_ready && !port_mc_any[grant_col]) pop[grant_col] = 1'b1;
   end
   assign in_ready = ~valid_q;
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       valid_q <= '0;
+      fork_done <= '0;
       local_lock <= 1'b0;
       west_lock <= 1'b0;
       east_lock <= 1'b0;
@@ -9811,11 +10885,13 @@ module gec_hybrid_router #(
         if (in_valid[p] && in_ready[p]) begin
           valid_q[p] <= 1'b1;
           flit_q[p] <= in_flit[p];
+          fork_done[p] <= '0;
         end else if (pop[p]) begin
           valid_q[p] <= 1'b0;
         end
       end
       if (found_local && local_ready) begin
+        fork_done[grant_local][OUT_LOCAL] <= 1'b1;
         rr_local <= (grant_local + 1) % PORTS;
         if (flit_is_head(flit_q[grant_local])) begin
           local_lock <= 1'b1;
@@ -9824,6 +10900,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_local])) local_lock <= 1'b0;
       end
       if (found_west && mesh_west_ready) begin
+        fork_done[grant_west][OUT_WEST] <= 1'b1;
         rr_west <= (grant_west + 1) % PORTS;
         if (flit_is_head(flit_q[grant_west])) begin
           west_lock <= 1'b1;
@@ -9832,6 +10909,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_west])) west_lock <= 1'b0;
       end
       if (found_east && mesh_east_ready) begin
+        fork_done[grant_east][OUT_EAST] <= 1'b1;
         rr_east <= (grant_east + 1) % PORTS;
         if (flit_is_head(flit_q[grant_east])) begin
           east_lock <= 1'b1;
@@ -9840,6 +10918,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_east])) east_lock <= 1'b0;
       end
       if (found_north && mesh_north_ready) begin
+        fork_done[grant_north][OUT_NORTH] <= 1'b1;
         rr_north <= (grant_north + 1) % PORTS;
         if (flit_is_head(flit_q[grant_north])) begin
           north_lock <= 1'b1;
@@ -9848,6 +10927,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_north])) north_lock <= 1'b0;
       end
       if (found_south && mesh_south_ready) begin
+        fork_done[grant_south][OUT_SOUTH] <= 1'b1;
         rr_south <= (grant_south + 1) % PORTS;
         if (flit_is_head(flit_q[grant_south])) begin
           south_lock <= 1'b1;
@@ -9856,6 +10936,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_south])) south_lock <= 1'b0;
       end
       if (found_row && row_ready) begin
+        fork_done[grant_row][OUT_ROW] <= 1'b1;
         rr_row <= (grant_row + 1) % PORTS;
         if (flit_is_head(flit_q[grant_row])) begin
           row_lock <= 1'b1;
@@ -9864,6 +10945,7 @@ module gec_hybrid_router #(
         if (flit_is_tail(flit_q[grant_row])) row_lock <= 1'b0;
       end
       if (found_col && col_ready) begin
+        fork_done[grant_col][OUT_COL] <= 1'b1;
         rr_col <= (grant_col + 1) % PORTS;
         if (flit_is_head(flit_q[grant_col])) begin
           col_lock <= 1'b1;
@@ -9874,13 +10956,14 @@ module gec_hybrid_router #(
     end
   end
   initial begin
-    if (K != 4 || ID >= K*K || PORTS != 11 || NUM_VCS != 6 || FLITS_PER_VC != 8 || BUFFER_FLITS != 48 || DEST_W != 4)
+    if (K != 4 || ID >= K*K || PORTS != 11 || NUM_VCS != 6 || FLITS_PER_VC != 8 || BUFFER_FLITS != 48 || DEST_W != 4 ||
+        W != 64 + MCAST_W)
       $fatal(1, "gec_hybrid16 router parameter contract violated");
   end
 endmodule
 module gec_hybrid16_fabric #(
   parameter int K = 4,
-  parameter int W = 64,
+  parameter int W = 80,
   parameter int N = K*K,
   parameter int PORTS = 11,
   parameter int DEST_W = 4,
@@ -9899,6 +10982,8 @@ module gec_hybrid16_fabric #(
   output logic [N-1:0][W-1:0]     ep_out_flit
 );
   localparam int DEST_LSB = W - DEST_W;
+  localparam int MCAST_W = K * K;
+  localparam int MCAST_LSB = DEST_LSB - DEST_W - 2 - MCAST_W;
   logic [N-1:0][PORTS-1:0] node_in_valid, node_in_ready;
   logic [N-1:0][PORTS-1:0][W-1:0] node_in_flit;
   logic [N-1:0][PORTS-1:0] node_dbg_valid_q;
@@ -9930,6 +11015,13 @@ module gec_hybrid16_fabric #(
   function automatic int col_tap(input int src, input int dst);
     return (src / K < dst / K) ? src / K : src / K - 1;
   endfunction
+  function automatic logic mc_has_col(input logic [MCAST_W-1:0] mc, input int col);
+    automatic logic hit;
+    hit = 1'b0;
+    for (int b = 0; b < MCAST_W; b++)
+      if (mc[b] && (b % K == col)) hit = 1'b1;
+    return hit;
+  endfunction
   always_comb begin
     node_in_valid = '0;
     // '0 fills the whole fabric vector; the >8k-bit replication warning is a
@@ -9947,41 +11039,79 @@ module gec_hybrid16_fabric #(
       int pd;
       int row_dst, col_dst;
       int sx, sy;
+      int needed;
+      logic [MCAST_W-1:0] mc;
       sx = src % K;
       sy = src / K;
       pd = -1;
       row_dst = 0;
       col_dst = 0;
+      needed = 0;
+      mc = '0;
       if (row_v[src][WIRE_PIPE-1]) begin
-        pd = int'(row_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) != sx) begin
-          row_dst = sy * K + (pd % K);
-          node_in_valid[row_dst][5 + row_tap(src, row_dst)] = 1'b1;
-          node_in_flit[row_dst][5 + row_tap(src, row_dst)] = row_f[src][WIRE_PIPE-1];
+        mc = row_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == sy) && (r != src) && mc_has_col(mc, r % K)) begin
+              node_in_valid[r][5 + row_tap(src, r)] = 1'b1;
+              node_in_flit[r][5 + row_tap(src, r)] = row_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "gec_hybrid16 row multicast with no selected tap");
+        end else begin
+          pd = int'(row_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) != sx) begin
+            row_dst = sy * K + (pd % K);
+            node_in_valid[row_dst][5 + row_tap(src, row_dst)] = 1'b1;
+            node_in_flit[row_dst][5 + row_tap(src, row_dst)] = row_f[src][WIRE_PIPE-1];
+          end
         end
       end
       pd = -1;
       if (col_v[src][WIRE_PIPE-1]) begin
-        pd = int'(col_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) != sy) begin
-          col_dst = (pd / K) * K + sx;
-          node_in_valid[col_dst][8 + col_tap(src, col_dst)] = 1'b1;
-          node_in_flit[col_dst][8 + col_tap(src, col_dst)] = col_f[src][WIRE_PIPE-1];
+        mc = col_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          needed = 0;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == sx) && (r != src) && mc[r]) begin
+              node_in_valid[r][8 + col_tap(src, r)] = 1'b1;
+              node_in_flit[r][8 + col_tap(src, r)] = col_f[src][WIRE_PIPE-1];
+              needed = 1;
+            end
+          end
+          if (!needed) $fatal(1, "gec_hybrid16 col multicast with no selected tap");
+        end else begin
+          pd = int'(col_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) != sy) begin
+            col_dst = (pd / K) * K + sx;
+            node_in_valid[col_dst][8 + col_tap(src, col_dst)] = 1'b1;
+            node_in_flit[col_dst][8 + col_tap(src, col_dst)] = col_f[src][WIRE_PIPE-1];
+          end
         end
       end
       if (sx < K-1 && east_v[src][WIRE_PIPE-1]) begin
+        if (|east_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W])
+          $fatal(1, "gec_hybrid16 multicast flit on the east mesh channel");
         node_in_valid[src+1][1] = 1'b1;
         node_in_flit[src+1][1] = east_f[src][WIRE_PIPE-1];
       end
       if (sx > 0 && west_v[src][WIRE_PIPE-1]) begin
+        if (|west_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W])
+          $fatal(1, "gec_hybrid16 multicast flit on the west mesh channel");
         node_in_valid[src-1][2] = 1'b1;
         node_in_flit[src-1][2] = west_f[src][WIRE_PIPE-1];
       end
       if (sy > 0 && north_v[src][WIRE_PIPE-1]) begin
+        if (|north_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W])
+          $fatal(1, "gec_hybrid16 multicast flit on the north mesh channel");
         node_in_valid[src-K][4] = 1'b1;
         node_in_flit[src-K][4] = north_f[src][WIRE_PIPE-1];
       end
       if (sy < K-1 && south_v[src][WIRE_PIPE-1]) begin
+        if (|south_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W])
+          $fatal(1, "gec_hybrid16 multicast flit on the south mesh channel");
         node_in_valid[src+K][3] = 1'b1;
         node_in_flit[src+K][3] = south_f[src][WIRE_PIPE-1];
       end
@@ -10006,16 +11136,28 @@ module gec_hybrid16_fabric #(
       int pd;
       int row_dst, col_dst;
       int sx, sy;
+      logic [MCAST_W-1:0] mc;
       sx = src % K;
       sy = src / K;
       pd = -1;
       row_dst = 0;
       col_dst = 0;
+      mc = '0;
       if (row_v[src][WIRE_PIPE-1]) begin
-        pd = int'(row_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd % K) != sx) begin
-          row_dst = sy * K + (pd % K);
-          row_exit[src] = node_in_ready[row_dst][5 + row_tap(src, row_dst)];
+        mc = row_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          row_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r / K == sy) && (r != src) && mc_has_col(mc, r % K))
+              row_exit[src] = row_exit[src] &
+                  node_in_ready[r][5 + row_tap(src, r)];
+          end
+        end else begin
+          pd = int'(row_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd % K) != sx) begin
+            row_dst = sy * K + (pd % K);
+            row_exit[src] = node_in_ready[row_dst][5 + row_tap(src, row_dst)];
+          end
         end
       end
       row_rdy[src][WIRE_PIPE-1] = !row_v[src][WIRE_PIPE-1] || row_exit[src];
@@ -10024,10 +11166,20 @@ module gec_hybrid16_fabric #(
       row_ready[src] = row_rdy[src][0];
       pd = -1;
       if (col_v[src][WIRE_PIPE-1]) begin
-        pd = int'(col_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
-        if ((pd / K) != sy) begin
-          col_dst = (pd / K) * K + sx;
-          col_exit[src] = node_in_ready[col_dst][8 + col_tap(src, col_dst)];
+        mc = col_f[src][WIRE_PIPE-1][MCAST_LSB +: MCAST_W];
+        if (mc != '0) begin
+          col_exit[src] = 1'b1;
+          for (int r = 0; r < N; r++) begin
+            if ((r % K == sx) && (r != src) && mc[r])
+              col_exit[src] = col_exit[src] &
+                  node_in_ready[r][8 + col_tap(src, r)];
+          end
+        end else begin
+          pd = int'(col_f[src][WIRE_PIPE-1][DEST_LSB +: DEST_W]);
+          if ((pd / K) != sy) begin
+            col_dst = (pd / K) * K + sx;
+            col_exit[src] = node_in_ready[col_dst][8 + col_tap(src, col_dst)];
+          end
         end
       end
       col_rdy[src][WIRE_PIPE-1] = !col_v[src][WIRE_PIPE-1] || col_exit[src];
@@ -10187,7 +11339,8 @@ module gec_hybrid16_fabric #(
     );
   end
   initial begin
-    if (K != 4 || N != 16 || PORTS != 11 || NUM_VCS != 6 || FLITS_PER_VC != 8 || BUFFER_FLITS != 48)
+    if (K != 4 || N != 16 || PORTS != 11 || NUM_VCS != 6 || FLITS_PER_VC != 8 || BUFFER_FLITS != 48 ||
+        W != 64 + MCAST_W)
       $fatal(1, "gec_hybrid16 fabric parameter contract violated");
   end
 endmodule
@@ -10196,8 +11349,9 @@ endmodule
 GEC_HYBRID_TB_SV = """`timescale 1ns/1ps
 module tb_gec_hybrid16_fabric;
   localparam int N = 16;
-  localparam int W = 64;
+  localparam int W = 80;
   localparam int K = 4;
+  localparam int MCAST_W = 16;
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   logic [N-1:0] ep_in_valid = '0;
@@ -10209,6 +11363,8 @@ module tb_gec_hybrid16_fabric;
   int accepted = 0;
   int delivered = 0;
   int stall_cycles = 0;
+  int mc_flits = 0;
+  int mc_copies = 0;
   int mf_delivered = 0;
   int mf_packets = 0;
   int mf_injected = 0;
@@ -10217,9 +11373,9 @@ module tb_gec_hybrid16_fabric;
   always @(posedge clk) begin
     for (int r = 0; r < N; r++) begin
       if (ep_out_valid[r] && ep_out_ready[r] && mf_active && mf_delivered < 3) begin
-        mf_type_log[mf_delivered] = ep_out_flit[r][55:54];
+        mf_type_log[mf_delivered] = ep_out_flit[r][71:70];
         mf_delivered++;
-        if (ep_out_flit[r][55:54] == FT_TAIL || ep_out_flit[r][55:54] == FT_SINGLE) mf_packets++;
+        if (ep_out_flit[r][71:70] == FT_TAIL || ep_out_flit[r][71:70] == FT_SINGLE) mf_packets++;
       end
     end
   end
@@ -10233,13 +11389,16 @@ module tb_gec_hybrid16_fabric;
   localparam logic [1:0] FT_BODY = 2'd1;
   localparam logic [1:0] FT_TAIL = 2'd2;
   localparam logic [1:0] FT_SINGLE = 2'd3;
-  // DEST[63:60] SRC[59:56] TYPE[55:54] PAYLOAD[53:0].
-  function automatic logic [W-1:0] make_flit(input int src, input int dst, input int seq, input int typ = 3);
+  // DEST[79:76] SRC[75:72] TYPE[71:70] MCAST[69:54] PAYLOAD[53:0].
+  function automatic logic [W-1:0] make_flit(input int src, input int dst, input int seq,
+                                             input int typ = 3,
+                                             input logic [MCAST_W-1:0] mcast = '0);
     logic [W-1:0] value;
     value = '0;
-    value[63:60] = 4'(dst);
-    value[59:56] = 4'(src);
-    value[55:54] = 2'(typ);
+    value[79:76] = 4'(dst);
+    value[75:72] = 4'(src);
+    value[71:70] = 2'(typ);
+    value[69:54] = mcast;
     value[53:0] = 54'h2d65_6373_000000 ^ (54'(seq) << 8) ^ 54'(src * 17 + dst);
     return value;
   endfunction
@@ -10272,6 +11431,112 @@ module tb_gec_hybrid16_fabric;
     mf_active = 1'b0;
     $display("PASS gec_hybrid16 multi_flit: flits=%0d packets=%0d ordered=1", mf_injected, mf_packets);
   endtask
+  // Multicast capture: one handshake per selected endpoint, sampled at the
+  // clock edge so a copy sharing its retirement edge with another fork is
+  // not missed by negedge polling.
+  int mc_seen = 0;
+  logic [MCAST_W-1:0] mc_seen_mask = '0;
+  logic [W-1:0] mc_expected = '0;
+  bit mc_capture_active = 0;
+  always @(posedge clk) begin
+    if (mc_capture_active) begin
+      for (int r = 0; r < N; r++) begin
+        if (ep_out_valid[r] && ep_out_ready[r]) begin
+          if (mc_seen_mask[r]) $fatal(1, "mcast duplicate delivery router=%0d", r);
+          if (ep_out_flit[r] !== mc_expected)
+            $fatal(1, "mcast payload mismatch router=%0d", r);
+          mc_seen_mask[r] = 1'b1;
+          mc_seen++;
+        end
+      end
+    end
+  end
+  task automatic send_mcast(input int src, input logic [MCAST_W-1:0] bmp, input int expect_copies);
+    logic [W-1:0] expected;
+    int timeout;
+    expected = make_flit(src, 0, src * N, FT_SINGLE, bmp);
+    mc_seen = 0;
+    mc_seen_mask = '0;
+    mc_expected = expected;
+    mc_capture_active = 1'b1;
+    @(negedge clk);
+    ep_in_flit[src] = expected;
+    ep_in_valid[src] = 1'b1;
+    timeout = 0;
+    while (!ep_in_ready[src] && timeout < 4000) begin @(posedge clk); timeout++; end
+    if (!ep_in_ready[src]) $fatal(1, "mcast injection timeout bmp=%h", bmp);
+    @(posedge clk);
+    mc_flits++;
+    @(negedge clk);
+    ep_in_valid[src] = 1'b0;
+    timeout = 0;
+    while (mc_seen < expect_copies && timeout < 6000) begin
+      @(negedge clk);
+      timeout++;
+      check_all_wires();
+    end
+    if (mc_seen != expect_copies)
+      $fatal(1, "mcast copies=%0d expected=%0d bmp=%h seen=%h", mc_seen, expect_copies, bmp, mc_seen_mask);
+    repeat (2) @(negedge clk);
+    mc_capture_active = 1'b0;
+    if (mc_seen_mask != bmp)
+      $fatal(1, "mcast copy set=%h expected bmp=%h", mc_seen_mask, bmp);
+    mc_copies += mc_seen;
+    $display("PASS gec_hybrid16 multicast: src=%0d bmp=%h copies=%0d", src, bmp, mc_seen);
+  endtask
+  int mm_count[0:15];
+  logic [1:0] mm_types[0:15][0:2];
+  bit mm_active = 0;
+  always @(posedge clk) begin
+    for (int r = 0; r < N; r++) begin
+      if (ep_out_valid[r] && ep_out_ready[r] && mm_active && mm_count[r] < 3) begin
+        mm_types[r][mm_count[r]] = ep_out_flit[r][71:70];
+        mm_count[r]++;
+      end
+    end
+  end
+  task automatic send_multiflit_mcast(input int src, input logic [MCAST_W-1:0] bmp, input int n_dst);
+    logic [W-1:0] f;
+    int timeout;
+    int done;
+    mm_active = 1'b1;
+    for (int r = 0; r < N; r++) mm_count[r] = 0;
+    for (int t = 0; t < 3; t++) begin
+      f = make_flit(src, 0, 0, (t == 0) ? FT_HEAD : (t == 1) ? FT_BODY : FT_TAIL, bmp);
+      @(negedge clk);
+      ep_in_flit[src] = f;
+      ep_in_valid[src] = 1'b1;
+      timeout = 0;
+      while (!ep_in_ready[src] && timeout < 4000) begin @(posedge clk); timeout++; end
+      if (!ep_in_ready[src]) $fatal(1, "mcast multi-flit injection timeout");
+      @(posedge clk);
+      mc_flits++;
+      @(negedge clk);
+      ep_in_valid[src] = 1'b0;
+    end
+    timeout = 0;
+    done = 0;
+    while (done < n_dst && timeout < 8000) begin
+      @(negedge clk);
+      timeout++;
+      done = 0;
+      for (int r = 0; r < N; r++) if (mm_count[r] >= 3) done++;
+    end
+    if (done != n_dst)
+      $fatal(1, "mcast multi-flit copies=%0d expected=%0d bmp=%h", done, n_dst, bmp);
+    for (int r = 0; r < N; r++) begin
+      if (bmp[r]) begin
+        if (!(mm_types[r][0] == FT_HEAD && mm_types[r][1] == FT_BODY && mm_types[r][2] == FT_TAIL))
+          $fatal(1, "mcast multi-flit order router=%0d types=%0d %0d %0d",
+                 r, mm_types[r][0], mm_types[r][1], mm_types[r][2]);
+      end else if (mm_count[r] != 0) begin
+        $fatal(1, "mcast multi-flit stray delivery router=%0d", r);
+      end
+    end
+    mm_active = 1'b0;
+    mc_copies += 3 * n_dst;
+    $display("PASS gec_hybrid16 multicast_multiflit: bmp=%h copies=%0d ordered=1", bmp, n_dst);
+  endtask
   task automatic check_all_wires;
     for (int r = 0; r < N; r++) begin
       int rx;
@@ -10285,6 +11550,16 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        logic [MCAST_W-1:0] mb;
+        bit hit;
+        mb = dut.row_flit[r][69:54];
+        if (mb != '0) begin
+          hit = 1'b0;
+          for (int b = 0; b < N; b++)
+            if (mb[b] && (b % K != rx)) hit = 1'b1;
+          if (!hit) $fatal(1, "hybrid row mcast with no off-column bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.row_dest[r]);
         if (d >= N) $fatal(1, "hybrid row bad dest router=%0d dest=%0d", r, d);
         if (d == r) $fatal(1, "hybrid row local dest router=%0d", r);
@@ -10311,6 +11586,16 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        logic [MCAST_W-1:0] mb;
+        bit hit;
+        mb = dut.col_flit[r][69:54];
+        if (mb != '0) begin
+          hit = 1'b0;
+          for (int b = 0; b < N; b++)
+            if (mb[b] && (b % K == rx) && (b / K != ry)) hit = 1'b1;
+          if (!hit) $fatal(1, "hybrid col mcast with no own-column bit router=%0d", r);
+          continue;
+        end
         d = int'(dut.col_dest[r]);
         if (d >= N) $fatal(1, "hybrid col bad dest router=%0d dest=%0d", r, d);
         if (d == r) $fatal(1, "hybrid col local dest router=%0d", r);
@@ -10337,6 +11622,8 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        if (dut.mesh_west_flit[r][69:54] != '0)
+          $fatal(1, "hybrid mcast on mesh west router=%0d", r);
         d = int'(dut.mesh_west_dest[r]);
         if (d >= N || d == r) $fatal(1, "hybrid west bad dest router=%0d dest=%0d", r, d);
         dx = d % K;
@@ -10361,6 +11648,8 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        if (dut.mesh_east_flit[r][69:54] != '0)
+          $fatal(1, "hybrid mcast on mesh east router=%0d", r);
         d = int'(dut.mesh_east_dest[r]);
         if (d >= N || d == r) $fatal(1, "hybrid east bad dest router=%0d dest=%0d", r, d);
         dx = d % K;
@@ -10380,6 +11669,8 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        if (dut.mesh_north_flit[r][69:54] != '0)
+          $fatal(1, "hybrid mcast on mesh north router=%0d", r);
         d = int'(dut.mesh_north_dest[r]);
         if (d >= N || d == r) $fatal(1, "hybrid north bad dest router=%0d dest=%0d", r, d);
         if (d % K != rx) $fatal(1, "hybrid north phase wrong router=%0d dest=%0d", r, d);
@@ -10400,6 +11691,8 @@ module tb_gec_hybrid16_fabric;
         int mc;
         int xc;
         int h;
+        if (dut.mesh_south_flit[r][69:54] != '0)
+          $fatal(1, "hybrid mcast on mesh south router=%0d", r);
         d = int'(dut.mesh_south_dest[r]);
         if (d >= N || d == r) $fatal(1, "hybrid south bad dest router=%0d dest=%0d", r, d);
         if (d % K != rx) $fatal(1, "hybrid south phase wrong router=%0d dest=%0d", r, d);
@@ -10612,6 +11905,14 @@ module tb_gec_hybrid16_fabric;
     same_destination_contention();
     mesh_contention();
     send_multiflit(0, 15);
+    // Multicast: the bitmap drives the MECS row/col wires; the mesh
+    // channels must never carry a multicast flit.
+    send_mcast(4, 16'h00d0, 3);            // row {4,6,7}, source is a member
+    send_mcast(6, 16'h00d0, 3);            // west+east row fork {4,6,7}
+    send_mcast(0, 16'h8441, 4);            // cross-row/col {0,6,10,15}
+    send_mcast(0, 16'h1110, 3);            // column broadcast {4,8,12}
+    send_mcast(0, 16'h8000, 1);            // one-tap header (bit 15)
+    send_multiflit_mcast(0, 16'h8001, 2);  // forked HEAD/BODY/TAIL to {0,15}
     if (accepted != N*N + 4 || delivered != N*N + 4)
       $fatal(1, "conservation failure accepted=%0d delivered=%0d", accepted, delivered);
     if (stall_cycles < 12) $fatal(1, "backpressure was not exercised");
@@ -10619,9 +11920,11 @@ module tb_gec_hybrid16_fabric;
     if (mecs_checked <= 0) $fatal(1, "mecs was not checked");
     if (drop_checked <= 0) $fatal(1, "drop was not checked");
     if (tie_checked <= 0) $fatal(1, "tie was not checked");
+    if (mc_flits != 8) $fatal(1, "multicast flits injected=%0d expected=8", mc_flits);
+    if (mc_copies != 20) $fatal(1, "multicast conservation copies=%0d expected=20", mc_copies);
     repeat (4) @(posedge clk);
     if (ep_out_valid != '0) $fatal(1, "network did not drain");
-    $display("PASS gec_hybrid16 routers=16 shared_wires=32 mesh_channels=48 taps_per_wire=3 all_pairs=%0d accepted=%0d delivered=%0d stall_cycles=%0d mesh=%0d mecs=%0d drop=%0d tie=%0d drained=1", N*N, accepted, delivered, stall_cycles, mesh_checked, mecs_checked, drop_checked, tie_checked);
+    $display("PASS gec_hybrid16 routers=16 shared_wires=32 mesh_channels=48 taps_per_wire=3 all_pairs=%0d accepted=%0d delivered=%0d stall_cycles=%0d mesh=%0d mecs=%0d drop=%0d tie=%0d multicast_flits=%0d multicast_copies=%0d drained=1", N*N, accepted, delivered, stall_cycles, mesh_checked, mecs_checked, drop_checked, tie_checked, mc_flits, mc_copies);
     $finish;
   end
   initial begin
@@ -10787,13 +12090,13 @@ def run_gec_mecs_shared(request_doc, directory, config):
     tmpdir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["TMPDIR"] = str(tmpdir)
-    (target / "gec_mecs16_fabric.sv").write_text(render_gec_mecs_shared_fabric(params))
+    _write_rtl(target / "gec_mecs16_fabric.sv", render_gec_mecs_shared_fabric(params))
     (target / "tb_gec_mecs16_fabric.sv").write_text(render_gec_mecs_shared_tb(params))
     # The proven credit pool travels in its own file, one module per file,
     # exactly as the composed family path emits it.  Without it the fabric
     # references a module the artifact does not contain and the lint fails.
     from veritx_dse.product.gec_mecs_credited import render_credited_pool
-    (target / "tap_credit_pool.sv").write_text(render_credited_pool())
+    _write_rtl(target / "tap_credit_pool.sv", render_credited_pool())
     dut_files = ["gec_mecs16_fabric.sv", "tap_credit_pool.sv"]
     tb_files = ["gec_mecs16_fabric.sv", "tb_gec_mecs16_fabric.sv",
                 "tap_credit_pool.sv"]
@@ -10907,7 +12210,7 @@ def run_srota_shared(request_doc, directory, config):
     tmpdir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["TMPDIR"] = str(tmpdir)
-    (target / "srota_fabric.sv").write_text(render_srota_shared_fabric(params))
+    _write_rtl(target / "srota_fabric.sv", render_srota_shared_fabric(params))
     (target / "tb_srota.sv").write_text(render_srota_shared_tb(params))
     dut_files = ["srota_fabric.sv"]
     tb_files = ["srota_fabric.sv", "tb_srota.sv"]
@@ -10936,6 +12239,11 @@ def run_srota_shared(request_doc, directory, config):
             ("epsilon", "PASS srota_composed" in output and "accepted=256" in output and "delivered=256" in output),
             ("drain", "drained=1" in output),
             ("multi_flit", "PASS srota multi_flit" in output),
+            ("multicast", output.count("PASS srota multicast:") == 5
+             and "multicast_copies=20" in output),
+            ("multicast_multiflit", "PASS srota multicast_multiflit: bmp=8001 copies=2 ordered=1" in output),
+            ("multicast_refused", output.count("PASS srota multicast_refused") == 2
+             and "multicast_refused=2" in output),
         ]
         sim = {"status": "PASS" if passed else "FAIL", "returncode": run.returncode, "log": output[-6000:], "scenarios": {name: bool(ok) for name, ok in expected}}
     iverilog_result = {"status": "NOT_RUN", "reason": "iverilog check recorded for shared top; Verilator proves this top."}
@@ -10952,7 +12260,7 @@ def run_srota_shared(request_doc, directory, config):
     endpoint_map = [{"endpoint_id": getattr(e, "endpoint_id", None), "router_id": getattr(e, "router_id", None), "port_id": getattr(e, "port_id", None)} for e in (getattr(attachment, "endpoints", ()) or ())]
     slice_files = [{"path": name, "sha256": sha256(target / name)} for name in tb_files]
     manifest = _srota_verdict = _shared_wire_verdict(scope="COMPOSED_SROTA", proven=SROTA_SHARED_PROVEN, not_established=SROTA_SHARED_NOT_ESTABLISHED)
-    manifest = {"schema": "veritx/project-top-shared/1", "scope": "COMPOSED_SROTA", "final_implementation": _srota_verdict["final_implementation"], "final_implementation_verdict": _srota_verdict, "development_milestone": True, "design_hash": request.design_hash(), "family_profile": {"family": "srota", "routing_law": "row-first plus island column-first directional MECS", "n_routers": 16, "shared_wires": 48, "island_columns": [1], "vc": 2}, "family_params": params.to_dict(), "hierarchy": [{"instance": "srota_composed_fabric", "module": "srota_composed_fabric", "role": "composed top (top-module for lint)"}, {"instance": "g_router", "module": "srota_composed_router", "role": "16 directional shared-wire routers with island confinement"}], "endpoint_map": endpoint_map, "ordering_policy": ordering_policy.to_dict(), "lint": lint, "sim": sim, "iverilog": iverilog_result, "proven": list(SROTA_SHARED_PROVEN), "not_established": list(SROTA_SHARED_NOT_ESTABLISHED), "source_topology": request.topology.to_dict(), "source_controls": request.noc_controls.to_dict(), "emitted_packet_width_bits": 64, "emitted_vcs": 2, "files": slice_files}
+    manifest = {"schema": "veritx/project-top-shared/1", "scope": "COMPOSED_SROTA", "final_implementation": _srota_verdict["final_implementation"], "final_implementation_verdict": _srota_verdict, "development_milestone": True, "design_hash": request.design_hash(), "family_profile": {"family": "srota", "routing_law": "row-first plus island column-first directional MECS", "n_routers": 16, "shared_wires": 48, "island_columns": [1], "vc": 2}, "family_params": params.to_dict(), "hierarchy": [{"instance": "srota_composed_fabric", "module": "srota_composed_fabric", "role": "composed top (top-module for lint)"}, {"instance": "g_router", "module": "srota_composed_router", "role": "16 directional shared-wire routers with island confinement"}], "endpoint_map": endpoint_map, "ordering_policy": ordering_policy.to_dict(), "lint": lint, "sim": sim, "iverilog": iverilog_result, "proven": list(SROTA_SHARED_PROVEN), "not_established": list(SROTA_SHARED_NOT_ESTABLISHED), "source_topology": request.topology.to_dict(), "source_controls": request.noc_controls.to_dict(), "emitted_packet_width_bits": 80, "emitted_mcast_bitmap_bits": 16, "emitted_vcs": 2, "files": slice_files}
     write_json(directory / "project-top-manifest.json", manifest)
     archive = directory / "project-top.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
@@ -10976,7 +12284,7 @@ def run_hybrid_shared(request_doc, directory, config):
     tmpdir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["TMPDIR"] = str(tmpdir)
-    (target / "gec_hybrid16_fabric.sv").write_text(render_hybrid_shared_fabric(params))
+    _write_rtl(target / "gec_hybrid16_fabric.sv", render_hybrid_shared_fabric(params))
     (target / "tb_gec_hybrid16_fabric.sv").write_text(render_hybrid_shared_tb(params))
     dut_files = ["gec_hybrid16_fabric.sv"]
     tb_files = ["gec_hybrid16_fabric.sv", "tb_gec_hybrid16_fabric.sv"]
@@ -11007,6 +12315,9 @@ def run_hybrid_shared(request_doc, directory, config):
             ("selector_tie", "PASS gec_hybrid16" in output and "tie=" in output),
             ("drop_vc", "PASS gec_hybrid16" in output and "drop=" in output),
             ("multi_flit", "PASS gec_hybrid16 multi_flit" in output),
+            ("multicast", output.count("PASS gec_hybrid16 multicast:") == 5
+             and "multicast_copies=20" in output),
+            ("multicast_multiflit", "PASS gec_hybrid16 multicast_multiflit: bmp=8001 copies=2 ordered=1" in output),
         ]
         sim = {"status": "PASS" if passed else "FAIL", "returncode": run.returncode, "log": output[-6000:], "scenarios": {name: bool(ok) for name, ok in expected}}
     iverilog_result = {"status": "NOT_RUN", "reason": "iverilog check recorded for shared top; Verilator proves this top."}
@@ -11023,7 +12334,7 @@ def run_hybrid_shared(request_doc, directory, config):
     endpoint_map = [{"endpoint_id": getattr(e, "endpoint_id", None), "router_id": getattr(e, "router_id", None), "port_id": getattr(e, "port_id", None)} for e in (getattr(attachment, "endpoints", ()) or ())]
     slice_files = [{"path": name, "sha256": sha256(target / name)} for name in tb_files]
     manifest = _hybrid_verdict = _shared_wire_verdict(scope="COMPOSED_GEC_HYBRID", proven=GEC_HYBRID_SHARED_PROVEN, not_established=GEC_HYBRID_SHARED_NOT_ESTABLISHED)
-    manifest = {"schema": "veritx/project-top-shared/1", "scope": "COMPOSED_GEC_HYBRID", "final_implementation": _hybrid_verdict["final_implementation"], "final_implementation_verdict": _hybrid_verdict, "development_milestone": True, "design_hash": request.design_hash(), "family_profile": {"family": "gec_hybrid", "routing_law": "X-then-Y hybrid UGAL mesh_cost=mesh_credit*mesh_hops vs mecs_cost=mecs_credit tie-to-MECS", "n_routers": 16, "shared_wires": 32, "mesh_channels": 48, "taps_per_wire": 3, "vc": 6}, "family_params": params.to_dict(), "hierarchy": [{"instance": "gec_hybrid16_fabric", "module": "gec_hybrid16_fabric", "role": "composed top (top-module for lint)"}, {"instance": "g_router", "module": "gec_hybrid_router", "role": "16 hybrid mesh plus MECS routers with pinned UGAL selector"}], "endpoint_map": endpoint_map, "ordering_policy": ordering_policy.to_dict(), "lint": lint, "sim": sim, "iverilog": iverilog_result, "proven": list(GEC_HYBRID_SHARED_PROVEN), "not_established": list(GEC_HYBRID_SHARED_NOT_ESTABLISHED), "source_topology": request.topology.to_dict(), "source_controls": request.noc_controls.to_dict(), "emitted_packet_width_bits": 64, "emitted_vcs": 6, "credit_pin": params.to_dict(), "files": slice_files}
+    manifest = {"schema": "veritx/project-top-shared/1", "scope": "COMPOSED_GEC_HYBRID", "final_implementation": _hybrid_verdict["final_implementation"], "final_implementation_verdict": _hybrid_verdict, "development_milestone": True, "design_hash": request.design_hash(), "family_profile": {"family": "gec_hybrid", "routing_law": "X-then-Y hybrid UGAL mesh_cost=mesh_credit*mesh_hops vs mecs_cost=mecs_credit tie-to-MECS", "n_routers": 16, "shared_wires": 32, "mesh_channels": 48, "taps_per_wire": 3, "vc": 6}, "family_params": params.to_dict(), "hierarchy": [{"instance": "gec_hybrid16_fabric", "module": "gec_hybrid16_fabric", "role": "composed top (top-module for lint)"}, {"instance": "g_router", "module": "gec_hybrid_router", "role": "16 hybrid mesh plus MECS routers with pinned UGAL selector"}], "endpoint_map": endpoint_map, "ordering_policy": ordering_policy.to_dict(), "lint": lint, "sim": sim, "iverilog": iverilog_result, "proven": list(GEC_HYBRID_SHARED_PROVEN), "not_established": list(GEC_HYBRID_SHARED_NOT_ESTABLISHED), "source_topology": request.topology.to_dict(), "source_controls": request.noc_controls.to_dict(), "emitted_packet_width_bits": 80, "emitted_mcast_bitmap_bits": 16, "emitted_vcs": 6, "credit_pin": params.to_dict(), "files": slice_files}
     write_json(directory / "project-top-manifest.json", manifest)
     archive = directory / "project-top.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+<testsuite timestamp="2026-11-13T04:12:52" hostname="datavex-ASUS-TUF-Gaming-A15-FA506NCG-FA506NCG" package="cdc_fifo" id="0" name="default" tests="8" errors="0" failures="0" time="1" skipped="0">
+<properties>
+<property name="os" value="Linux"/>
+<property name="expect" value="PASS"/>
+<property name="status" value="PASS"/>
+</properties>
+<testcase classname="default" name="build execution" time="0">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:237.19-237.63" time="0" type="ASSERT" location="cdc_fifo.sv:237.19-237.63" id="_witness_.check_assert_cdc_fifo_sv_237_74">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:239.19-239.63" time="0" type="ASSERT" location="cdc_fifo.sv:239.19-239.63" id="_witness_.check_assert_cdc_fifo_sv_239_83">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:243.7-243.54" time="0" type="ASSERT" location="cdc_fifo.sv:243.7-243.54" id="_witness_.check_assert_cdc_fifo_sv_243_89">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:246.7-246.54" time="0" type="ASSERT" location="cdc_fifo.sv:246.7-246.54" id="_witness_.check_assert_cdc_fifo_sv_246_110">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:254.7-254.43" time="0" type="ASSERT" location="cdc_fifo.sv:254.7-254.43" id="_witness_.check_assert_cdc_fifo_sv_254_130">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:257.7-257.43" time="0" type="ASSERT" location="cdc_fifo.sv:257.7-257.43" id="_witness_.check_assert_cdc_fifo_sv_257_135">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:261.7-261.65" time="0" type="ASSERT" location="cdc_fifo.sv:261.7-261.65" id="_witness_.check_assert_cdc_fifo_sv_261_139">
+</testcase>
+<testcase classname="default" name="Property ASSERT in cdc_fifo at cdc_fifo.sv:264.7-264.65" time="0" type="ASSERT" location="cdc_fifo.sv:264.7-264.65" id="_witness_.check_assert_cdc_fifo_sv_264_147">
+</testcase>
+<system-out>SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] Removing directory '/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo'.
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] Copy '/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo.sv' to '/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo/src/cdc_fifo.sv'.
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: smtbmc z3
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] base: starting process &quot;cd /home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo/src; yosys -ql ../model/design.log ../model/design.ys&quot;
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] base: Warning: Replacing memory \wr_ptr_sync_ff with list of registers. See cdc_fifo.sv:130
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] base: Warning: Replacing memory \rd_ptr_sync_ff with list of registers. See cdc_fifo.sv:79
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] base: Warning: Replacing memory \mem with list of registers. See cdc_fifo.sv:69
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] base: finished (returncode=0)
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] prep: starting process &quot;cd /home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo/model; yosys -ql design_prep.log design_prep.ys&quot;
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] prep: finished (returncode=0)
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] smt2: starting process &quot;cd /home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo/model; yosys -ql design_smt2.log design_smt2.ys&quot;
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] smt2: finished (returncode=0)
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: starting process &quot;cd /home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo; yosys-smtbmc -s z3 --presat --noprogress -t 26  --append 0 --dump-vcd engine_0/trace.vcd --dump-yw engine_0/trace.yw --dump-vlogtb engine_0/trace_tb.v --dump-smtc engine_0/trace.smtc model/design_smt2.smt2&quot;
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Solver: z3
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 0..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 0..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 1..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 1..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 2..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 2..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 3..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 3..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 4..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 4..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 5..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 5..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 6..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 6..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 7..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 7..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 8..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 8..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 9..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 9..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 10..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 10..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 11..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 11..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 12..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 12..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 13..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 13..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 14..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 14..
+SBY  4:12:50 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 15..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 15..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 16..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 16..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 17..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 17..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 18..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 18..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 19..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 19..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 20..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 20..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 21..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 21..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 22..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assertions in step 22..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:00  Checking assumptions in step 23..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Checking assertions in step 23..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Checking assumptions in step 24..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Checking assertions in step 24..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Checking assumptions in step 25..
+SBY  4:12:51 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Checking assertions in step 25..
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: ##   0:00:01  Status: passed
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: finished (returncode=0)
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] engine_0: Status returned by engine: pass
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] summary: Elapsed clock time [H:MM:SS (secs)]: 0:00:01 (1)
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] summary: Elapsed process time [H:MM:SS (secs)]: 0:00:01 (1)
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] summary: engine_0 (smtbmc z3) returned pass
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] summary: engine_0 did not produce any traces
+SBY  4:12:52 [/home/datavex/bruh/veritx-research/tracks/t3-topology/rtl/cdc/cdc_fifo] DONE (PASS, rc=0)
+</system-out>
+<system-err>
+</system-err>
+</testsuite>
+</testsuites>

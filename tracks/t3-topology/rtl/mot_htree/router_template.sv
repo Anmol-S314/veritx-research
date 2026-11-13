@@ -55,10 +55,10 @@ module router #(
   // Route tables
   // route table accessors (packed parameter slices)
   function automatic logic [noc_pkg::PORT_W-1:0] get_rt_min(input int dst);
-    return RT_MIN[dst*noc_pkg::PORT_W +: noc_pkg::PORT_W];
+    get_rt_min = RT_MIN[dst*noc_pkg::PORT_W +: noc_pkg::PORT_W];
   endfunction
   function automatic logic [noc_pkg::PORT_W-1:0] get_rt_esc(input int dst);
-    return RT_ESC[dst*noc_pkg::PORT_W +: noc_pkg::PORT_W];
+    get_rt_esc = RT_ESC[dst*noc_pkg::PORT_W +: noc_pkg::PORT_W];
   endfunction
 
   // Per-(input_port, VC) FIFO
@@ -115,25 +115,25 @@ module router #(
   logic out_vld [0:NUM_PORTS-1];  // Flit field accessors
   // LAYOUT: [63]=esc, [62:61]=type, [DST_W-1+48:48]=dst, [47:0]=src+payload
   function automatic logic [DST_W-1:0] get_dst(input noc_pkg::flit_raw_t f);
-    return f[DST_W-1+48:48];
+    get_dst = f[DST_W-1+48:48];
   endfunction
   // CLASS_W-bit class field accessors
   localparam int CLASS_MSB = noc_pkg::FLIT_W - 1;
   localparam int CLASS_LSB = noc_pkg::FLIT_W - CLASS_W;
   function automatic logic [CLASS_W-1:0] get_class(input noc_pkg::flit_raw_t f);
-    return f[CLASS_MSB:CLASS_LSB];
+    get_class = f[CLASS_MSB:CLASS_LSB];
   endfunction
   function automatic logic get_esc(input noc_pkg::flit_raw_t f);
-    return f[CLASS_MSB];  // MSB of class field (escape for 2-VC)
+    get_esc = f[CLASS_MSB];  // MSB of class field (escape for 2-VC)
   endfunction
   function automatic logic [TYPE_W-1:0] get_type(input noc_pkg::flit_raw_t f);
-    return f[CLASS_LSB-1:CLASS_LSB-TYPE_W];
+    get_type = f[CLASS_LSB-1:CLASS_LSB-TYPE_W];
   endfunction
   function automatic logic is_tail(input noc_pkg::flit_raw_t f);
-    return (get_type(f) == FT_TAIL) || (get_type(f) == FT_SINGLE);
+    is_tail = (get_type(f) == FT_TAIL) || (get_type(f) == FT_SINGLE);
   endfunction
   function automatic logic is_head(input noc_pkg::flit_raw_t f);
-    return (get_type(f) == FT_HEAD) || (get_type(f) == FT_SINGLE);
+    is_head = (get_type(f) == FT_HEAD) || (get_type(f) == FT_SINGLE);
   endfunction
 
   // Map between flat port index and actual signals
@@ -306,9 +306,11 @@ module router #(
       esc_vc[_o]    = '0;
     end
     for (_o = 0; _o < NUM_PORTS; _o++) begin
-      if (_o == LOCAL_PORT) continue;  // ejection handles LOCAL output
+      // yosys has no `continue`; guard the body instead of skipping it.
+      if (_o != LOCAL_PORT) begin
       // Escape candidates: VC1..N-1, first-match (own stage, independent)
-      for (int _ev = 1; _ev < NUM_VCS && !esc_valid[_o]; _ev++) begin
+      for (int _ev = 1; _ev < NUM_VCS; _ev++) begin
+        if (!esc_valid[_o]) begin
         for (_p = 0; _p < NUM_PORTS; _p++) begin
           if (!out_valid_all[_o][_ev] &&
               q_cnt[_p*NUM_VCS + _ev] > 0 && cred[_o][_ev] > 0 &&
@@ -318,6 +320,7 @@ module router #(
             esc_pick[_o]  = _p[7:0];
             esc_vc[_o]    = _ev[VC_IDX_W-1:0];
           end
+        end
         end
       end
       // Free candidate: VC0, round-robin (own stage, independent)
@@ -347,6 +350,7 @@ module router #(
       grant_sv2[_o] = 2'd0;
       esc_won[_o]  = esc_valid[_o];
       free_won[_o] = free_valid[_o];
+      end
     end
   end
 
@@ -422,12 +426,14 @@ module router #(
       for (int pass2 = 1; pass2 >= 0; pass2--) begin
         ej_done_mark = 1'b0;
         if (!out_valid_all[LOCAL_PORT][pass2]) begin
-          for (int p2 = 0; p2 < LOCAL_PORT && !ej_done_mark; p2++) begin
+          for (int p2 = 0; p2 < LOCAL_PORT; p2++) begin
+            if (!ej_done_mark) begin
             c2 = p2 * NUM_VCS + pass2;
             if (q_cnt[c2] > 0 && get_dst(q[c2][0]) == ID[$clog2(N_ROUTERS)-1:0] &&
                 !grant_deq_q[c2]) begin
               ej_dequeued[c2] = 1'b1;
               ej_done_mark = 1'b1;
+            end
             end
           end
         end
@@ -500,7 +506,7 @@ module router #(
           out_valid_all[p3][0] <= 1;   // shown, not accepted: HOLD
         end else if (p3 != LOCAL_PORT && free_valid_r[p3] && !out_valid_all[p3][0]) begin
           automatic int fsp;
-          automatic int fci;
+          int fci;
           fsp = free_pick_r[p3];
           fci = fsp * NUM_VCS + 0;
           out_flit_all[p3][0] <= q[fci][0];
@@ -531,8 +537,10 @@ module router #(
         begin : esc_stage
           // evc_fwd = latched VC of the loaded flit (stable across cycles)
           // evc_load = current combinational VC candidate (for new loads)
-          automatic logic [VC_IDX_W-1:0] evc_fwd  = esc_stage_vc[p3];
-          automatic logic [VC_IDX_W-1:0] evc_load = esc_vc_r[p3];
+          logic [VC_IDX_W-1:0] evc_fwd;
+          logic [VC_IDX_W-1:0] evc_load;
+          evc_fwd  = esc_stage_vc[p3];
+          evc_load = esc_vc_r[p3];
           if (out_valid_all[p3][evc_fwd] && show_vc[p3] == evc_fwd[VC_IDX_W-1:0] && out_ready_all[p3]) begin
             out_valid_all[p3][evc_fwd] <= 0;
             cred[p3][out_src_vc[p3][evc_fwd]] <= cred[p3][out_src_vc[p3][evc_fwd]] + 1;
@@ -540,7 +548,7 @@ module router #(
             out_valid_all[p3][evc_fwd] <= 1;   // shown, not accepted: HOLD
           end else if (p3 != LOCAL_PORT && esc_valid_r[p3] && !out_valid_all[p3][evc_load]) begin
             automatic int esp;
-            automatic int eci;
+            int eci;
             esp = esc_pick_r[p3];
             eci = esp * NUM_VCS + evc_load;
             out_flit_all[p3][evc_load] <= q[eci][0];
@@ -579,12 +587,14 @@ module router #(
       begin : ej_block
         bit done_ej;
         done_ej = 1'b0;
-        for (int pass2 = NUM_VCS-1; pass2 >= 0 && !done_ej; pass2--) begin
+        for (int pass2 = NUM_VCS-1; pass2 >= 0; pass2--) begin
+          if (!done_ej) begin
           // S4 FIX: allow ejection when output stage will be freed this cycle
           // (non-blocking: release clears out_valid, but ejection sees old value)
-          if (out_valid_all[LOCAL_PORT][pass2] &&
-              !(show_vc[LOCAL_PORT] == pass2[VC_IDX_W-1:0] && out_ready_all[LOCAL_PORT])) continue;
-          for (int p2 = 0; p2 <= LOCAL_PORT && !done_ej; p2++) begin
+          if (!(out_valid_all[LOCAL_PORT][pass2] &&
+              !(show_vc[LOCAL_PORT] == pass2[VC_IDX_W-1:0] && out_ready_all[LOCAL_PORT]))) begin
+          for (int p2 = 0; p2 <= LOCAL_PORT; p2++) begin
+            if (!done_ej) begin
             automatic int c2;
             c2 = p2 * NUM_VCS + pass2;
             if (q_cnt[c2] > 0 && !grant_deq_q[c2] &&
@@ -620,6 +630,9 @@ module router #(
               deq_actual[c2] = 1'b1;   // S3b: real dequeue evidence
               done_ej = 1'b1;
             end
+            end
+          end
+          end
           end
         end
       end
@@ -651,12 +664,14 @@ module router #(
           // cumulative packet age (saturating)
           if (blk_cnt[c2] < 8'hFF)
             blk_cnt[c2] <= blk_cnt[c2] + 8'd1;
+`ifndef SYNTHESIS
           if (blk_cnt[c2] >= 200) begin
             // STUCK detection: print diagnostic
             $display("[T%0t] STUCK r%0d queue=%0d dst=%0d src=%0d type=%0d age=%0d cnt=%0d esc=%0b",
                       $time, ID, c2, get_dst(q[c2][0]), q[c2][0][47:40],
                       get_type(q[c2][0]), blk_cnt[c2], q_cnt[c2], esc_mode[c2]);
           end
+`endif
 `ifdef NOC_TRACE_EVENTS
           // R6 DIAGNOSTIC: fire once per demotion cycle, just before reset.
           // Dumps exactly why the head isn't being granted.
@@ -704,13 +719,15 @@ module router #(
       //    granted/ejected this cycle takes the freed slot, count nets zero)
       for (int p2 = 0; p2 < NUM_PORTS; p2++) begin
         if (in_valid_all[p2] && in_ready_all[p2]) begin
-          automatic int lv = get_class(in_flit_all[p2]);
-          automatic int lc = p2 * NUM_VCS + lv;
+          automatic int lv;
+          int lc;
+          logic [63:0] enq_flit;
+          lv = get_class(in_flit_all[p2]);
+          lc = p2 * NUM_VCS + lv;
+          enq_flit = in_flit_all[p2];
           // S3c: force escape VC for body/tail flits when THEIR queue (not
           // any queue on the port) is in escape mode. Also flip esc bit [63]
           // on the flit data so downstream routers place it in VC1.
-          logic [63:0] enq_flit;
-          enq_flit = in_flit_all[p2];
           begin : s3c_check
             logic q_is_esc;
             q_is_esc = esc_mode[p2*NUM_VCS + get_class(in_flit_all[p2])];
@@ -837,7 +854,6 @@ module router #(
   end
 `endif
 
-  final begin
-    // Debug output moved to dbg_router_t interface (see noc_tb.sv DBG3/DBG4/DBG5)
-  end
+  // (an empty ``final`` block lives only in simulation and blocks real
+  //  synthesis front-ends; it carried no statements, so it was removed)
 endmodule

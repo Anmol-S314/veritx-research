@@ -274,7 +274,11 @@ class CompiledGecCreditPreview(exposeDiagnostics: Boolean = true,
 }
 
 object EmitCompiledGecCreditPreview extends App {
-  require(args.length == 1, "output directory required")
+  require(args.nonEmpty, "output directory required")
+  // `--flat` reproduces the pre-hierarchy artifact: 81 elaborated bodies in
+  // one file.  It is kept for equivalence checks, not for the selected shape.
+  val flat = args.contains("--flat")
+  val outDir = args.find(!_.startsWith("--")).getOrElse(args(0))
   val inputPorts = (0 until SelectedGec.routers).map { router =>
     SelectedGec.endpoints.count(_ == router) +
       SelectedGec.wires.map(_._2.count(_ == router)).sum
@@ -296,19 +300,21 @@ object EmitCompiledGecCreditPreview extends App {
   // black boxes, and firtool keeps one module name per shape.
   val configs = CompiledGecCreditPreview.routerConfigs
   val shapes = configs.distinct
-  println(s"HIERARCHY routers=${configs.size} distinct_shapes=${shapes.size} " +
+  println(s"HIERARCHY flat=$flat routers=${configs.size} distinct_shapes=${shapes.size} " +
     shapes.groupBy(identity).map { case (c, cs) => s"${c.inputs}x${c.taps.size}/${c.vcs}vc=x${cs.size}" }.mkString(" ", " ", ""))
-  val bodyNames = CreditRouterEmit.emitBodies(shapes, args(0))
-  shapes.zip(bodyNames).foreach { case (c, name) =>
-    println(s"EMITTED router body name=$name inputs=${c.inputs} taps=${c.taps.size} vcs=${c.vcs} slots=${c.slots} lanes=${c.lanes}")
+  if (!flat) {
+    val bodyNames = CreditRouterEmit.emitBodies(shapes, outDir)
+    shapes.zip(bodyNames).foreach { case (c, name) =>
+      println(s"EMITTED router body name=$name inputs=${c.inputs} taps=${c.taps.size} vcs=${c.vcs} slots=${c.slots} lanes=${c.lanes}")
+    }
   }
 
   val previous = Option(System.getProperty("veritx.synthesize"))
   System.setProperty("veritx.synthesize", "1")
   try {
     (new ChiselStage).emitVerilog(new CompiledGecCreditPreview(exposeDiagnostics = false,
-        hierarchical = true),
-      Array("--target-dir", args(0)))
+        hierarchical = !flat),
+      Array("--target-dir", outDir))
   } finally {
     previous match {
       case Some(value) => System.setProperty("veritx.synthesize", value)

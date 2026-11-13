@@ -24,7 +24,9 @@ module srota64_native #(
 
   function automatic int segid(input int axis,input int line,input int anchor,input int sign);
     // Slots 0..255; 224 are valid directed source/direction segments.
-    return (((axis*8+line)*8+anchor)*2+sign);
+    // Function-name assignment rather than `return`, so synthesizers that do not
+    // implement the SystemVerilog return statement can read this file too.
+    segid = (((axis*8+line)*8+anchor)*2+sign);
   endfunction
   always_comb begin : route_and_tap
     int x,y,dx,dy,axis,line,anchor,sign,drop,dst,sid,source;
@@ -62,7 +64,10 @@ module srota64_native #(
     // Segment arrival wins over injection at a shared one-entry router slot.
     // Existing flit replacement after ejection or successful forwarding is
     // otherwise allowed when no incoming segment has reserved the slot.
-    for(int z=0;z<N;z++) inj_ready[z]=(!busy[z] || ejected[z] || sent[z]) && !reserved[z];
+    // Ready must be suppressed during reset: the reset branch of the flop wins
+    // over the accept branch, so asserting ready here silently discards an
+    // upstream beat instead of holding it. Found by tb_reset.sv.
+    for(int z=0;z<N;z++) inj_ready[z]=rst_n && (!busy[z] || ejected[z] || sent[z]) && !reserved[z];
   end
   always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin busy<='0; for(int z=0;z<N;z++) q[z]<='0; end

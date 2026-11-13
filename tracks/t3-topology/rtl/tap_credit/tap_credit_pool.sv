@@ -64,12 +64,13 @@ module tap_credit_pool #(
   logic [N_TAPS-1:0][NUM_VCS-1:0][CREDIT_W-1:0] cred_next;
   logic [N_TAPS-1:0][NUM_VCS-1:0][CREDIT_W-1:0] out_next;
 
-  integer t;
-  integer v;
+  // Loop counters are declared per loop. A shared module-scope counter is a
+  // signal with a driver in every comb block that touches it, which is a
+  // latch per block and, once two blocks write it, a conflicting driver.
 
   always @* begin
-    for (t = 0; t < N_TAPS; t = t + 1) begin
-      for (v = 0; v < NUM_VCS; v = v + 1) begin
+    for (int t = 0; t < N_TAPS; t = t + 1) begin
+      for (int v = 0; v < NUM_VCS; v = v + 1) begin
         credits[t][v] = cred_q[t][v];
         outstanding[t][v] = out_q[t][v];
         cred_next[t][v] = cred_q[t][v];
@@ -78,8 +79,8 @@ module tap_credit_pool #(
     end
     // A pending return matures on the exact (tap, VC) that produced it.
     if (hist_v[PIPE-1]) begin
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           if (hist_tap[PIPE-1] == TAP_W'(t) && hist_vc[PIPE-1] == VC_W'(v)) begin
             cred_next[t][v] = cred_q[t][v] + 1'b1;
             out_next[t][v] = out_q[t][v] - 1'b1;
@@ -89,8 +90,8 @@ module tap_credit_pool #(
     end
     // A grant consumes one credit of the exact (tap, VC) requested.
     if (req_valid && req_grant) begin
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           if (req_tap == TAP_W'(t) && req_vc == VC_W'(v)) begin
             // A matured return and a new grant may target the same pair in
             // one cycle; apply the grant to the already-adjusted next state.
@@ -107,8 +108,8 @@ module tap_credit_pool #(
     req_ready = 1'b0;
     req_grant = 1'b0;
     if (req_valid) begin
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           if (req_tap == TAP_W'(t) && req_vc == VC_W'(v)) begin
             req_ready = (cred_q[t][v] != '0);
             req_grant = (cred_q[t][v] != '0);
@@ -123,8 +124,8 @@ module tap_credit_pool #(
   always @* begin
     alias_detected = 1'b0;
     if (hist_v[PIPE-1]) begin
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           if (hist_tap[PIPE-1] == TAP_W'(t) && hist_vc[PIPE-1] == VC_W'(v)) begin
             if (out_q[t][v] == '0) alias_detected = 1'b1;
           end
@@ -135,19 +136,19 @@ module tap_credit_pool #(
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           cred_q[t][v] <= CREDIT_W'(CAPACITY);
           out_q[t][v] <= '0;
         end
       end
-      for (t = 0; t < PIPE; t = t + 1) begin
+      for (int t = 0; t < PIPE; t = t + 1) begin
         hist_tap[t] <= '0;
         hist_vc[t] <= '0;
         hist_v[t] <= 1'b0;
       end
     end else begin
-      for (t = 0; t < PIPE; t = t + 1) begin
+      for (int t = 0; t < PIPE; t = t + 1) begin
         hist_tap[t] <= '0;
         hist_vc[t] <= '0;
         hist_v[t] <= 1'b0;
@@ -157,13 +158,13 @@ module tap_credit_pool #(
         hist_vc[0] <= free_vc;
         hist_v[0] <= 1'b1;
       end
-      for (t = 1; t < PIPE; t = t + 1) begin
+      for (int t = 1; t < PIPE; t = t + 1) begin
         hist_tap[t] <= hist_tap[t-1];
         hist_vc[t] <= hist_vc[t-1];
         hist_v[t] <= hist_v[t-1];
       end
-      for (t = 0; t < N_TAPS; t = t + 1) begin
-        for (v = 0; v < NUM_VCS; v = v + 1) begin
+      for (int t = 0; t < N_TAPS; t = t + 1) begin
+        for (int v = 0; v < NUM_VCS; v = v + 1) begin
           cred_q[t][v] <= cred_next[t][v];
           out_q[t][v] <= out_next[t][v];
         end

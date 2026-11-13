@@ -53,3 +53,83 @@ then checks all 4096 ordered source/destination pairs for exact flit delivery,
 holds each egress under backpressure for three cycles and checks stable valid
 and data, checks live RTL segment/drop mapping, and verifies the fabric drains.
 The test is sequential by pair; it does not test concurrent arbitration.
+
+## Reset under traffic
+
+`tb_reset.sv` asserts asynchronous reset while eight router slots hold flits and
+while upstream holds `inj_valid` high across the reset edge. It requires
+`inj_ready` to be low during reset, egress valid to be low with no X data,
+every busy slot and every payload register to clear, and then a full
+4096-pair sweep to deliver exactly after release.
+
+It found a real defect: `inj_ready` was asserted (all ones) during reset. The
+asynchronous reset branch of the register wins over the accept branch, so an
+upstream beat was silently discarded rather than held. `inj_ready` is now
+gated by `rst_n`. Receipt: `runs/srota64-native-reset-under-traffic-20261111.json`.
+
+## Workload replay
+
+`replay_workload.py` replays a captured trace from
+`tracks/t3-topology/dse/inputs/traces/` through this prototype and audits every
+delivery independently.
+
+| Trace | Packets | Source routers | Destination routers | Distinct pairs | Result |
+|---|---|---|---|---|---|
+| `test_dynamic.trace` | 1000 | 64 | 64 | 488 | PASS, 1000/1000 |
+| `chakra_converted.trace` | 2688 | 4 | 4 | 6 | PASS, 2688/2688 |
+
+Abstraction: one captured packet replays as one 80-bit fabric packet. The
+replay reproduces the trace's ordered (src, dst, send-cycle) stream, not its
+byte volume or its original flit framing. Injection is head-of-line in trace
+order with an always-ready sink, so measured latency includes driver stalls.
+Latency is 2 to 5 cycles because an express segment crosses a whole row or
+column in one cycle.
+
+Provenance: these are traces shipped in this repository, not an
+operator-approved capture set. Receipts:
+`runs/srota64-native-workload-replay-test-dynamic-20261111.json`,
+`runs/srota64-native-workload-replay-20261111.json`.
+
+Still not covered: transactions, multi-flit framing, credit timing, physical
+implementation.
+
+## AXI5 transactions through the fabric
+
+`axi5_srota_ep.sv` is a per-endpoint bridge between an AXI5 port and one router
+of this fabric. `tb_axi5_fabric.sv` instantiates 64 of them, so a transaction
+issued at endpoint S and answered by endpoint D really crosses the fabric
+model.
+
+Address contract: address bits [11:6] select the destination router, bits [5:2]
+select the word in that endpoint's 16-word region. Fabric flits carry
+`op[73:72] peer[71:66] id[65:58] word[57:54] wstrb[53:50] data[49:18]`, so a
+delivery names its requester and its own reply target.
+
+Checked by `run_axi5_fabric.py` (Verilator):
+
+| Check | Result |
+|---|---|
+| All 4096 ordered pairs: AXI5 write (AW+W+B) then read (AR+R) | PASS, BID and RID equal the issued ids, read data equals written data |
+| Byte strobes `1010` then `0001` | PASS, per-lane merge, not word replace |
+| Two independent transactions in flight on different pairs | PASS |
+| Drain | PASS, every router slot empty, no reply outstanding |
+
+Use Verilator for this suite: under Icarus with 64 bridges the same test needs
+roughly 20 ms of wall clock per simulated cycle, so it does not finish in a
+reasonable time. Receipt: `runs/srota64-native-axi5-transactions-20261111.json`.
+
+Scope limit: one beat per transaction, `awlen`/`arlen` ignored, no bursts, no
+exclusive or atomic access, no cache/domain/QoS semantics, one outstanding write
+and one outstanding read per endpoint. This proves transaction correctness
+through the prototype fabric, not production timing or throughput.
+
+## Synthesis
+
+`synth_srota64.py --top bridge` runs Yosys (`proc; memory -nomap; opt -fast;
+stat`) over `axi5_srota_ep`: 246 generic cells, 44 flops, no latches, no inferred
+memories. `--top fabric` targets the 64-router fabric, which is a behavioural
+model with unrolled combinational segment arrays and takes hours at this size;
+`--from-log` regenerates a receipt from a completed run.
+
+Synthesis only. There is no place and route, no static timing analysis and no
+approved target platform on this machine, so no physical result is claimed.
