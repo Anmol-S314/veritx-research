@@ -43,12 +43,20 @@ What closed on 2026-11-11:
 What is still open:
 
 - **GEC-hybrid and SROTA** under their own Scope B claim lists: multi-flit
-  framing is now carried and verified in both fabrics (HEAD/BODY/TAIL ordered,
+  framing is carried and verified in both fabrics (HEAD/BODY/TAIL ordered,
   packet lock, `WIRE_PIPE`-deep elastic wires, `PASS srota/hybrid multi_flit`),
-  but the multicast bitmap, AXI/OrderingFSM/CDC composition and the physical
-  multidrop remain open, and their credit path stays occupancy-based (no
-  per-(tap, VC) pools as on GEC-MECS). Their fabric lint is clean; their
-  `final_implementation` stays false under their own Scope B lists.
+  and **multicast is now established too** (2026-11-12): an 80-bit flit carries
+  a 16-bit router-id bitmap below the type field; a nonzero bitmap broadcasts
+  on the shared wire and every selected tap drops one copy in the same slot,
+  with source/turn-router forking and all-or-nothing admission. Measured 20
+  copies from 8 injected flits including a forked HEAD/BODY/TAIL packet, no
+  wrong or duplicate destination; SROTA refuses island-class bitmaps and
+  counts them, and the hybrid mesh carries no multicast flit
+  (`docs/research/RTL-SCOPE-B-MULTICAST.md`). The **AXI/OrderingFSM/CDC
+  composition and the physical multidrop/STA/parity rows remain open**, and
+  their credit path stays occupancy-based (no per-(tap, VC) pools as on
+  GEC-MECS). Their fabric lint is clean; their `final_implementation` stays
+  false under their own Scope B lists.
 - **Scope C** — the pinned 74-agent selected project: **C4 and C5 are CLOSED**.
   The 74 seats ran as real endpoints (5,476/5,476 flows conserved, credits
   restored; `runs/selected-r02-gec-mecs-seats-20261111/`), and the same fabric
